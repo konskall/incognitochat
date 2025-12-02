@@ -446,14 +446,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           if (attachment) messageData.attachment = attachment;
 
           await addDoc(collection(db, "chats", config.roomKey, "messages"), messageData);
-          clearFile();
+          // Only clear file on success to allow retry if needed, but in this simple version
+          // we clear it to prevent stuck state.
+          clearFile(); 
       }
     } catch (error) {
       console.error("Error sending message:", error);
       alert("Failed to send/edit message: Missing permissions or connection error.");
-      setInputText(textToSend);
+      setInputText(textToSend); // Restore text on error
     } finally {
       setIsUploading(false);
+      // Ensure file is cleared if we are not restoring functionality (simple safety)
+      // This prevents the user from accidentally sending the file again with just a text retry
+      if (!editingMessageId) clearFile();
     }
   };
 
