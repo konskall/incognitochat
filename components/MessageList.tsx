@@ -304,9 +304,10 @@ const MessageItem = React.memo(({ msg, isMe, onEdit }: { msg: Message; isMe: boo
         return false;
     }
 
-    // Check attachment changes
+    // Check attachment changes - Optimize by checking key props instead of full JSON stringify
     if (prevProps.msg.attachment !== nextProps.msg.attachment) {
-         if (JSON.stringify(prevProps.msg.attachment) !== JSON.stringify(nextProps.msg.attachment)) {
+         if (prevProps.msg.attachment?.url !== nextProps.msg.attachment?.url ||
+             prevProps.msg.attachment?.name !== nextProps.msg.attachment?.name) {
              return false;
          }
     }
