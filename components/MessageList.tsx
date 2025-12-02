@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
-  FileText, Download, Image as ImageIcon, MoreVertical, Edit2, 
+  FileText, Download, MoreVertical, Edit2, 
   File, FileAudio, FileVideo, FileCode, FileArchive 
 } from 'lucide-react';
 
