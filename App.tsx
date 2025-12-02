@@ -2,12 +2,26 @@ import React, { useState, useEffect } from 'react';
 import LoginScreen from './components/LoginScreen';
 import ChatScreen from './components/ChatScreen';
 import { ChatConfig } from './types';
-import { generateRoomKey } from './utils/helpers';
+import { generateRoomKey, playBeep } from './utils/helpers';
 
 const App: React.FC = () => {
   const [chatConfig, setChatConfig] = useState<ChatConfig | null>(null);
 
   useEffect(() => {
+    // Audio Context Unlock for Mobile Browsers
+    // Browsers block audio context unless resumed by a user gesture
+    const unlockAudio = () => {
+       playBeep(); 
+       // We play a silent beep or just access the context to unlock it
+       window.removeEventListener('click', unlockAudio);
+       window.removeEventListener('touchstart', unlockAudio);
+       window.removeEventListener('keydown', unlockAudio);
+    };
+
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+
     // Auto-login logic: Check local storage for session details
     const storedPin = localStorage.getItem('chatPin');
     const storedRoomName = localStorage.getItem('chatRoomName');
