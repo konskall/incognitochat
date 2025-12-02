@@ -14,7 +14,8 @@ interface ChatScreenProps {
   onExit: () => void;
 }
 
-const MAX_FILE_SIZE = 700 * 1024; // 700KB limit (Firestore doc limit is 1MB)
+// Reduced to 500KB to ensure Base64 overhead (~33%) + metadata fits within Firestore 1MB limit
+const MAX_FILE_SIZE = 500 * 1024; 
 
 const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -326,7 +327,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       if (file.size > MAX_FILE_SIZE) {
-        alert(`File is too large. Max size is 700KB.`);
+        alert(`File is too large. Max size is 500KB.`);
         e.target.value = '';
         return;
       }
@@ -547,7 +548,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       </header>
 
       {/* Main content: overscroll-contain prevents scrolling parent on mobile */}
-      <main className="flex-1 overflow-y-auto overscroll-contain p-4 bg-slate-50/50" style={{backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '20px 20px'}}>
+      {/* Added pb-20 to ensure last message is not hidden behind footer */}
+      <main className="flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50" style={{backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '20px 20px'}}>
         <MessageList 
             messages={messages} 
             currentUserUid={user?.uid || ''} 
