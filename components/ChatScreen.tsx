@@ -471,21 +471,23 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         ]);
 
         // 2. Try deleting the room document
-        // This might fail if user is not the creator, but messages are already gone
         try {
             await deleteDoc(chatRef);
         } catch (roomError) {
             console.warn("Could not delete room doc (likely permission issue), but contents cleared.", roomError);
         }
 
+        // SUCCESS: Exit the chat.
+        // NOTE: This unmounts the component. We must NOT update state after this.
         onExit(); 
     } catch (error) {
         console.error("Delete failed", error);
         alert("Error clearing chat. Please try again.");
-    } finally {
+        // Only safe to update state if we didn't exit
         setIsDeleting(false);
         setShowDeleteModal(false);
-    }
+    } 
+    // No 'finally' block to update state, as component might be unmounted on success
   };
 
   const handleEmojiSelect = (emoji: string) => {
@@ -555,7 +557,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       </main>
 
       {/* Footer: safe area padding bottom (iPhone Home Bar) */}
-      <footer className="bg-white p-2 sm:p-3 border-t border-slate-200 shadow-lg z-20 relative pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      <footer className="bg-white p-1.5 border-t border-slate-200 shadow-lg z-20 relative pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
          {typingUsers.length > 0 && (
              <div className="absolute -top-6 left-6 text-xs text-slate-500 bg-white/80 backdrop-blur px-2 py-0.5 rounded-t-lg animate-pulse flex items-center gap-1">
                  <span className="flex gap-0.5">
@@ -634,8 +636,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                         onKeyDown={handleKeyDown}
                         rows={1}
                         placeholder={selectedFile ? "Add a caption..." : (editingMessageId ? "Edit..." : "Message...")}
-                        className="w-full bg-slate-100 border-0 rounded-2xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-normal text-base"
-                        style={{ minHeight: '40px' }}
+                        className="w-full bg-slate-100 border-0 rounded-2xl px-4 py-1 focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-5 text-base"
+                        style={{ minHeight: '24px' }}
                      />
                  </div>
                  
