@@ -19,7 +19,7 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
     const [error, setError] = useState(false);
 
     useEffect(() => {
-        let isMounted = true;
+        let isActive = true; // Fix: Use local variable instead of state to track mounting
         setLoading(true);
         setError(false);
         
@@ -27,7 +27,7 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
         fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`)
             .then(res => res.json())
             .then(json => {
-                if (isMounted) {
+                if (isActive) {
                     if (json.status === 'success') {
                         setData(json.data);
                     } else {
@@ -37,13 +37,13 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
                 }
             })
             .catch(() => {
-                if (isMounted) {
+                if (isActive) {
                     setError(true);
                     setLoading(false);
                 }
             });
             
-        return () => { isMounted = false; };
+        return () => { isActive = false; };
     }, [url]);
 
     if (loading) return null;
@@ -57,7 +57,7 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
             href={url} 
             target="_blank" 
             rel="noopener noreferrer" 
-            className="block mt-2 bg-white/95 border border-black/10 rounded-lg overflow-hidden hover:bg-white transition-colors max-w-sm shadow-sm text-slate-800 no-underline group/card"
+            className="block mt-2 bg-white/95 border border-black/10 rounded-lg overflow-hidden hover:bg-white transition-colors w-full max-w-[300px] shadow-sm text-slate-800 no-underline group/card"
         >
             {data.image?.url && (
                 <div 
@@ -303,16 +303,25 @@ const MessageItem = React.memo(({ msg, isMe, onEdit }: { msg: Message; isMe: boo
 
     // Check attachment changes
     if (prevProps.msg.attachment !== nextProps.msg.attachment) {
-         // Deep check if object reference changed but content is same (rare but safe)
          if (JSON.stringify(prevProps.msg.attachment) !== JSON.stringify(nextProps.msg.attachment)) {
              return false;
          }
     }
 
-    // Check timestamp (Firestore timestamps are objects, so strict equality might fail)
-    const prevTime = prevProps.msg.createdAt?.seconds;
-    const nextTime = nextProps.msg.createdAt?.seconds;
-    if (prevTime !== nextTime) return false;
+    // Check timestamp safely (handle nulls/sentinels)
+    const getSeconds = (ts: any) => {
+        if (!ts) return 0;
+        if (ts.seconds) return ts.seconds;
+        if (ts.toMillis) return ts.toMillis();
+        return 0; 
+    };
+
+    const prevSeconds = getSeconds(prevProps.msg.createdAt);
+    const nextSeconds = getSeconds(nextProps.msg.createdAt);
+    
+    if (prevSeconds !== nextSeconds) {
+        return false;
+    }
 
     return true;
 });
