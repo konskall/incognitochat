@@ -46,8 +46,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
-  // Track if it's the first load for instant scrolling
+  // Track first load for scrolling and sound
   const isFirstLoad = useRef(true);
+  const isFirstSnapshot = useRef(true);
 
   // 1. Authentication & Network Status
   useEffect(() => {
@@ -105,8 +106,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         setIsRoomReady(true);
       } catch (error) {
         console.error("Error initializing room:", error);
-        // Fallback: If creation fails (e.g. permission issues), we still set ready 
-        // to true so we can attempt to read messages/subcollections if allowed.
         setIsRoomReady(true);
       }
     };
@@ -116,19 +115,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   // 2. Notification Setup (FCM Token Registration)
   useEffect(() => {
-      // Only attempt FCM registration if messaging is supported and user enabled notifications
       if (notificationsEnabled && user && messaging && isRoomReady) {
-          
-          // Helper to register token
           const registerToken = async () => {
               try {
                   if ('serviceWorker' in navigator) {
                      await navigator.serviceWorker.register('./firebase-messaging-sw.js').catch(err => console.log("SW Register fail:", err));
                   }
 
-                  const currentToken = await getToken(messaging).catch(() => {
-                      return null;
-                  });
+                  const currentToken = await getToken(messaging).catch(() => null);
 
                   if (currentToken) {
                       const tokenRef = doc(db, "chats", config.roomKey, "fcm_tokens", user.uid);
@@ -164,27 +158,41 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }, { merge: true }).catch(console.error);
   }, [user, config.roomKey, config.username, config.avatarURL, isRoomReady]);
 
-  // 3. Presence Heartbeat
+  // 3. Presence Heartbeat & Visibility Logic
   useEffect(() => {
     if (!user || !config.roomKey || !isRoomReady) return;
 
-    updatePresence({ isTyping: false });
+    // Initial Active Status
+    updatePresence({ isTyping: false, status: 'active' });
     
     const interval = setInterval(() => {
-        updatePresence();
+        // Only send heartbeat if page is visible
+        if (document.visibilityState === 'visible') {
+            updatePresence({ status: 'active' });
+        }
     }, 30000);
+
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+            updatePresence({ status: 'active' });
+        } else {
+            // Mark as inactive when user minimizes app/switches tab
+            updatePresence({ status: 'inactive' });
+        }
+    };
 
     const cleanup = () => {
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         const presRef = doc(db, "chats", config.roomKey, "presence", user.uid);
-        // Best effort delete on unmount
         deleteDoc(presRef).catch(() => {});
     };
 
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener('beforeunload', cleanup);
 
     return () => {
         clearInterval(interval);
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
         window.removeEventListener('beforeunload', cleanup);
         cleanup();
     };
@@ -200,7 +208,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
          const typers: string[] = [];
          snapshot.forEach(doc => {
              const data = doc.data() as Presence;
-             if (data.uid !== user.uid && data.isTyping) {
+             // Check if user is actively typing and status is active
+             if (data.uid !== user.uid && data.isTyping && data.status === 'active') {
                  typers.push(data.username);
              }
          });
@@ -230,7 +239,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       for (const change of snapshot.docChanges()) {
         if (change.type === "added") {
            const data = change.doc.data();
-           // Ensure it's not a local optimistic write and not our own message
+           // Ensure it's not a local optimistic write, not our own message, and NOT the initial history load
            if (!snapshot.metadata.fromCache && data.uid !== user.uid) {
                hasNewMessageFromOthers = true;
                lastMsg = { 
@@ -262,7 +271,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
       setMessages(msgs);
 
-      if (hasNewMessageFromOthers && lastMsg) {
+      // Play sound only if it's NOT the first snapshot (history load)
+      if (!isFirstSnapshot.current && hasNewMessageFromOthers && lastMsg) {
           playBeep();
           if (navigator.vibrate) navigator.vibrate(100);
 
@@ -279,6 +289,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                  console.error("Local notification failed", e);
              }
           }
+      }
+      
+      // Mark first snapshot as done
+      if (isFirstSnapshot.current) {
+          isFirstSnapshot.current = false;
       }
     }, (error) => {
         console.error("Message listener error:", error);
@@ -363,7 +378,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }, 2000);
   };
 
-  // Memoized to prevent re-rendering MessageList on every keystroke
   const handleEditMessage = useCallback((msg: Message) => {
       setInputText(msg.text);
       setEditingMessageId(msg.id);
@@ -386,7 +400,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     setShowEmoji(false);
     setIsUploading(true);
     
-    // Maintain focus on mobile after send to keep keyboard open
     if (textareaRef.current) {
         textareaRef.current.focus();
     }
