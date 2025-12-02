@@ -493,8 +493,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   };
 
   return (
-    // Use h-[100dvh] for mobile browser compatibility (handles address bar)
-    <div className="flex flex-col h-[100dvh] w-full bg-slate-100 max-w-5xl mx-auto shadow-2xl relative overflow-hidden md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40">
+    // Use fixed inset-0 on mobile to lock the view preventing body scroll
+    // On desktop (md), use relative positioning and standard flex layout
+    <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40">
       {isOffline && (
         <div className="bg-red-500 text-white text-center py-1 text-sm font-bold animate-pulse absolute top-0 w-full z-50">
           📴 You are offline. Messages will not be sent.
