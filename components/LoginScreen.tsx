@@ -200,7 +200,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
         </div>
       </div>
       
-      <footer className="mt-8 text-center text-slate-400 text-xs pb-6">
+      <footer className="mt-8 text-center text-slate-400 text-xs pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
         <p>
           Incognito Chat © 2025 • Powered by{' '}
           <a 
