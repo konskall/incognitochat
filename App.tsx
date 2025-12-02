@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import LoginScreen from './components/LoginScreen';
 import ChatScreen from './components/ChatScreen';
 import { ChatConfig } from './types';
-import { generateRoomKey, playBeep } from './utils/helpers';
+import { generateRoomKey, initAudio } from './utils/helpers';
 
 const App: React.FC = () => {
   const [chatConfig, setChatConfig] = useState<ChatConfig | null>(null);
@@ -10,9 +10,9 @@ const App: React.FC = () => {
   useEffect(() => {
     // Audio Context Unlock for Mobile Browsers
     // Browsers block audio context unless resumed by a user gesture
+    // We use initAudio() which plays a silent sound to unlock it without annoying the user
     const unlockAudio = () => {
-       playBeep(); 
-       // We play a silent beep or just access the context to unlock it
+       initAudio(); 
        window.removeEventListener('click', unlockAudio);
        window.removeEventListener('touchstart', unlockAudio);
        window.removeEventListener('keydown', unlockAudio);
