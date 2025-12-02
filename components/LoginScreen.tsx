@@ -61,6 +61,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
     localStorage.setItem('chatUsername', username);
     localStorage.setItem('chatAvatarURL', finalAvatar);
     localStorage.setItem('chatRoomName', roomName);
+    localStorage.setItem('chatPin', pin); // Added this so App.tsx can restore session
 
     onJoin({
       username,
