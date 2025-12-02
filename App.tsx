@@ -23,7 +23,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="h-[100dvh] w-full">
+    <div className="min-h-[100dvh] w-full">
       {chatConfig ? (
         <ChatScreen config={chatConfig} onExit={handleExit} />
       ) : (
