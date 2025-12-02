@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ChatConfig } from '../types';
-import { generateRoomKey } from '../utils/helpers';
+import { generateRoomKey, initAudio } from '../utils/helpers';
 import { Info, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface LoginScreenProps {
@@ -52,6 +52,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       return;
     }
 
+    // Initialize Audio Context here, on user gesture (click/submit), 
+    // before entering the chat. This prevents iOS form silencing system sounds
+    // during the input phase.
+    initAudio();
+
     const roomKey = generateRoomKey(pin, roomName);
 
     // Finalize Avatar URL
@@ -77,7 +82,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-blue-500/10 w-full p-8 border border-white/50">
         <div className="flex flex-col items-center mb-6">
            <img 
-            src="https://konskall.github.io/incognitochat/favicon-96x96.png" 
+            src="https://konskall.github.io/incognitochatapp/favicon-96x96.png" 
             alt="Logo" 
             className="w-16 h-16 rounded-2xl shadow-lg mb-4"
           />
