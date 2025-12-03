@@ -10,6 +10,13 @@ export interface Attachment {
   size: number;
 }
 
+export interface ReplyInfo {
+  id: string;
+  username: string;
+  text: string;
+  isAttachment: boolean;
+}
+
 export interface Message {
   id: string;
   text: string;
@@ -20,6 +27,7 @@ export interface Message {
   attachment?: Attachment;
   isEdited?: boolean;
   reactions?: { [emoji: string]: string[] }; // Key: emoji char, Value: array of uids
+  replyTo?: ReplyInfo;
 }
 
 export interface ChatConfig {
