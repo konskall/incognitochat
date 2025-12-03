@@ -7,7 +7,7 @@ import { ChatConfig, Message, User, Attachment, Presence } from '../types';
 import { decodeMessage, encodeMessage, playBeep } from '../utils/helpers';
 import MessageList from './MessageList';
 import EmojiPicker from './EmojiPicker';
-import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Reply } from 'lucide-react';
+import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2 } from 'lucide-react';
 
 interface ChatScreenProps {
   config: ChatConfig;
@@ -251,7 +251,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                    avatarURL: data.avatarURL,
                    createdAt: data.createdAt,
                    attachment: data.attachment,
-                   reactions: data.reactions
+                   reactions: data.reactions,
+                   replyTo: data.replyTo
                };
            }
         }
