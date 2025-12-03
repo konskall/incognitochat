@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChatConfig } from '../types';
 import { generateRoomKey, initAudio } from '../utils/helpers';
-import { Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Info, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
 
 interface LoginScreenProps {
   onJoin: (config: ChatConfig) => void;
@@ -12,6 +12,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
   const [avatar, setAvatar] = useState(localStorage.getItem('chatAvatarURL') || '');
   const [roomName, setRoomName] = useState(localStorage.getItem('chatRoomName') || '');
   const [pin, setPin] = useState('');
+  const [showPin, setShowPin] = useState(false); // State for toggling PIN visibility
   const [showGuide, setShowGuide] = useState(false);
   
   // Advanced Avatar State
@@ -182,15 +183,26 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
               maxLength={30}
               className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all mb-4 text-base"
             />
-            <input
-              type="password"
-              placeholder="Room PIN"
-              aria-label="Room PIN"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              maxLength={12}
-              className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-base"
-            />
+            
+            <div className="relative">
+                <input
+                  type={showPin ? "text" : "password"}
+                  placeholder="Room PIN"
+                  aria-label="Room PIN"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  maxLength={12}
+                  className="w-full px-4 py-3 rounded-xl bg-white border border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-base pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPin(!showPin)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-500 transition-colors"
+                  aria-label={showPin ? "Hide PIN" : "Show PIN"}
+                >
+                  {showPin ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+            </div>
           </div>
 
           <button
