@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
@@ -60,7 +59,7 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
             href={url} 
             target="_blank" 
             rel="noopener noreferrer" 
-            className="flex items-stretch mt-2 bg-white/95 border border-black/10 rounded-lg overflow-hidden hover:bg-blue-50 transition-colors w-full md:max-w-[360px] min-h-[80px] shadow-sm text-slate-800 no-underline group/card"
+            className="flex items-stretch mt-2 bg-white/95 border border-black/10 rounded-lg overflow-hidden hover:bg-blue-50 transition-colors w-[260px] sm:w-[320px] md:w-[360px] max-w-full min-h-[80px] shadow-sm text-slate-800 no-underline group/card"
         >
             {/* Image Section - Fixed width on left, covers height */}
             {data.image?.url ? (
@@ -178,7 +177,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
 
             {/* YouTube Embed - Responsive Width */}
             {ytId && (
-               <div className="relative w-full md:max-w-[400px] aspect-video rounded-lg overflow-hidden shadow-md bg-black/5 mt-1">
+               <div className="relative w-[260px] sm:w-[320px] md:w-[400px] max-w-full aspect-video rounded-lg overflow-hidden shadow-md bg-black/5 mt-1">
                     <iframe
                         className="absolute inset-0 w-full h-full"
                         src={`https://www.youtube.com/embed/${ytId}`}
@@ -325,9 +324,8 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
         </div>
 
         {/* Bubble */}
-        <div className={`relative flex flex-col min-w-0 ${isMe ? 'items-end' : 'items-start'}`}>
-            <div className={`chat-bubble
-                relative px-4 py-2.5 rounded-2xl shadow-sm text-sm md:text-base min-w-0 transition-all w-full
+        <div className={`chat-bubble
+                relative px-4 py-2.5 rounded-2xl shadow-sm text-sm md:text-base min-w-0 transition-all
                 ${isMe 
                     ? 'bg-blue-600 text-white rounded-br-none shadow-blue-500/20' 
                     : 'bg-white text-slate-800 rounded-bl-none shadow-slate-200 border border-slate-100'}
@@ -393,7 +391,6 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
             )}
         </div>
       </div>
-    </div>
   );
 }, (prevProps, nextProps) => {
     // Custom comparison function for React.memo
