@@ -36,6 +36,17 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       setAvatarSeed(Math.random().toString(36).substring(7));
   };
 
+  const toggleCustomUrl = () => {
+      const willBeCustom = !useCustomUrl;
+      setUseCustomUrl(willBeCustom);
+      
+      // If switching TO custom URL and the current value is a generated one (DiceBear),
+      // clear the input so the user doesn't have to delete the long URL manually.
+      if (willBeCustom && avatar.includes('dicebear')) {
+          setAvatar('');
+      }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -111,7 +122,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                  <label className="text-xs font-bold text-slate-500 uppercase">Avatar</label>
                  <button 
                     type="button" 
-                    onClick={() => setUseCustomUrl(!useCustomUrl)}
+                    onClick={toggleCustomUrl}
                     className="text-xs text-blue-500 font-semibold hover:underline"
                  >
                      {useCustomUrl ? 'Use Generator' : 'Use Custom URL'}
