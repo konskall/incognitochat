@@ -3,7 +3,7 @@ import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
   FileText, Download, Edit2, 
-  File, FileAudio, FileVideo, FileCode, FileArchive, SmilePlus, Reply 
+  File, FileAudio, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink 
 } from 'lucide-react';
 
 interface MessageListProps {
@@ -59,24 +59,35 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
             href={url} 
             target="_blank" 
             rel="noopener noreferrer" 
-            className="block mt-2 bg-white/95 border border-black/10 rounded-lg overflow-hidden hover:bg-white transition-colors w-full max-w-[300px] shadow-sm text-slate-800 no-underline group/card"
+            className="flex items-center mt-2 bg-white/95 border border-black/10 rounded-lg overflow-hidden hover:bg-blue-50 transition-colors w-full max-w-[280px] h-20 shadow-sm text-slate-800 no-underline group/card"
         >
-            {data.image?.url && (
+            {/* Image Section - Fixed small square on left */}
+            {data.image?.url ? (
                 <div 
-                    className="h-32 w-full bg-cover bg-center bg-no-repeat bg-slate-100" 
+                    className="h-20 w-20 flex-shrink-0 bg-cover bg-center bg-no-repeat bg-slate-100" 
                     style={{backgroundImage: `url(${data.image.url})`}} 
                 />
+            ) : (
+                <div className="h-20 w-20 flex-shrink-0 flex items-center justify-center bg-slate-100 text-slate-400">
+                    <ExternalLink size={24} />
+                </div>
             )}
-            <div className="p-3">
-                <h3 className="font-bold text-sm truncate leading-tight group-hover/card:text-blue-600 transition-colors">{data.title}</h3>
+            
+            {/* Content Section */}
+            <div className="flex-1 p-2 flex flex-col justify-center min-w-0 h-full">
+                <h3 className="font-bold text-xs truncate leading-tight group-hover/card:text-blue-600 transition-colors">
+                    {data.title}
+                </h3>
                 {data.description && (
-                    <p className="text-xs text-slate-500 line-clamp-2 mt-1 leading-snug">{data.description}</p>
+                    <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5 leading-snug">
+                        {data.description}
+                    </p>
                 )}
-                <div className="flex items-center gap-1.5 mt-2">
+                <div className="flex items-center gap-1 mt-auto pt-1">
                     {data.logo?.url && (
-                        <img src={data.logo.url} loading="lazy" className="w-3.5 h-3.5 rounded-sm object-contain" alt="" />
+                        <img src={data.logo.url} loading="lazy" className="w-3 h-3 rounded-sm object-contain" alt="" />
                     )}
-                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                    <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider truncate">
                         {data.publisher || new URL(url).hostname}
                     </span>
                 </div>
@@ -164,9 +175,9 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
                 })}
             </span>
 
-            {/* YouTube Embed */}
+            {/* YouTube Embed - Constrained Width */}
             {ytId && (
-               <div className="relative w-full aspect-video rounded-lg overflow-hidden shadow-md bg-black/5 mt-1">
+               <div className="relative w-full max-w-[280px] aspect-video rounded-lg overflow-hidden shadow-md bg-black/5 mt-1">
                     <iframe
                         className="absolute inset-0 w-full h-full"
                         src={`https://www.youtube.com/embed/${ytId}`}
@@ -260,20 +271,20 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
         {/* Vertical Actions Stack (Reply, React, Edit) */}
         <div className={`flex flex-col gap-1 items-center self-end mb-1 ${isMe ? 'mr-0.5' : 'ml-0.5'}`}>
              
-             {/* Reply Button */}
+             {/* Reply Button - Always visible on mobile, hover only on desktop */}
              <button
                 onClick={() => onReply(msg)}
-                className={`p-1 text-slate-400 hover:text-blue-500 rounded-full transition-all ${showReactions ? 'opacity-0 pointer-events-none' : 'opacity-0 group-hover:opacity-100'}`}
+                className={`p-1 text-slate-400 hover:text-blue-500 rounded-full transition-all ${showReactions ? 'opacity-0 pointer-events-none' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'}`}
                 title="Reply"
              >
                 <Reply size={16} />
              </button>
 
-             {/* Reaction Button */}
+             {/* Reaction Button - Always visible on mobile, hover only on desktop */}
              <div className="relative">
                  <button 
                     onClick={() => setShowReactions(!showReactions)}
-                    className={`p-1 text-slate-400 hover:text-orange-500 rounded-full transition-all ${showReactions ? 'opacity-100 text-orange-500 bg-orange-50' : 'opacity-0 group-hover:opacity-100'}`}
+                    className={`p-1 text-slate-400 hover:text-orange-500 rounded-full transition-all ${showReactions ? 'opacity-100 text-orange-500 bg-orange-50' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'}`}
                     title="React"
                  >
                     <SmilePlus size={16} />
@@ -300,11 +311,11 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
                  )}
              </div>
 
-             {/* Edit Button (Directly exposed for 'Me') */}
+             {/* Edit Button (Directly exposed for 'Me') - Always visible on mobile, hover only on desktop */}
              {isMe && (
                 <button 
                     onClick={() => onEdit(msg)}
-                    className={`p-1 text-slate-400 hover:text-blue-500 rounded-full transition-all opacity-0 group-hover:opacity-100`}
+                    className={`p-1 text-slate-400 hover:text-blue-500 rounded-full transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100`}
                     title="Edit"
                 >
                     <Edit2 size={16} />
