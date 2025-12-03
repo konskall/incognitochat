@@ -27,7 +27,7 @@ export interface Message {
   attachment?: Attachment;
   isEdited?: boolean;
   reactions?: { [emoji: string]: string[] }; // Key: emoji char, Value: array of uids
-  replyTo?: ReplyInfo;
+  replyTo?: ReplyInfo | null;
 }
 
 export interface ChatConfig {
