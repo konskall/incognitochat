@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, setDoc, deleteDoc, getDocs, writeBatch, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, setDoc, deleteDoc, getDocs, writeBatch, updateDoc, getDoc, arrayUnion, arrayRemove, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import { getToken } from 'firebase/messaging';
 import { db, auth, messaging } from '../services/firebase';
@@ -203,7 +203,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
      if (!config.roomKey || !user || !isRoomReady) return;
 
      const q = collection(db, "chats", config.roomKey, "presence");
-     const unsubscribe = onSnapshot(q, (snapshot) => {
+     const unsubscribe = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
          setParticipants(snapshot.size);
          const typers: string[] = [];
          snapshot.forEach(doc => {
@@ -230,7 +230,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       orderBy("createdAt", "asc")
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
       const msgs: Message[] = [];
       let lastMsg: Message | null = null;
       let hasNewMessageFromOthers = false;
@@ -249,7 +249,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                    uid: data.uid,
                    avatarURL: data.avatarURL,
                    createdAt: data.createdAt,
-                   attachment: data.attachment
+                   attachment: data.attachment,
+                   reactions: data.reactions
                };
            }
         }
@@ -265,7 +266,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           avatarURL: data.avatarURL,
           createdAt: data.createdAt,
           attachment: data.attachment,
-          isEdited: data.isEdited
+          isEdited: data.isEdited,
+          reactions: data.reactions || {}
         });
       });
 
@@ -385,6 +387,37 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       textareaRef.current?.focus();
   }, []);
 
+  const handleReaction = useCallback(async (msg: Message, emoji: string) => {
+      if (!user || !config.roomKey) return;
+      
+      const msgRef = doc(db, "chats", config.roomKey, "messages", msg.id);
+      
+      try {
+        const msgDoc = await getDoc(msgRef);
+        if (!msgDoc.exists()) return;
+        
+        const currentReactions = (msgDoc.data() as any)?.reactions || {};
+        const userList = currentReactions[emoji] || [];
+        
+        let updateOp;
+        
+        if (userList.includes(user.uid)) {
+            // Remove reaction
+            updateOp = arrayRemove(user.uid);
+        } else {
+            // Add reaction
+            updateOp = arrayUnion(user.uid);
+        }
+        
+        await updateDoc(msgRef, {
+            [`reactions.${emoji}`]: updateOp
+        });
+        
+      } catch (error) {
+          console.error("Error toggling reaction:", error);
+      }
+  }, [user, config.roomKey]);
+
   const cancelEdit = useCallback(() => {
       setEditingMessageId(null);
       setInputText('');
@@ -441,7 +474,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             username: config.username,
             avatarURL: config.avatarURL,
             text: encodeMessage(textToSend),
-            createdAt: serverTimestamp()
+            createdAt: serverTimestamp(),
+            reactions: {}
           };
           if (attachment) messageData.attachment = attachment;
 
@@ -569,6 +603,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             messages={messages} 
             currentUserUid={user?.uid || ''} 
             onEdit={handleEditMessage}
+            onReact={handleReaction}
         />
         <div ref={messagesEndRef} />
       </main>
