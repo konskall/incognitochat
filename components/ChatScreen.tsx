@@ -329,21 +329,36 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   }, [inputText]);
 
-  const requestNotifications = async () => {
+  const toggleNotifications = async () => {
+      // If already enabled, disable them
+      if (notificationsEnabled) {
+          setNotificationsEnabled(false);
+          return;
+      }
+
+      // If disabled, check permission and enable
       if (!('Notification' in window)) {
           alert('This browser does not support desktop notifications.');
           return;
       }
-      try {
-          const permission = await Notification.requestPermission();
-          if (permission === 'granted') {
-              setNotificationsEnabled(true);
-              new Notification("Notifications Enabled", { body: "You will be notified when the tab is in the background." });
-          } else if (permission === 'denied') {
-              alert("Notifications are blocked in your browser settings.");
+      
+      if (Notification.permission === 'granted') {
+          setNotificationsEnabled(true);
+          new Notification("Notifications Enabled", { body: "You will be notified when the tab is in the background." });
+      } else if (Notification.permission !== 'denied') {
+          try {
+              const permission = await Notification.requestPermission();
+              if (permission === 'granted') {
+                  setNotificationsEnabled(true);
+                  new Notification("Notifications Enabled", { body: "You will be notified when the tab is in the background." });
+              } else if (permission === 'denied') {
+                  alert("Notifications are blocked in your browser settings.");
+              }
+          } catch (error) {
+              console.error("Error requesting permission", error);
           }
-      } catch (error) {
-          console.error("Error requesting permission", error);
+      } else {
+          alert("Notifications are blocked in your browser settings.");
       }
   };
 
@@ -603,7 +618,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
             </button>
             <button 
-                onClick={requestNotifications}
+                onClick={toggleNotifications}
                 className={`p-2 rounded-lg transition ${notificationsEnabled ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}
                 title={notificationsEnabled ? "Notifications Active" : "Enable Notifications"}
             >
