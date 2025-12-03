@@ -7,7 +7,7 @@ import { ChatConfig, Message, User, Attachment, Presence } from '../types';
 import { decodeMessage, encodeMessage } from '../utils/helpers';
 import MessageList from './MessageList';
 import EmojiPicker from './EmojiPicker';
-import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX } from 'lucide-react';
+import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff } from 'lucide-react';
 import { initAudio } from '../utils/helpers';
 
 interface ChatScreenProps {
@@ -36,9 +36,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
-  // Notification & Sound State
+  // Notification, Sound & Vibration State
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [vibrationEnabled, setVibrationEnabled] = useState(true);
   
   // File handling state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -283,16 +284,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
       // Play sound only if it's NOT the first snapshot (history load)
       if (!isFirstSnapshot.current && hasNewMessageFromOthers && lastMsg) {
+          // Sound Logic
           if (soundEnabled) {
-              // Silently unlock first if needed, then play
               initAudio(); 
-              // Wait tiny bit for context to resume
               setTimeout(() => {
-                  // We need to import playBeep or move it here. 
-                  // Since playBeep is in helpers, let's assume it works or we import it.
-                  // Note: In strict React, better to import playBeep.
-                  // For now, re-implementing small beep logic or using imported helper.
-                  // We need to import playBeep from utils/helpers.
                   const playSound = async () => {
                        const { playBeep } = await import('../utils/helpers');
                        playBeep();
@@ -300,8 +295,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                   playSound();
               }, 10);
           }
-          if (navigator.vibrate) navigator.vibrate(100);
 
+          // Vibration Logic
+          if (vibrationEnabled && navigator.vibrate) {
+              navigator.vibrate(200);
+          }
+
+          // Local Notification Logic
           if (document.hidden && notificationsEnabled) {
              const title = `New message from ${lastMsg.username}`;
              const body = lastMsg.attachment ? `Sent a file: ${lastMsg.attachment.name}` : lastMsg.text;
@@ -326,7 +326,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     });
 
     return () => unsubscribe();
-  }, [config.roomKey, user, notificationsEnabled, isRoomReady, soundEnabled]);
+  }, [config.roomKey, user, notificationsEnabled, isRoomReady, soundEnabled, vibrationEnabled]);
 
   // Scroll logic
   useEffect(() => {
@@ -643,6 +643,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              </div>
         </div>
         <div className="flex gap-1 sm:gap-2 flex-shrink-0">
+            <button 
+                onClick={() => setVibrationEnabled(!vibrationEnabled)}
+                className={`p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}
+                title={vibrationEnabled ? "Vibration Enabled" : "Enable Vibration"}
+            >
+                {vibrationEnabled ? <Vibrate size={20} /> : <VibrateOff size={20} />}
+            </button>
             <button 
                 onClick={() => setSoundEnabled(!soundEnabled)}
                 className={`p-2 rounded-lg transition ${soundEnabled ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}
