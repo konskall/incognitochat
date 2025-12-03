@@ -79,7 +79,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
 
   return (
     <div className="flex flex-col items-center justify-start min-h-[100dvh] p-4 pt-2 md:pt-6 w-full max-w-md mx-auto animate-in slide-in-from-bottom-4 duration-500">
-      <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-blue-500/10 w-full p-8 border border-white/50">
+      <main className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-blue-500/10 w-full p-8 border border-white/50">
         <div className="flex flex-col items-center mb-6">
            <img 
             src="https://konskall.github.io/incognitochat/favicon-96x96.png" 
@@ -203,7 +203,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                 </div>
             )}
         </div>
-      </div>
+      </main>
       
       <footer className="mt-8 text-center text-slate-400 text-xs pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
         <p>
