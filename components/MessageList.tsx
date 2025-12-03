@@ -144,9 +144,9 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
     }
 
     return (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 w-full min-w-0">
             {/* Render text with clickable links */}
-            <span className="leading-relaxed whitespace-pre-wrap break-words">
+            <span className="leading-relaxed whitespace-pre-wrap break-words break-all">
                 {parts.map((part, i) => {
                     if (part.match(urlRegex)) {
                         return (
@@ -354,7 +354,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
 
                 {/* Text Display */}
                 {msg.text && (
-                    <div className={`leading-relaxed whitespace-pre-wrap break-words ${msg.attachment ? 'mt-2 pt-2 border-t ' + (isMe ? 'border-white/20' : 'border-slate-100') : ''}`}>
+                    <div className={`leading-relaxed whitespace-pre-wrap break-words break-all ${msg.attachment ? 'mt-2 pt-2 border-t ' + (isMe ? 'border-white/20' : 'border-slate-100') : ''}`}>
                         {renderContent(msg.text)}
                     </div>
                 )}
