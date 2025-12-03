@@ -40,7 +40,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
-  const [isVibrationSupported, setIsVibrationSupported] = useState(false);
+  const [canVibrate, setCanVibrate] = useState(false); // Hardware support check
   
   // File handling state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -58,7 +58,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   // Track previous message count to handle scroll behavior
   const prevMessageCount = useRef(0);
 
-  // 1. Authentication & Network Status
+  // 1. Authentication & Network Status & Feature Detection
   useEffect(() => {
     const unsubAuth = auth.onAuthStateChanged((u) => {
       if (u) {
@@ -78,10 +78,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     if ('Notification' in window && Notification.permission === 'granted') {
       setNotificationsEnabled(true);
     }
-    
-    // Check for Vibration API support (Note: iOS Safari does not support this)
-    if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        setIsVibrationSupported(true);
+
+    // Check for Vibration API support (iOS does not support it)
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        setCanVibrate(true);
     }
 
     return () => {
@@ -302,13 +302,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
               }, 10);
           }
 
-          // Vibration Logic
-          if (vibrationEnabled && navigator.vibrate) {
-              try {
-                navigator.vibrate(200);
-              } catch (e) {
-                // Ignore vibration errors
-              }
+          // Vibration Logic - Feature check inside
+          if (vibrationEnabled && canVibrate && 'vibrate' in navigator) {
+              navigator.vibrate(200);
           }
 
           // Local Notification Logic
@@ -336,7 +332,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     });
 
     return () => unsubscribe();
-  }, [config.roomKey, user, notificationsEnabled, isRoomReady, soundEnabled, vibrationEnabled]);
+  }, [config.roomKey, user, notificationsEnabled, isRoomReady, soundEnabled, vibrationEnabled, canVibrate]);
 
   // Scroll logic
   useEffect(() => {
@@ -653,7 +649,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              </div>
         </div>
         <div className="flex gap-1 sm:gap-2 flex-shrink-0">
-            {isVibrationSupported && (
+            {canVibrate && (
                 <button 
                     onClick={() => setVibrationEnabled(!vibrationEnabled)}
                     className={`p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}
