@@ -3,7 +3,7 @@ import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
   FileText, Download, MoreVertical, Edit2, 
-  File, FileAudio, FileVideo, FileCode, FileArchive, SmilePlus 
+  File, FileAudio, FileVideo, FileCode, FileArchive, SmilePlus, Reply 
 } from 'lucide-react';
 
 interface MessageListProps {
@@ -11,6 +11,7 @@ interface MessageListProps {
   currentUserUid: string;
   onEdit: (msg: Message) => void;
   onReact: (msg: Message, emoji: string) => void;
+  onReply: (msg: Message) => void;
 }
 
 // -- Link Preview Component --
@@ -85,11 +86,26 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
 };
 
 // Memoized Message Item to prevent re-renders of the whole list
-const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact }: { msg: Message; isMe: boolean; currentUid: string; onEdit: (msg: Message) => void; onReact: (msg: Message, emoji: string) => void }) => {
+const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onReply }: { msg: Message; isMe: boolean; currentUid: string; onEdit: (msg: Message) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; }) => {
   const [showOptions, setShowOptions] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
 
   const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+
+  const scrollToMessage = (id: string) => {
+      const el = document.getElementById(`msg-${id}`);
+      if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Highlight effect
+          const bubble = el.querySelector('.chat-bubble');
+          if (bubble) {
+              bubble.classList.add('ring-2', 'ring-offset-2', 'ring-blue-400');
+              setTimeout(() => {
+                  bubble.classList.remove('ring-2', 'ring-offset-2', 'ring-blue-400');
+              }, 1500);
+          }
+      }
+  };
 
   const formatTime = (timestamp: any) => {
     if (!timestamp) return '...'; // Pending
@@ -231,7 +247,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact }: { ms
   };
 
   return (
-    <div className={`flex w-full mb-4 animate-in slide-in-from-bottom-2 duration-300 group ${isMe ? 'justify-end' : 'justify-start'}`}>
+    <div id={`msg-${msg.id}`} className={`flex w-full mb-4 animate-in slide-in-from-bottom-2 duration-300 group ${isMe ? 'justify-end' : 'justify-start'}`}>
       <div className={`flex max-w-[85%] md:max-w-[70%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 relative`}>
         
         {/* Avatar */}
@@ -242,7 +258,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact }: { ms
             className="w-8 h-8 rounded-full shadow-sm object-cover border-2 border-white select-none bg-slate-200"
         />
 
-        {/* Message Actions (Only for self) */}
+        {/* Message Actions (Edit for self) */}
         {isMe && (
             <div className={`relative transition-opacity flex flex-col justify-center ${showOptions ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                 <button 
@@ -268,11 +284,23 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact }: { ms
             </div>
         )}
 
-        {/* Reaction Button (Hidden by default, visible on hover or if reaction menu open) */}
-        <div className={`relative flex items-center h-full self-center ${isMe ? 'mr-1' : 'ml-1'}`}>
+        {/* Reaction & Reply Buttons Group */}
+        <div className={`relative flex items-center h-full self-center gap-1 ${isMe ? 'mr-1' : 'ml-1'}`}>
+             
+             {/* Reply Button */}
+             <button
+                onClick={() => onReply(msg)}
+                className={`p-1 text-slate-400 hover:text-blue-500 rounded-full transition-all ${showReactions ? 'opacity-0 pointer-events-none' : 'opacity-0 group-hover:opacity-100'}`}
+                title="Reply"
+             >
+                <Reply size={18} />
+             </button>
+
+             {/* Reaction Button */}
              <button 
                 onClick={() => setShowReactions(!showReactions)}
                 className={`p-1 text-slate-400 hover:text-orange-500 rounded-full transition-all ${showReactions ? 'opacity-100 text-orange-500 bg-orange-50' : 'opacity-0 group-hover:opacity-100'}`}
+                title="React"
              >
                 <SmilePlus size={18} />
              </button>
@@ -297,14 +325,30 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact }: { ms
 
         {/* Bubble */}
         <div className={`relative flex flex-col min-w-0 ${isMe ? 'items-end' : 'items-start'}`}>
-            <div className={`
-                relative px-4 py-2.5 rounded-2xl shadow-sm text-sm md:text-base min-w-0
+            <div className={`chat-bubble
+                relative px-4 py-2.5 rounded-2xl shadow-sm text-sm md:text-base min-w-0 transition-all
                 ${isMe 
                     ? 'bg-blue-600 text-white rounded-br-none shadow-blue-500/20' 
                     : 'bg-white text-slate-800 rounded-bl-none shadow-slate-200 border border-slate-100'}
             `}>
                 {!isMe && <p className="text-[10px] font-bold text-slate-400 mb-0.5 tracking-wide select-none">{msg.username}</p>}
                 
+                {/* Reply Context */}
+                {msg.replyTo && (
+                    <div 
+                        onClick={() => scrollToMessage(msg.replyTo!.id)}
+                        className={`mb-2 p-2 rounded cursor-pointer opacity-90 hover:opacity-100 transition border-l-[3px]
+                            ${isMe ? 'bg-black/10 border-white/40' : 'bg-slate-100 border-blue-400'}`}
+                    >
+                        <span className={`text-xs font-bold block mb-0.5 ${isMe ? 'text-blue-100' : 'text-blue-600'}`}>
+                            {msg.replyTo.username}
+                        </span>
+                        <p className={`text-xs truncate max-w-[200px] opacity-80 ${isMe ? 'text-white' : 'text-slate-600'}`}>
+                            {msg.replyTo.isAttachment ? '📎 Attachment' : msg.replyTo.text}
+                        </p>
+                    </div>
+                )}
+
                 {/* Attachment Display */}
                 {renderAttachment()}
 
@@ -370,9 +414,12 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact }: { ms
     }
 
     // Check reactions
-    // Simple JSON stringify comparison is usually fast enough for small reaction objects
-    // If reactions changed, we MUST re-render
     if (JSON.stringify(prevProps.msg.reactions) !== JSON.stringify(nextProps.msg.reactions)) {
+        return false;
+    }
+
+    // Check replyTo changes (rare but possible if we wanted to support editing replies, but simple ref check is enough usually)
+    if (prevProps.msg.replyTo !== nextProps.msg.replyTo) {
         return false;
     }
 
@@ -394,7 +441,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact }: { ms
     return true;
 });
 
-const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onReact }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onReact, onReply }) => {
   return (
     <div className="flex flex-col justify-end min-h-full pb-2">
       {messages.length === 0 ? (
@@ -411,6 +458,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
             currentUid={currentUserUid}
             onEdit={onEdit}
             onReact={onReact}
+            onReply={onReply}
           />
         ))
       )}
