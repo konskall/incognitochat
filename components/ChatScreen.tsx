@@ -40,6 +40,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
+  const [isVibrationSupported, setIsVibrationSupported] = useState(false);
   
   // File handling state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -76,6 +77,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     // Check if permission was already granted in a previous session
     if ('Notification' in window && Notification.permission === 'granted') {
       setNotificationsEnabled(true);
+    }
+    
+    // Check for Vibration API support (Note: iOS Safari does not support this)
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        setIsVibrationSupported(true);
     }
 
     return () => {
@@ -298,7 +304,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
           // Vibration Logic
           if (vibrationEnabled && navigator.vibrate) {
-              navigator.vibrate(200);
+              try {
+                navigator.vibrate(200);
+              } catch (e) {
+                // Ignore vibration errors
+              }
           }
 
           // Local Notification Logic
@@ -643,13 +653,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              </div>
         </div>
         <div className="flex gap-1 sm:gap-2 flex-shrink-0">
-            <button 
-                onClick={() => setVibrationEnabled(!vibrationEnabled)}
-                className={`p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}
-                title={vibrationEnabled ? "Vibration Enabled" : "Enable Vibration"}
-            >
-                {vibrationEnabled ? <Vibrate size={20} /> : <VibrateOff size={20} />}
-            </button>
+            {isVibrationSupported && (
+                <button 
+                    onClick={() => setVibrationEnabled(!vibrationEnabled)}
+                    className={`p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}
+                    title={vibrationEnabled ? "Vibration Enabled" : "Enable Vibration"}
+                >
+                    {vibrationEnabled ? <Vibrate size={20} /> : <VibrateOff size={20} />}
+                </button>
+            )}
             <button 
                 onClick={() => setSoundEnabled(!soundEnabled)}
                 className={`p-2 rounded-lg transition ${soundEnabled ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}
