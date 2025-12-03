@@ -7,7 +7,7 @@ import { ChatConfig, Message, User, Attachment, Presence } from '../types';
 import { decodeMessage, encodeMessage, playBeep } from '../utils/helpers';
 import MessageList from './MessageList';
 import EmojiPicker from './EmojiPicker';
-import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2 } from 'lucide-react';
+import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX } from 'lucide-react';
 
 interface ChatScreenProps {
   config: ChatConfig;
@@ -35,8 +35,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
-  // Notification State
+  // Notification & Sound State
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   
   // File handling state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -278,7 +279,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
       // Play sound only if it's NOT the first snapshot (history load)
       if (!isFirstSnapshot.current && hasNewMessageFromOthers && lastMsg) {
-          playBeep();
+          if (soundEnabled) playBeep();
           if (navigator.vibrate) navigator.vibrate(100);
 
           if (document.hidden && notificationsEnabled) {
@@ -305,7 +306,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     });
 
     return () => unsubscribe();
-  }, [config.roomKey, user, notificationsEnabled, isRoomReady]);
+  }, [config.roomKey, user, notificationsEnabled, isRoomReady, soundEnabled]);
 
   // Scroll logic
   useEffect(() => {
@@ -594,6 +595,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              </div>
         </div>
         <div className="flex gap-1 sm:gap-2 flex-shrink-0">
+            <button 
+                onClick={() => setSoundEnabled(!soundEnabled)}
+                className={`p-2 rounded-lg transition ${soundEnabled ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}
+                title={soundEnabled ? "Mute Sounds" : "Enable Sounds"}
+            >
+                {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
+            </button>
             <button 
                 onClick={requestNotifications}
                 className={`p-2 rounded-lg transition ${notificationsEnabled ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}
