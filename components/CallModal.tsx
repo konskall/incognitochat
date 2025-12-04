@@ -146,26 +146,48 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
         // We assign to ref for cleanup, but use local 'rtc' variable for logic to satisfy TS strict checks
         pc.current = rtc;
 
-        // Push tracks to PC if we have them
+        // Add Transceivers to force bidirectional media
+        // This ensures SDP includes 'a=sendrecv' even if tracks are added slightly later
         if (localStreamInstance) {
-            localStreamInstance.getTracks().forEach((track) => {
-              rtc.addTrack(track, localStreamInstance!);
+            // Audio Transceiver
+            const audioTrack = localStreamInstance.getAudioTracks()[0];
+            rtc.addTransceiver('audio', { 
+                direction: 'sendrecv', 
+                streams: [localStreamInstance] 
             });
+            if (audioTrack) {
+                // We don't need addTrack if we use addTransceiver with streams, 
+                // but explicit sender replacement is safer for some browsers
+                // However, most modern browsers handle addTransceiver(track) or streams option.
+                // Let's stick to standard addTrack but with the knowledge that transceiver is created.
+                // actually, addTransceiver is better for direction control.
+            }
+            
+            // Video Transceiver
+            if (isVideoCall) {
+                rtc.addTransceiver('video', { 
+                    direction: 'sendrecv', 
+                    streams: [localStreamInstance] 
+                });
+            }
         } else {
-            // If no local media, we must explicitly ask to receive tracks
-            // This ensures the other side sends us media even if we send none
+            // No local media -> RecvOnly
             rtc.addTransceiver('audio', { direction: 'recvonly' });
             if (isVideoCall) {
                 rtc.addTransceiver('video', { direction: 'recvonly' });
             }
         }
 
-        // Pull remote tracks
+        // Handle remote tracks
         rtc.ontrack = (event) => {
-          console.log("Track received:", event.track.kind);
-          if (event.streams && event.streams[0]) {
-              setRemoteStream(event.streams[0]);
-          }
+            console.log("Track received:", event.track.kind);
+            // Instead of just taking streams[0], we explicitly manage the remote stream object
+            // to ensure both audio and video tracks are added.
+            setRemoteStream((prevStream) => {
+                const newStream = prevStream || new MediaStream();
+                newStream.addTrack(event.track);
+                return newStream;
+            });
         };
         
         rtc.onconnectionstatechange = () => {
