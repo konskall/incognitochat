@@ -133,6 +133,35 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
              }
         };
 
+        // --- ICE CANDIDATE QUEUE SYSTEM ---
+        // Prevents adding candidates before remote description is set
+        const candidateQueue: RTCIceCandidate[] = [];
+
+        const processCandidate = async (candidate: RTCIceCandidate) => {
+             if (rtc.remoteDescription) {
+                 try {
+                     await rtc.addIceCandidate(candidate);
+                 } catch (e) {
+                     console.warn("Error adding received ice candidate", e);
+                 }
+             } else {
+                 candidateQueue.push(candidate);
+             }
+        };
+
+        const flushCandidateQueue = async () => {
+             while (candidateQueue.length > 0) {
+                 const c = candidateQueue.shift();
+                 if (c) {
+                     try {
+                        await rtc.addIceCandidate(c);
+                     } catch (e) {
+                        console.warn("Error flushing ice candidate", e);
+                     }
+                 }
+             }
+        };
+
         // 3. Signaling Logic (Firestore)
         const callDocRef = doc(db, 'chats', roomKey, 'calls', 'active_call');
         const offerCandidatesRef = collection(callDocRef, 'offerCandidates');
@@ -186,7 +215,12 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
             // Use local 'rtc' variable, not 'pc.current' to avoid TS18047
             if (!rtc.currentRemoteDescription && data?.answer) {
               const answerDescription = new RTCSessionDescription(data.answer);
-              rtc.setRemoteDescription(answerDescription).catch(e => console.error(e));
+              rtc.setRemoteDescription(answerDescription)
+                 .then(() => {
+                     // Flush any queued candidates now that we have a remote desc
+                     flushCandidateQueue();
+                 })
+                 .catch(e => console.error(e));
             }
           });
           unsubs.push(unsubAnswer);
@@ -197,7 +231,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
               if (change.type === 'added') {
                 const data = change.doc.data();
                 const candidate = new RTCIceCandidate(data as RTCIceCandidateInit);
-                rtc.addIceCandidate(candidate).catch(e => console.warn("Ice Candidate Error", e));
+                processCandidate(candidate);
               }
             });
           });
@@ -234,6 +268,9 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
                  if (!rtc.currentRemoteDescription && data?.offer) {
                      const offerDescription = new RTCSessionDescription(data.offer);
                      await rtc.setRemoteDescription(offerDescription);
+                     
+                     // Flush any queued candidates now that we have a remote desc
+                     await flushCandidateQueue();
     
                      const answerDescription = await rtc.createAnswer();
                      await rtc.setLocalDescription(answerDescription);
@@ -245,7 +282,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
                      };
     
                      await updateDoc(callDocRef, { answer });
-                     setStatus('connected'); // Optimistic
+                     // Connection state listener will update status to 'connected'
                  }
              })();
           });
@@ -257,7 +294,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
               if (change.type === 'added') {
                 const data = change.doc.data();
                 const candidate = new RTCIceCandidate(data as RTCIceCandidateInit);
-                rtc.addIceCandidate(candidate).catch(e => console.warn("Ice Candidate Error", e));
+                processCandidate(candidate);
               }
             });
           });
