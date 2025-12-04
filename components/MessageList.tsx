@@ -3,7 +3,7 @@ import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
   FileText, Download, Edit2, 
-  File, FileAudio, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink 
+  File, FileAudio, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin 
 } from 'lucide-react';
 
 interface MessageListProps {
@@ -256,6 +256,46 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
     );
   };
 
+  const renderLocation = () => {
+      if (!msg.location) return null;
+      
+      const { lat, lng } = msg.location;
+      const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+      
+      return (
+          <a 
+            href={mapUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`flex flex-col gap-2 p-1.5 rounded-xl border mt-2 transition-all group/location hover:shadow-md
+                ${isMe 
+                    ? 'bg-white/10 border-white/20 hover:bg-white/20' 
+                    : 'bg-slate-50 border-slate-200 hover:bg-white'}`}
+          >
+              <div className="relative w-[200px] h-[100px] sm:w-[240px] sm:h-[120px] bg-slate-200 rounded-lg overflow-hidden flex items-center justify-center">
+                   {/* Fallback pattern since we don't have Static Maps API Key */}
+                   <div className="absolute inset-0 opacity-20" style={{backgroundImage: 'radial-gradient(circle, #000 1px, transparent 1px)', backgroundSize: '10px 10px'}}></div>
+                   <div className="z-10 bg-red-500 text-white p-2 rounded-full shadow-lg transform -translate-y-2">
+                       <MapPin size={24} fill="currentColor" />
+                   </div>
+                   <div className="absolute bottom-2 left-0 right-0 text-center">
+                        <span className="text-[10px] font-bold text-slate-500 bg-white/80 px-2 py-0.5 rounded-full shadow-sm">
+                            {lat.toFixed(4)}, {lng.toFixed(4)}
+                        </span>
+                   </div>
+              </div>
+              
+              <div className={`flex items-center justify-between px-1 pb-1`}>
+                  <div className="flex flex-col">
+                      <span className={`text-xs font-bold ${isMe ? 'text-white' : 'text-slate-700'}`}>Current Location</span>
+                      <span className={`text-[10px] ${isMe ? 'text-blue-100' : 'text-slate-400'}`}>Tap to view on maps</span>
+                  </div>
+                  <ExternalLink size={14} className={isMe ? 'text-white/70' : 'text-slate-400'} />
+              </div>
+          </a>
+      );
+  };
+
   return (
     <div id={`msg-${msg.id}`} className={`flex w-full mb-4 animate-in slide-in-from-bottom-2 duration-300 group ${isMe ? 'justify-end' : 'justify-start'}`}>
       <div className={`flex max-w-[90%] md:max-w-[70%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 relative`}>
@@ -351,9 +391,12 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
                 {/* Attachment Display */}
                 {renderAttachment()}
 
+                {/* Location Display */}
+                {renderLocation()}
+
                 {/* Text Display */}
                 {msg.text && (
-                    <div className={`leading-relaxed whitespace-pre-wrap break-words break-all ${msg.attachment ? 'mt-2 pt-2 border-t ' + (isMe ? 'border-white/20' : 'border-slate-100') : ''}`}>
+                    <div className={`leading-relaxed whitespace-pre-wrap break-words break-all ${(msg.attachment || msg.location) ? 'mt-2 pt-2 border-t ' + (isMe ? 'border-white/20' : 'border-slate-100') : ''}`}>
                         {renderContent(msg.text)}
                     </div>
                 )}
@@ -409,6 +452,14 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
              prevProps.msg.attachment?.name !== nextProps.msg.attachment?.name) {
              return false;
          }
+    }
+
+    // Check location changes
+    if (prevProps.msg.location !== nextProps.msg.location) {
+        if (prevProps.msg.location?.lat !== nextProps.msg.location?.lat ||
+            prevProps.msg.location?.lng !== nextProps.msg.location?.lng) {
+            return false;
+        }
     }
 
     // Check reactions
