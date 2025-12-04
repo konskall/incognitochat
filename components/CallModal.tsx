@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { collection, doc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, onSnapshot, addDoc, updateDoc, getDocs, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { Mic, MicOff, Video, VideoOff, PhoneOff, Users, Loader2, Phone } from 'lucide-react';
 
@@ -109,7 +109,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
         } else {
             // If no local media, we must explicitly ask to receive tracks
             // This ensures the other side sends us media even if we send none
-            if (pc.current.addTransceiver) {
+            if (pc.current?.addTransceiver) {
                 pc.current.addTransceiver('audio', { direction: 'recvonly' });
                 if (isVideoCall) pc.current.addTransceiver('video', { direction: 'recvonly' });
             }
