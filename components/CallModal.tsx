@@ -66,7 +66,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
                         video: { facingMode: 'user' }, 
                         audio: { echoCancellation: true, noiseSuppression: true } 
                     });
-                } catch (err: any) {
+                } catch (err: unknown) {
                     console.warn("Could not get video device, attempting audio only:", err);
                     // Fallback to audio only
                      localStreamInstance = await navigator.mediaDevices.getUserMedia({ 
@@ -83,7 +83,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
                 });
                 setIsCameraOn(false);
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
              // Attempt 3: No Media (Receive Only)
             console.warn("Could not get audio device either. Entering Receive-Only mode.", err);
             localStreamInstance = null;
@@ -130,7 +130,6 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
                  setStatus('connected');
              } else if (pc.current?.connectionState === 'disconnected' || pc.current?.connectionState === 'failed') {
                  setStatus('failed');
-                 // Optional: Auto-close on failure after a delay?
              }
         };
 
@@ -146,7 +145,14 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
           // Save ICE candidates to firestore
           pc.current.onicecandidate = (event) => {
             if (event.candidate) {
-               addDoc(offerCandidatesRef, event.candidate.toJSON());
+               const c = event.candidate;
+               // Safely construct object
+               const candidateObj = { 
+                   candidate: c.candidate, 
+                   sdpMid: c.sdpMid, 
+                   sdpMLineIndex: c.sdpMLineIndex 
+               };
+               addDoc(offerCandidatesRef, candidateObj);
             }
           };
 
@@ -179,7 +185,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
             const data = snapshot.data();
             if (!pc.current?.currentRemoteDescription && data?.answer) {
               const answerDescription = new RTCSessionDescription(data.answer);
-              pc.current.setRemoteDescription(answerDescription);
+              pc.current.setRemoteDescription(answerDescription).catch(e => console.error(e));
             }
           });
           unsubs.push(unsubAnswer);
@@ -188,7 +194,8 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
           const unsubCandidates = onSnapshot(answerCandidatesRef, (snapshot) => {
             snapshot.docChanges().forEach((change) => {
               if (change.type === 'added') {
-                const candidate = new RTCIceCandidate(change.doc.data());
+                const data = change.doc.data();
+                const candidate = new RTCIceCandidate(data as RTCIceCandidateInit);
                 pc.current?.addIceCandidate(candidate).catch(e => console.warn("Ice Candidate Error", e));
               }
             });
@@ -201,35 +208,44 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
 
           pc.current.onicecandidate = (event) => {
             if (event.candidate) {
-               addDoc(answerCandidatesRef, event.candidate.toJSON());
+               const c = event.candidate;
+               const candidateObj = { 
+                   candidate: c.candidate, 
+                   sdpMid: c.sdpMid, 
+                   sdpMLineIndex: c.sdpMLineIndex 
+               };
+               addDoc(answerCandidatesRef, candidateObj);
             }
           };
 
-          const unsubOffer = onSnapshot(callDocRef, async (snapshot) => {
-             // Check if call was ended remotely (doc deleted)
-             if (!snapshot.exists()) {
-                 onClose();
-                 return;
-             }
-
-             const data = snapshot.data();
-             // Check if we have an offer and haven't set remote desc yet
-             if (pc.current && !pc.current.currentRemoteDescription && data?.offer) {
-                 const offerDescription = new RTCSessionDescription(data.offer);
-                 await pc.current.setRemoteDescription(offerDescription);
-
-                 const answerDescription = await pc.current.createAnswer();
-                 await pc.current.setLocalDescription(answerDescription);
-
-                 const answer = {
-                     type: answerDescription.type,
-                     sdp: answerDescription.sdp,
-                     timestamp: serverTimestamp()
-                 };
-
-                 await updateDoc(callDocRef, { answer });
-                 setStatus('connected'); // Optimistic
-             }
+          const unsubOffer = onSnapshot(callDocRef, (snapshot) => {
+             // Wrap async logic in IIFE to keep onSnapshot synchronous
+             (async () => {
+                 // Check if call was ended remotely (doc deleted)
+                 if (!snapshot.exists()) {
+                     onClose();
+                     return;
+                 }
+    
+                 const data = snapshot.data();
+                 // Check if we have an offer and haven't set remote desc yet
+                 if (pc.current && !pc.current.currentRemoteDescription && data?.offer) {
+                     const offerDescription = new RTCSessionDescription(data.offer);
+                     await pc.current.setRemoteDescription(offerDescription);
+    
+                     const answerDescription = await pc.current.createAnswer();
+                     await pc.current.setLocalDescription(answerDescription);
+    
+                     const answer = {
+                         type: answerDescription.type,
+                         sdp: answerDescription.sdp,
+                         timestamp: serverTimestamp()
+                     };
+    
+                     await updateDoc(callDocRef, { answer });
+                     setStatus('connected'); // Optimistic
+                 }
+             })();
           });
           unsubs.push(unsubOffer);
 
@@ -237,7 +253,8 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
           const unsubCandidates = onSnapshot(offerCandidatesRef, (snapshot) => {
             snapshot.docChanges().forEach((change) => {
               if (change.type === 'added') {
-                const candidate = new RTCIceCandidate(change.doc.data());
+                const data = change.doc.data();
+                const candidate = new RTCIceCandidate(data as RTCIceCandidateInit);
                 pc.current?.addIceCandidate(candidate).catch(e => console.warn("Ice Candidate Error", e));
               }
             });
