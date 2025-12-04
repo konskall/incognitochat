@@ -25,6 +25,10 @@ export interface Message {
   avatarURL: string;
   createdAt: any; // Firebase Timestamp
   attachment?: Attachment;
+  location?: {
+    lat: number;
+    lng: number;
+  };
   isEdited?: boolean;
   reactions?: { [emoji: string]: string[] }; // Key: emoji char, Value: array of uids
   replyTo?: ReplyInfo | null;
