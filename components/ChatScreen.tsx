@@ -67,15 +67,22 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   // Theme effect
   useEffect(() => {
-    const metaThemeColor = document.querySelector("meta[name='theme-color']");
+    // Robustly find or create the meta tag to ensure browser UI updates
+    let metaThemeColor = document.querySelector("meta[name='theme-color']");
+    if (!metaThemeColor) {
+      metaThemeColor = document.createElement('meta');
+      metaThemeColor.setAttribute('name', 'theme-color');
+      document.head.appendChild(metaThemeColor);
+    }
+
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
-      // Match slate-900 (#0f172a) for chat screen
-      metaThemeColor?.setAttribute("content", "#0f172a");
+      // Match slate-900 (#0f172a) for Chat Screen
+      metaThemeColor.setAttribute("content", "#0f172a");
     } else {
       document.documentElement.classList.remove('dark');
-      // Match slate-100 (#f1f5f9) for chat screen
-      metaThemeColor?.setAttribute("content", "#f1f5f9");
+      // Match slate-100 (#f1f5f9) for Chat Screen
+      metaThemeColor.setAttribute("content", "#f1f5f9");
     }
   }, [isDarkMode]);
 
@@ -754,7 +761,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                  </div>
              </div>
         </div>
-        <div className="flex gap-1 sm:gap-2 flex-shrink-0">
+        <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center">
             {canVibrate && (
                 <button 
                     onClick={() => setVibrationEnabled(!vibrationEnabled)}
@@ -867,9 +874,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             </div>
          )}
 
-         <div className="relative flex flex-col w-full max-w-4xl mx-auto">
+         <div className="relative flex flex-col items-center w-full max-w-4xl mx-auto">
              {selectedFile && !editingMessageId && (
-               <div className="flex items-center gap-3 p-2 bg-blue-50 dark:bg-slate-800 border border-blue-100 dark:border-slate-700 rounded-xl w-fit animate-in slide-in-from-bottom-2 mb-2">
+               <div className="flex items-center gap-3 p-2 bg-blue-50 dark:bg-slate-800 border border-blue-100 dark:border-slate-700 rounded-xl w-fit animate-in slide-in-from-bottom-2 mb-2 self-start">
                   <div className="w-10 h-10 bg-blue-100 dark:bg-slate-700 rounded-lg flex items-center justify-center text-blue-500 dark:text-blue-400">
                     {selectedFile.type.startsWith('image/') ? <ImageIcon size={20}/> : <FileText size={20}/>}
                   </div>
@@ -920,7 +927,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                      <Smile size={22} />
                  </button>
 
-                 <div className="flex-1 relative min-w-0">
+                 <div className="flex-1 relative min-w-0 flex items-center">
                      <textarea
                         ref={textareaRef}
                         value={inputText}
@@ -928,8 +935,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                         onKeyDown={handleKeyDown}
                         rows={1}
                         placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
-                        className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-6 text-base"
-                        style={{ minHeight: '40px' }}
+                        className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-6 text-base min-h-[40px] block"
                      />
                  </div>
                  
