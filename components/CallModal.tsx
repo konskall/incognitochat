@@ -121,11 +121,14 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
               setRemoteStream(event.streams[0]);
               if (remoteVideoRef.current) {
                  remoteVideoRef.current.srcObject = event.streams[0];
+                 // Ensure video plays on iOS/Safari
+                 remoteVideoRef.current.play().catch(e => console.log("Auto-play blocked:", e));
               }
           }
         };
         
         rtc.onconnectionstatechange = () => {
+             console.log("Connection State:", rtc.connectionState);
              if (rtc.connectionState === 'connected') {
                  setStatus('connected');
              } else if (rtc.connectionState === 'disconnected' || rtc.connectionState === 'failed') {
@@ -134,15 +137,17 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
         };
 
         // --- ICE CANDIDATE QUEUE SYSTEM ---
-        // Prevents adding candidates before remote description is set
         const candidateQueue: RTCIceCandidate[] = [];
 
         const processCandidate = async (candidate: RTCIceCandidate) => {
+             // IMPORTANT: Check remoteDescription (standard property), not currentRemoteDescription
              if (rtc.remoteDescription) {
                  try {
                      await rtc.addIceCandidate(candidate);
                  } catch (e) {
                      console.warn("Error adding received ice candidate", e);
+                     // If it failed because remote description isn't ready (race condition despite check), re-queue
+                     candidateQueue.push(candidate);
                  }
              } else {
                  candidateQueue.push(candidate);
@@ -175,7 +180,6 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
           rtc.onicecandidate = (event) => {
             if (event.candidate) {
                const c = event.candidate;
-               // Safely construct object
                const candidateObj = { 
                    candidate: c.candidate, 
                    sdpMid: c.sdpMid, 
@@ -213,14 +217,15 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
 
             const data = snapshot.data();
             // Use local 'rtc' variable, not 'pc.current' to avoid TS18047
-            if (!rtc.currentRemoteDescription && data?.answer) {
+            // CHECK: !rtc.remoteDescription (Use the standard property)
+            if (!rtc.remoteDescription && data?.answer) {
               const answerDescription = new RTCSessionDescription(data.answer);
               rtc.setRemoteDescription(answerDescription)
                  .then(() => {
                      // Flush any queued candidates now that we have a remote desc
                      flushCandidateQueue();
                  })
-                 .catch(e => console.error(e));
+                 .catch(e => console.error("Error setting remote desc (host):", e));
             }
           });
           unsubs.push(unsubAnswer);
@@ -265,7 +270,8 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
                  const data = snapshot.data();
                  // Check if we have an offer and haven't set remote desc yet
                  // CRITICAL: Use local 'rtc' variable to avoid possibly null error TS18047
-                 if (!rtc.currentRemoteDescription && data?.offer) {
+                 // CHECK: !rtc.remoteDescription
+                 if (!rtc.remoteDescription && data?.offer) {
                      const offerDescription = new RTCSessionDescription(data.offer);
                      await rtc.setRemoteDescription(offerDescription);
                      
@@ -282,7 +288,6 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
                      };
     
                      await updateDoc(callDocRef, { answer });
-                     // Connection state listener will update status to 'connected'
                  }
              })();
           });
