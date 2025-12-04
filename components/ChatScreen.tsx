@@ -3,23 +3,17 @@ import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, s
 import { signInAnonymously } from 'firebase/auth';
 import { getToken } from 'firebase/messaging';
 import { db, auth, messaging } from '../services/firebase';
-import { ChatConfig, Message, User, Attachment, Presence } from '../types';
+import { ChatConfig, Message, User, Attachment, Presence, ActiveUser } from '../types';
 import { decodeMessage, encodeMessage } from '../utils/helpers';
 import MessageList from './MessageList';
 import EmojiPicker from './EmojiPicker';
 import CallModal from './CallModal';
-import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun, Video, Phone, Users, CheckSquare, Square } from 'lucide-react';
+import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun, Video, Phone, CheckSquare, Square } from 'lucide-react';
 import { initAudio } from '../utils/helpers';
 
 interface ChatScreenProps {
   config: ChatConfig;
   onExit: () => void;
-}
-
-interface ActiveUser {
-    uid: string;
-    username: string;
-    avatar: string;
 }
 
 // Reduced to 500KB to ensure Base64 overhead (~33%) + metadata fits within Firestore 1MB limit
@@ -1040,7 +1034,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                </div>
              )}
 
-             <div className="flex items-center gap-1.5 sm:gap-2 items-center justify-center w-full h-10">
+             <div className="flex items-center items-center justify-center w-full h-10 gap-2">
                  {showEmoji && <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmoji(false)} />}
                  
                  <input 
