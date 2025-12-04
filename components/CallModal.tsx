@@ -98,6 +98,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
 
         // 2. Create Peer Connection
         const rtc = new RTCPeerConnection(SERVERS);
+        // We assign to ref for cleanup, but use local 'rtc' variable for logic to satisfy TS strict checks
         pc.current = rtc;
 
         // Push tracks to PC if we have them
@@ -182,7 +183,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
             }
 
             const data = snapshot.data();
-            // Use local 'rtc' variable, not 'pc.current'
+            // Use local 'rtc' variable, not 'pc.current' to avoid TS18047
             if (!rtc.currentRemoteDescription && data?.answer) {
               const answerDescription = new RTCSessionDescription(data.answer);
               rtc.setRemoteDescription(answerDescription).catch(e => console.error(e));
@@ -229,7 +230,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
     
                  const data = snapshot.data();
                  // Check if we have an offer and haven't set remote desc yet
-                 // CRITICAL: Use local 'rtc' variable to avoid possibly null error
+                 // CRITICAL: Use local 'rtc' variable to avoid possibly null error TS18047
                  if (!rtc.currentRemoteDescription && data?.offer) {
                      const offerDescription = new RTCSessionDescription(data.offer);
                      await rtc.setRemoteDescription(offerDescription);
