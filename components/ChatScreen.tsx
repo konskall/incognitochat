@@ -548,10 +548,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
     navigator.geolocation.getCurrentPosition(async (position) => {
         try {
-            // FIX: Explicitly convert to number to ensure serialization works in all environments
             const locationData = {
-                lat: Number(position.coords.latitude),
-                lng: Number(position.coords.longitude)
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
             };
             
             await addDoc(collection(db, "chats", config.roomKey, "messages"), {
