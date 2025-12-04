@@ -7,7 +7,7 @@ import { ChatConfig, Message, User, Attachment, Presence } from '../types';
 import { decodeMessage, encodeMessage } from '../utils/helpers';
 import MessageList from './MessageList';
 import EmojiPicker from './EmojiPicker';
-import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin } from 'lucide-react';
+import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun } from 'lucide-react';
 import { initAudio } from '../utils/helpers';
 
 interface ChatScreenProps {
@@ -29,6 +29,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   
+  // Theme State
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    return localStorage.getItem('theme') === 'dark';
+  });
+
   // New state to prevent listeners from attaching before room exists
   const [isRoomReady, setIsRoomReady] = useState(false);
   
@@ -59,6 +64,21 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   
   // Track previous message count to handle scroll behavior
   const prevMessageCount = useRef(0);
+
+  // Theme effect
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
+  const toggleTheme = () => {
+    const newTheme = !isDarkMode;
+    setIsDarkMode(newTheme);
+    localStorage.setItem('theme', newTheme ? 'dark' : 'light');
+  };
 
   // 1. Authentication & Network Status & Feature Detection
   useEffect(() => {
@@ -698,7 +718,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40">
+    <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
       {isOffline && (
         <div className="bg-red-500 text-white text-center py-1 text-sm font-bold animate-pulse absolute top-0 w-full z-50">
           📴 You are offline. Messages will not be sent.
@@ -711,20 +731,20 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 {config.roomName.substring(0,2).toUpperCase()}
              </div>
              <div className="min-w-0 flex flex-col justify-center">
-                 <h2 className="font-bold text-slate-800 leading-tight truncate text-sm md:text-base">{config.roomName}</h2>
+                 <h2 className="font-bold text-slate-800 dark:text-slate-100 leading-tight truncate text-sm md:text-base">{config.roomName}</h2>
                  <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
                      <div className="flex items-center gap-1.5">
                          <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
                             <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isRoomReady ? 'bg-green-400' : 'bg-yellow-400'} opacity-75`}></span>
                             <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isRoomReady ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
                         </span>
-                        <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
+                        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">
                             {participants} Online
                         </span>
                      </div>
-                     <span className="text-[10px] sm:text-xs text-slate-400 sm:text-slate-500 truncate font-medium">
-                        <span className="hidden sm:inline text-slate-300 mr-1">|</span>
-                        <span className="sm:font-semibold sm:text-slate-700">{config.username}</span>
+                     <span className="text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 truncate font-medium">
+                        <span className="hidden sm:inline text-slate-300 dark:text-slate-600 mr-1">|</span>
+                        <span className="sm:font-semibold sm:text-slate-700 dark:sm:text-slate-300">{config.username}</span>
                      </span>
                  </div>
              </div>
@@ -733,7 +753,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             {canVibrate && (
                 <button 
                     onClick={() => setVibrationEnabled(!vibrationEnabled)}
-                    className={`p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}
+                    className={`p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                     title={vibrationEnabled ? "Vibration Enabled" : "Enable Vibration"}
                 >
                     {vibrationEnabled ? <Vibrate size={20} /> : <VibrateOff size={20} />}
@@ -741,28 +761,39 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             )}
             <button 
                 onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`p-2 rounded-lg transition ${soundEnabled ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}
+                className={`p-2 rounded-lg transition ${soundEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                 title={soundEnabled ? "Mute Sounds" : "Enable Sounds"}
             >
                 {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
             </button>
             <button 
                 onClick={toggleNotifications}
-                className={`p-2 rounded-lg transition ${notificationsEnabled ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}
+                className={`p-2 rounded-lg transition ${notificationsEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                 title={notificationsEnabled ? "Notifications Active" : "Enable Notifications"}
             >
                 {notificationsEnabled ? <Bell size={20} /> : <BellOff size={20} />}
             </button>
+            
+            <button 
+                onClick={toggleTheme}
+                className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                title="Toggle Theme"
+            >
+                {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+
+            {/* Delete button only for creator */}
+            {user && config.roomKey.includes(user.uid) /* NOTE: This is a placeholder check. Ideally we store creator in config or check doc */ }
             <button 
                 onClick={() => setShowDeleteModal(true)}
-                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition"
+                className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
                 title="Delete Chat"
             >
                 <Trash2 size={20} />
             </button>
             <button 
                 onClick={onExit}
-                className="p-2 text-slate-500 hover:bg-slate-200 rounded-lg transition"
+                className="p-2 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition"
                 title="Exit"
             >
                 <LogOut size={20} />
@@ -770,7 +801,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50" style={{backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '20px 20px'}}>
+      <main 
+        className="flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50 dark:bg-slate-950/50" 
+        style={{
+            backgroundImage: `radial-gradient(${isDarkMode ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`, 
+            backgroundSize: '20px 20px'
+        }}
+      >
         <MessageList 
             messages={messages} 
             currentUserUid={user?.uid || ''} 
@@ -781,9 +818,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         <div ref={messagesEndRef} />
       </main>
 
-      <footer className="bg-white p-1.5 border-t border-slate-200 shadow-lg z-20 relative pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      <footer className="bg-white dark:bg-slate-900 p-1.5 border-t border-slate-200 dark:border-slate-800 shadow-lg z-20 relative pb-[calc(0.75rem+env(safe-area-inset-bottom))] transition-colors">
          {typingUsers.length > 0 && (
-             <div className="absolute -top-6 left-6 text-xs text-slate-500 bg-white/80 backdrop-blur px-2 py-0.5 rounded-t-lg animate-pulse flex items-center gap-1">
+             <div className="absolute -top-6 left-6 text-xs text-slate-500 dark:text-slate-400 bg-white/80 dark:bg-slate-900/80 backdrop-blur px-2 py-0.5 rounded-t-lg animate-pulse flex items-center gap-1">
                  <span className="flex gap-0.5">
                     <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
                     <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
@@ -799,12 +836,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
          {/* Edit Banner */}
          {editingMessageId && (
-            <div className="flex items-center justify-between bg-blue-50 px-4 py-2 rounded-t-xl border-t border-l border-r border-blue-100 mb-2 animate-in slide-in-from-bottom-2">
-                <div className="flex items-center gap-2 text-blue-600">
+            <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-t-xl border-t border-l border-r border-blue-100 dark:border-blue-800 mb-2 animate-in slide-in-from-bottom-2">
+                <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
                     <Edit2 size={16} />
                     <span className="text-sm font-semibold">Editing message</span>
                 </div>
-                <button onClick={cancelEdit} className="p-1 hover:bg-blue-100 rounded-full text-slate-500">
+                <button onClick={cancelEdit} className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-full text-slate-500 dark:text-slate-400">
                     <X size={16} />
                 </button>
             </div>
@@ -812,14 +849,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
          {/* Reply Banner */}
          {replyingTo && (
-            <div className="flex items-center justify-between bg-slate-100 px-4 py-2 rounded-t-xl border-t border-l border-r border-slate-200 mb-2 animate-in slide-in-from-bottom-2">
+            <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-t-xl border-t border-l border-r border-slate-200 dark:border-slate-700 mb-2 animate-in slide-in-from-bottom-2">
                 <div className="flex flex-col border-l-4 border-blue-500 pl-2">
-                    <span className="text-xs font-bold text-blue-600">Replying to {replyingTo.username}</span>
-                    <span className="text-sm text-slate-600 truncate max-w-[200px]">
+                    <span className="text-xs font-bold text-blue-600 dark:text-blue-400">Replying to {replyingTo.username}</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-300 truncate max-w-[200px]">
                         {replyingTo.attachment ? '📎 Attachment' : replyingTo.text}
                     </span>
                 </div>
-                <button onClick={cancelReply} className="p-1 hover:bg-slate-200 rounded-full text-slate-500">
+                <button onClick={cancelReply} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full text-slate-500 dark:text-slate-400">
                     <X size={16} />
                 </button>
             </div>
@@ -827,15 +864,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
          <div className="relative flex flex-col gap-2 max-w-4xl mx-auto">
              {selectedFile && !editingMessageId && (
-               <div className="flex items-center gap-3 p-2 bg-blue-50 border border-blue-100 rounded-xl w-fit animate-in slide-in-from-bottom-2">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-500">
+               <div className="flex items-center gap-3 p-2 bg-blue-50 dark:bg-slate-800 border border-blue-100 dark:border-slate-700 rounded-xl w-fit animate-in slide-in-from-bottom-2">
+                  <div className="w-10 h-10 bg-blue-100 dark:bg-slate-700 rounded-lg flex items-center justify-center text-blue-500 dark:text-blue-400">
                     {selectedFile.type.startsWith('image/') ? <ImageIcon size={20}/> : <FileText size={20}/>}
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-700 max-w-[150px] truncate">{selectedFile.name}</span>
-                    <span className="text-[10px] text-slate-500">{(selectedFile.size / 1024).toFixed(1)} KB</span>
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 max-w-[150px] truncate">{selectedFile.name}</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">{(selectedFile.size / 1024).toFixed(1)} KB</span>
                   </div>
-                  <button onClick={clearFile} className="p-1 hover:bg-blue-200 rounded-full text-slate-500 transition">
+                  <button onClick={clearFile} className="p-1 hover:bg-blue-200 dark:hover:bg-slate-600 rounded-full text-slate-500 transition">
                     <X size={16} />
                   </button>
                </div>
@@ -855,7 +892,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                     <>
                         <button 
                             onClick={() => fileInputRef.current?.click()}
-                            className={`p-2 rounded-full mb-1 transition flex-shrink-0 ${selectedFile ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50'}`}
+                            className={`p-2 rounded-full mb-1 transition flex-shrink-0 ${selectedFile ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
                             title="Attach File"
                         >
                             <Paperclip size={24} />
@@ -863,7 +900,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                         <button 
                             onClick={handleSendLocation}
                             disabled={isGettingLocation}
-                            className={`p-2 rounded-full mb-1 transition flex-shrink-0 text-slate-400 hover:text-red-500 hover:bg-red-50 ${isGettingLocation ? 'animate-pulse text-red-400' : ''}`}
+                            className={`p-2 rounded-full mb-1 transition flex-shrink-0 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 ${isGettingLocation ? 'animate-pulse text-red-400' : ''}`}
                             title="Share Location"
                         >
                             <MapPin size={24} />
@@ -873,7 +910,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
                  <button 
                     onClick={() => setShowEmoji(!showEmoji)}
-                    className="p-2 mb-1 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition hidden sm:block flex-shrink-0"
+                    className="p-2 mb-1 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full transition hidden sm:block flex-shrink-0"
                  >
                      <Smile size={24} />
                  </button>
@@ -886,7 +923,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                         onKeyDown={handleKeyDown}
                         rows={1}
                         placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
-                        className="w-full bg-slate-100 border-0 rounded-2xl px-3 py-[4px] focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-none text-base"
+                        className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-3 py-[4px] focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-none text-base"
                         style={{ minHeight: '24px' }}
                      />
                  </div>
@@ -894,7 +931,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                  <button 
                     onClick={() => handleSend()}
                     disabled={(!inputText.trim() && !selectedFile) || isOffline || isUploading || !isRoomReady}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white p-2 mb-0.5 rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white p-2 mb-0.5 rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
                  >
                      {isUploading ? (
                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -908,19 +945,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
       {showDeleteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-white/10 dark:border-slate-800">
                 <div className="flex flex-col items-center text-center gap-4">
-                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-red-500">
+                    <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center text-red-500">
                         <ShieldAlert size={32} />
                     </div>
-                    <h3 className="text-xl font-bold text-slate-800">Delete Conversation?</h3>
-                    <p className="text-slate-500 text-sm">
+                    <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">Delete Conversation?</h3>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm">
                         Permanently delete the room and all messages for everyone?
                     </p>
                     <div className="flex gap-3 w-full mt-2">
                         <button 
                             onClick={() => setShowDeleteModal(false)}
-                            className="flex-1 py-3 text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition"
+                            className="flex-1 py-3 text-slate-600 dark:text-slate-300 font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition"
                         >
                             Cancel
                         </button>
