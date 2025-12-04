@@ -64,6 +64,7 @@
 
     <script>
       tailwind.config = {
+        darkMode: 'class',
         theme: {
           extend: {
             fontFamily: {
@@ -112,8 +113,14 @@
         background: #cbd5e1;
         border-radius: 3px;
       }
+      .dark ::-webkit-scrollbar-thumb {
+        background: #475569;
+      }
       ::-webkit-scrollbar-thumb:hover {
         background: #94a3b8;
+      }
+      .dark ::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
       }
       
       .glass-panel {
@@ -121,6 +128,11 @@
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
         border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      }
+
+      .dark .glass-panel {
+        background: rgba(15, 23, 42, 0.90);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
       }
     </style>
 <script type="importmap">
@@ -137,7 +149,7 @@
 }
 </script>
 </head>
-  <body class="bg-slate-50 text-slate-900 antialiased selection:bg-primary-200 selection:text-primary-900">
+  <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased selection:bg-primary-200 selection:text-primary-900">
     <div id="root" class="w-full"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
