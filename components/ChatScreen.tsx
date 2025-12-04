@@ -7,7 +7,7 @@ import { ChatConfig, Message, User, Attachment, Presence } from '../types';
 import { decodeMessage, encodeMessage } from '../utils/helpers';
 import MessageList from './MessageList';
 import EmojiPicker from './EmojiPicker';
-import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff } from 'lucide-react';
+import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin } from 'lucide-react';
 import { initAudio } from '../utils/helpers';
 
 interface ChatScreenProps {
@@ -45,6 +45,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   // File handling state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -283,6 +285,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                    avatarURL: data.avatarURL,
                    createdAt: data.createdAt,
                    attachment: data.attachment,
+                   location: data.location,
                    reactions: data.reactions,
                    replyTo: data.replyTo
                };
@@ -300,6 +303,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           avatarURL: data.avatarURL,
           createdAt: data.createdAt,
           attachment: data.attachment,
+          location: data.location,
           isEdited: data.isEdited,
           reactions: data.reactions || {},
           replyTo: data.replyTo
@@ -330,7 +334,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           // Local Notification Logic
           if (document.hidden && notificationsEnabled) {
              const title = `New message from ${lastMsg.username}`;
-             const body = lastMsg.attachment ? `Sent a file: ${lastMsg.attachment.name}` : lastMsg.text;
+             let body = lastMsg.text;
+             if (lastMsg.attachment) body = `Sent a file: ${lastMsg.attachment.name}`;
+             if (lastMsg.location) body = `Shared a location`;
+
              try {
                 new Notification(title, {
                     body: body,
@@ -510,6 +517,52 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const cancelReply = useCallback(() => {
       setReplyingTo(null);
   }, []);
+
+  const handleSendLocation = async () => {
+    if (!navigator.geolocation || !user || !isRoomReady || isOffline) {
+        if (!navigator.geolocation) alert("Geolocation is not supported by your browser.");
+        return;
+    }
+
+    setIsGettingLocation(true);
+
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        try {
+            const locationData = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+            };
+            
+            await addDoc(collection(db, "chats", config.roomKey, "messages"), {
+                uid: user.uid,
+                username: config.username,
+                avatarURL: config.avatarURL,
+                text: encodeMessage("📍 Shared a location"),
+                createdAt: serverTimestamp(),
+                reactions: {},
+                location: locationData,
+                replyTo: replyingTo ? {
+                    id: replyingTo.id,
+                    username: replyingTo.username,
+                    text: replyingTo.text || 'Shared a content',
+                    isAttachment: !!replyingTo.attachment
+                } : null
+            });
+            
+            // Clear states
+            setReplyingTo(null);
+        } catch (error) {
+            console.error("Error sending location:", error);
+            alert("Failed to send location.");
+        } finally {
+            setIsGettingLocation(false);
+        }
+    }, (error) => {
+        console.error("Geolocation error:", error);
+        alert("Unable to retrieve your location. Please check permissions.");
+        setIsGettingLocation(false);
+    }, { enableHighAccuracy: true });
+  };
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -799,13 +852,23 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                     accept="image/*,.pdf,.doc,.docx,.txt"
                  />
                  {!editingMessageId && (
-                    <button 
-                        onClick={() => fileInputRef.current?.click()}
-                        className={`p-2 rounded-full mb-1 transition flex-shrink-0 ${selectedFile ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50'}`}
-                        title="Attach File"
-                    >
-                        <Paperclip size={24} />
-                    </button>
+                    <>
+                        <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className={`p-2 rounded-full mb-1 transition flex-shrink-0 ${selectedFile ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50'}`}
+                            title="Attach File"
+                        >
+                            <Paperclip size={24} />
+                        </button>
+                        <button 
+                            onClick={handleSendLocation}
+                            disabled={isGettingLocation}
+                            className={`p-2 rounded-full mb-1 transition flex-shrink-0 text-slate-400 hover:text-red-500 hover:bg-red-50 ${isGettingLocation ? 'animate-pulse text-red-400' : ''}`}
+                            title="Share Location"
+                        >
+                            <MapPin size={24} />
+                        </button>
+                    </>
                  )}
 
                  <button 
