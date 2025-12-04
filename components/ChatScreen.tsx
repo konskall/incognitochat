@@ -606,7 +606,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     
     // Reset height immediately to min-height to prevent jitter
     if (textareaRef.current) {
-        textareaRef.current.style.height = '24px';
+        textareaRef.current.style.height = '40px';
     }
 
     try {
@@ -862,9 +862,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             </div>
          )}
 
-         <div className="relative flex flex-col gap-2 max-w-4xl mx-auto">
+         <div className="relative flex flex-col max-w-4xl mx-auto">
              {selectedFile && !editingMessageId && (
-               <div className="flex items-center gap-3 p-2 bg-blue-50 dark:bg-slate-800 border border-blue-100 dark:border-slate-700 rounded-xl w-fit animate-in slide-in-from-bottom-2">
+               <div className="flex items-center gap-3 p-2 bg-blue-50 dark:bg-slate-800 border border-blue-100 dark:border-slate-700 rounded-xl w-fit animate-in slide-in-from-bottom-2 mb-2">
                   <div className="w-10 h-10 bg-blue-100 dark:bg-slate-700 rounded-lg flex items-center justify-center text-blue-500 dark:text-blue-400">
                     {selectedFile.type.startsWith('image/') ? <ImageIcon size={20}/> : <FileText size={20}/>}
                   </div>
@@ -892,27 +892,27 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                     <>
                         <button 
                             onClick={() => fileInputRef.current?.click()}
-                            className={`p-2 rounded-full mb-1 transition flex-shrink-0 ${selectedFile ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
+                            className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${selectedFile ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
                             title="Attach File"
                         >
-                            <Paperclip size={24} />
+                            <Paperclip size={22} />
                         </button>
                         <button 
                             onClick={handleSendLocation}
                             disabled={isGettingLocation}
-                            className={`p-2 rounded-full mb-1 transition flex-shrink-0 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 ${isGettingLocation ? 'animate-pulse text-red-400' : ''}`}
+                            className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${isGettingLocation ? 'animate-pulse text-red-400' : 'text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
                             title="Share Location"
                         >
-                            <MapPin size={24} />
+                            <MapPin size={22} />
                         </button>
                     </>
                  )}
 
                  <button 
                     onClick={() => setShowEmoji(!showEmoji)}
-                    className="p-2 mb-1 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full transition flex-shrink-0 block"
+                    className="w-10 h-10 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full flex items-center justify-center transition flex-shrink-0"
                  >
-                     <Smile size={24} />
+                     <Smile size={22} />
                  </button>
 
                  <div className="flex-1 relative min-w-0">
@@ -923,20 +923,20 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                         onKeyDown={handleKeyDown}
                         rows={1}
                         placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
-                        className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-3 py-[4px] focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-none text-base"
-                        style={{ minHeight: '24px' }}
+                        className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-normal text-base"
+                        style={{ minHeight: '40px' }}
                      />
                  </div>
                  
                  <button 
                     onClick={() => handleSend()}
                     disabled={(!inputText.trim() && !selectedFile) || isOffline || isUploading || !isRoomReady}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white p-2 mb-0.5 rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
+                    className="w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
                  >
                      {isUploading ? (
                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                      ) : (
-                         <Send size={18} />
+                         <Send size={20} className="ml-0.5" />
                      )}
                  </button>
              </div>
