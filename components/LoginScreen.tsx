@@ -34,10 +34,15 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
   ];
 
   useEffect(() => {
+    const metaThemeColor = document.querySelector("meta[name='theme-color']");
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
+      // Match slate-950 (#020617)
+      metaThemeColor?.setAttribute("content", "#020617");
     } else {
       document.documentElement.classList.remove('dark');
+      // Match slate-50 (#f8fafc)
+      metaThemeColor?.setAttribute("content", "#f8fafc");
     }
   }, [isDarkMode]);
 
@@ -258,7 +263,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                     <p className="flex gap-2"><span className="text-blue-500">👤</span> <strong>Username:</strong> Your display name.</p>
                     <p className="flex gap-2"><span className="text-blue-500">🔐</span> <strong>PIN:</strong> 4+ chars key.</p>
                     <p className="flex gap-2"><span className="text-blue-500">🏠</span> <strong>Room:</strong> 3+ Latin chars.</p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 italic">Share the Room Name and PIN to invite others.</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 italic">Share the Room Name and invite others.</p>
                 </div>
             )}
         </div>
