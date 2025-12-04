@@ -59,27 +59,27 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
             href={url} 
             target="_blank" 
             rel="noopener noreferrer" 
-            className="flex items-stretch mt-2 bg-white/95 border border-black/10 rounded-lg overflow-hidden hover:bg-blue-50 transition-colors w-[260px] sm:w-[320px] md:w-[360px] max-w-full min-h-[80px] shadow-sm text-slate-800 no-underline group/card"
+            className="flex items-stretch mt-2 bg-white/95 dark:bg-slate-800/95 border border-black/10 dark:border-white/10 rounded-lg overflow-hidden hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors w-[260px] sm:w-[320px] md:w-[360px] max-w-full min-h-[80px] shadow-sm text-slate-800 dark:text-slate-100 no-underline group/card"
         >
             {/* Image Section - Fixed width on left, covers height */}
             {data.image?.url ? (
                 <div 
-                    className="w-24 flex-shrink-0 bg-cover bg-center bg-no-repeat bg-slate-100 border-r border-slate-100" 
+                    className="w-24 flex-shrink-0 bg-cover bg-center bg-no-repeat bg-slate-100 dark:bg-slate-700 border-r border-slate-100 dark:border-slate-700" 
                     style={{backgroundImage: `url(${data.image.url})`}} 
                 />
             ) : (
-                <div className="w-20 flex-shrink-0 flex items-center justify-center bg-slate-100 text-slate-400 border-r border-slate-100">
+                <div className="w-20 flex-shrink-0 flex items-center justify-center bg-slate-100 dark:bg-slate-700 text-slate-400 border-r border-slate-100 dark:border-slate-700">
                     <ExternalLink size={24} />
                 </div>
             )}
             
             {/* Content Section */}
             <div className="flex-1 p-2.5 flex flex-col justify-center min-w-0">
-                <h3 className="font-bold text-xs truncate leading-tight group-hover/card:text-blue-600 transition-colors">
+                <h3 className="font-bold text-xs truncate leading-tight group-hover/card:text-blue-600 dark:group-hover/card:text-blue-400 transition-colors">
                     {data.title}
                 </h3>
                 {data.description && (
-                    <p className="text-[11px] text-slate-500 line-clamp-2 mt-1 leading-snug">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-1 leading-snug">
                         {data.description}
                     </p>
                 )}
@@ -220,7 +220,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
                         src={url} 
                         alt={name} 
                         loading="lazy"
-                        className="max-w-full rounded-lg shadow-sm border border-white/10 max-h-[300px] w-auto object-contain bg-black/5" 
+                        className="max-w-full rounded-lg shadow-sm border border-white/10 max-h-[300px] w-auto object-contain bg-black/5 dark:bg-white/5" 
                     />
                 </a>
             </div>
@@ -234,22 +234,22 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
             className={`flex items-center gap-3 p-3 mt-2 rounded-xl border transition-all group/file
             ${isMe 
                 ? 'bg-white/10 border-white/20 hover:bg-white/20 text-white' 
-                : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700'}`}
+                : 'bg-slate-50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'}`}
         >
             <div className={`p-2.5 rounded-lg flex-shrink-0 transition-colors
-                ${isMe ? 'bg-white/20 text-blue-100' : 'bg-blue-100 text-blue-600'}`}>
+                ${isMe ? 'bg-white/20 text-blue-100' : 'bg-blue-100 dark:bg-slate-600 text-blue-600 dark:text-blue-300'}`}>
                 {getFileIcon(type)}
             </div>
             
             <div className="flex flex-col flex-1 min-w-0">
                 <span className="text-sm font-semibold truncate leading-tight">{name}</span>
-                <span className={`text-[10px] uppercase tracking-wider mt-0.5 ${isMe ? 'text-blue-100/70' : 'text-slate-400'}`}>
+                <span className={`text-[10px] uppercase tracking-wider mt-0.5 ${isMe ? 'text-blue-100/70' : 'text-slate-400 dark:text-slate-400'}`}>
                     {sizeKB} KB • {type.split('/')[1]?.split(';')[0].toUpperCase() || 'FILE'}
                 </span>
             </div>
             
             <div className={`p-1.5 rounded-full transition-opacity opacity-70 group-hover/file:opacity-100
-                ${isMe ? 'hover:bg-white/20' : 'hover:bg-slate-200'}`}>
+                ${isMe ? 'hover:bg-white/20' : 'hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
                 <Download size={18} />
             </div>
         </a>
@@ -270,16 +270,16 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
             className={`flex flex-col gap-2 p-1.5 rounded-xl border mt-2 transition-all group/location hover:shadow-md
                 ${isMe 
                     ? 'bg-white/10 border-white/20 hover:bg-white/20' 
-                    : 'bg-slate-50 border-slate-200 hover:bg-white'}`}
+                    : 'bg-slate-50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-700'}`}
           >
-              <div className="relative w-[200px] h-[100px] sm:w-[240px] sm:h-[120px] bg-slate-200 rounded-lg overflow-hidden flex items-center justify-center">
+              <div className="relative w-[200px] h-[100px] sm:w-[240px] sm:h-[120px] bg-slate-200 dark:bg-slate-700 rounded-lg overflow-hidden flex items-center justify-center">
                    {/* Fallback pattern since we don't have Static Maps API Key */}
                    <div className="absolute inset-0 opacity-20" style={{backgroundImage: 'radial-gradient(circle, #000 1px, transparent 1px)', backgroundSize: '10px 10px'}}></div>
                    <div className="z-10 bg-red-500 text-white p-2 rounded-full shadow-lg transform -translate-y-2">
                        <MapPin size={24} fill="currentColor" />
                    </div>
                    <div className="absolute bottom-2 left-0 right-0 text-center">
-                        <span className="text-[10px] font-bold text-slate-500 bg-white/80 px-2 py-0.5 rounded-full shadow-sm">
+                        <span className="text-[10px] font-bold text-slate-500 bg-white/80 dark:bg-slate-900/80 dark:text-slate-300 px-2 py-0.5 rounded-full shadow-sm">
                             {lat.toFixed(4)}, {lng.toFixed(4)}
                         </span>
                    </div>
@@ -287,7 +287,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
               
               <div className={`flex items-center justify-between px-1 pb-1`}>
                   <div className="flex flex-col">
-                      <span className={`text-xs font-bold ${isMe ? 'text-white' : 'text-slate-700'}`}>Current Location</span>
+                      <span className={`text-xs font-bold ${isMe ? 'text-white' : 'text-slate-700 dark:text-slate-200'}`}>Current Location</span>
                       <span className={`text-[10px] ${isMe ? 'text-blue-100' : 'text-slate-400'}`}>Tap to view on maps</span>
                   </div>
                   <ExternalLink size={14} className={isMe ? 'text-white/70' : 'text-slate-400'} />
@@ -305,7 +305,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
             src={msg.avatarURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMe ? '3b82f6' : '64748b'}&color=fff&rounded=true`}
             alt={msg.username}
             loading="lazy"
-            className="w-8 h-8 rounded-full shadow-sm object-cover border-2 border-white select-none bg-slate-200"
+            className="w-8 h-8 rounded-full shadow-sm object-cover border-2 border-white dark:border-slate-700 select-none bg-slate-200 dark:bg-slate-700"
         />
 
         {/* Vertical Actions Stack (Reply, React, Edit) */}
@@ -337,12 +337,12 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
                  
                  {/* Reaction Popover */}
                  {showReactions && (
-                    <div className={`absolute bottom-0 ${isMe ? 'right-8' : 'left-8'} flex gap-1 bg-white p-1.5 rounded-full shadow-xl border border-slate-100 z-50 animate-in zoom-in-95 duration-200 w-max`}>
+                    <div className={`absolute bottom-0 ${isMe ? 'right-8' : 'left-8'} flex gap-1 bg-white dark:bg-slate-800 p-1.5 rounded-full shadow-xl border border-slate-100 dark:border-slate-700 z-50 animate-in zoom-in-95 duration-200 w-max`}>
                         {QUICK_REACTIONS.map(emoji => (
                             <button
                                 key={emoji}
                                 onClick={() => { onReact(msg, emoji); setShowReactions(false); }}
-                                className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 rounded-full transition hover:scale-125"
+                                className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition hover:scale-125"
                             >
                                 {emoji}
                             </button>
@@ -368,7 +368,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
                 relative px-4 py-2.5 rounded-2xl shadow-sm text-sm md:text-base min-w-0 transition-all
                 ${isMe 
                     ? 'bg-blue-600 text-white rounded-br-none shadow-blue-500/20' 
-                    : 'bg-white text-slate-800 rounded-bl-none shadow-slate-200 border border-slate-100'}
+                    : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-bl-none shadow-slate-200 dark:shadow-none border border-slate-100 dark:border-slate-700'}
             `}>
                 {!isMe && <p className="text-[10px] font-bold text-slate-400 mb-0.5 tracking-wide select-none">{msg.username}</p>}
                 
@@ -377,12 +377,12 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
                     <div 
                         onClick={() => scrollToMessage(msg.replyTo!.id)}
                         className={`mb-2 p-2 rounded cursor-pointer opacity-90 hover:opacity-100 transition border-l-[3px]
-                            ${isMe ? 'bg-black/10 border-white/40' : 'bg-slate-100 border-blue-400'}`}
+                            ${isMe ? 'bg-black/10 border-white/40' : 'bg-slate-100 dark:bg-slate-700 border-blue-400'}`}
                     >
-                        <span className={`text-xs font-bold block mb-0.5 ${isMe ? 'text-blue-100' : 'text-blue-600'}`}>
+                        <span className={`text-xs font-bold block mb-0.5 ${isMe ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'}`}>
                             {msg.replyTo.username}
                         </span>
-                        <p className={`text-xs truncate max-w-[200px] opacity-80 ${isMe ? 'text-white' : 'text-slate-600'}`}>
+                        <p className={`text-xs truncate max-w-[200px] opacity-80 ${isMe ? 'text-white' : 'text-slate-600 dark:text-slate-300'}`}>
                             {msg.replyTo.isAttachment ? '📎 Attachment' : msg.replyTo.text}
                         </p>
                     </div>
@@ -396,13 +396,13 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
 
                 {/* Text Display */}
                 {msg.text && (
-                    <div className={`leading-relaxed whitespace-pre-wrap break-words break-all ${(msg.attachment || msg.location) ? 'mt-2 pt-2 border-t ' + (isMe ? 'border-white/20' : 'border-slate-100') : ''}`}>
+                    <div className={`leading-relaxed whitespace-pre-wrap break-words break-all ${(msg.attachment || msg.location) ? 'mt-2 pt-2 border-t ' + (isMe ? 'border-white/20' : 'border-slate-100 dark:border-slate-700') : ''}`}>
                         {renderContent(msg.text)}
                     </div>
                 )}
 
                 {/* Timestamp & Edit Indicator */}
-                <div className={`flex items-center justify-end gap-1 mt-1 select-none ${isMe ? 'text-blue-200' : 'text-slate-400'}`}>
+                <div className={`flex items-center justify-end gap-1 mt-1 select-none ${isMe ? 'text-blue-200' : 'text-slate-400 dark:text-slate-500'}`}>
                     {msg.isEdited && <span className="text-[9px] italic opacity-80">(edited)</span>}
                     <span className="text-[10px] font-medium">{timeString}</span>
                 </div>
@@ -421,12 +421,12 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
                                 className={`
                                     flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs shadow-sm border transition-all hover:scale-105
                                     ${iReacted 
-                                        ? 'bg-blue-100 border-blue-200 text-slate-800' 
-                                        : 'bg-white border-slate-200 text-slate-600'}
+                                        ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-slate-800 dark:text-blue-100' 
+                                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'}
                                 `}
                             >
                                 <span>{emoji}</span>
-                                <span className={`font-semibold text-[10px] ${iReacted ? 'text-blue-600' : 'text-slate-500'}`}>{uids.length}</span>
+                                <span className={`font-semibold text-[10px] ${iReacted ? 'text-blue-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>{uids.length}</span>
                             </button>
                         );
                     })}
@@ -494,7 +494,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
   return (
     <div className="flex flex-col justify-end min-h-full pb-2">
       {messages.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-64 text-slate-400 opacity-60">
+        <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60">
             <p>No messages yet.</p>
             <p className="text-xs">Say hello! 👋</p>
         </div>
