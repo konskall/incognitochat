@@ -97,29 +97,25 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
         }
 
         // 2. Create Peer Connection
-        pc.current = new RTCPeerConnection(SERVERS);
+        const rtc = new RTCPeerConnection(SERVERS);
+        pc.current = rtc;
 
         // Push tracks to PC if we have them
         if (localStreamInstance) {
             localStreamInstance.getTracks().forEach((track) => {
-              if (pc.current && localStreamInstance) {
-                  pc.current.addTrack(track, localStreamInstance);
-              }
+              rtc.addTrack(track, localStreamInstance!);
             });
         } else {
             // If no local media, we must explicitly ask to receive tracks
             // This ensures the other side sends us media even if we send none
-            const rtc = pc.current;
-            if (rtc) {
-                rtc.addTransceiver('audio', { direction: 'recvonly' });
-                if (isVideoCall) {
-                    rtc.addTransceiver('video', { direction: 'recvonly' });
-                }
+            rtc.addTransceiver('audio', { direction: 'recvonly' });
+            if (isVideoCall) {
+                rtc.addTransceiver('video', { direction: 'recvonly' });
             }
         }
 
         // Pull remote tracks
-        pc.current.ontrack = (event) => {
+        rtc.ontrack = (event) => {
           if (event.streams && event.streams[0]) {
               setRemoteStream(event.streams[0]);
               if (remoteVideoRef.current) {
@@ -128,10 +124,10 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
           }
         };
         
-        pc.current.onconnectionstatechange = () => {
-             if (pc.current?.connectionState === 'connected') {
+        rtc.onconnectionstatechange = () => {
+             if (rtc.connectionState === 'connected') {
                  setStatus('connected');
-             } else if (pc.current?.connectionState === 'disconnected' || pc.current?.connectionState === 'failed') {
+             } else if (rtc.connectionState === 'disconnected' || rtc.connectionState === 'failed') {
                  setStatus('failed');
              }
         };
@@ -146,7 +142,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
           // --- HOST LOGIC (Caller) ---
           
           // Save ICE candidates to firestore
-          pc.current.onicecandidate = (event) => {
+          rtc.onicecandidate = (event) => {
             if (event.candidate) {
                const c = event.candidate;
                // Safely construct object
@@ -160,8 +156,8 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
           };
 
           // Create Offer
-          const offerDescription = await pc.current.createOffer();
-          await pc.current.setLocalDescription(offerDescription);
+          const offerDescription = await rtc.createOffer();
+          await rtc.setLocalDescription(offerDescription);
 
           const offer = {
             sdp: offerDescription.sdp,
@@ -186,9 +182,9 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
             }
 
             const data = snapshot.data();
-            if (!pc.current?.currentRemoteDescription && data?.answer) {
+            if (!rtc.currentRemoteDescription && data?.answer) {
               const answerDescription = new RTCSessionDescription(data.answer);
-              pc.current.setRemoteDescription(answerDescription).catch(e => console.error(e));
+              rtc.setRemoteDescription(answerDescription).catch(e => console.error(e));
             }
           });
           unsubs.push(unsubAnswer);
@@ -199,7 +195,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
               if (change.type === 'added') {
                 const data = change.doc.data();
                 const candidate = new RTCIceCandidate(data as RTCIceCandidateInit);
-                pc.current?.addIceCandidate(candidate).catch(e => console.warn("Ice Candidate Error", e));
+                rtc.addIceCandidate(candidate).catch(e => console.warn("Ice Candidate Error", e));
               }
             });
           });
@@ -209,7 +205,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
           // --- JOINER LOGIC (Callee) ---
           setStatus('initializing');
 
-          pc.current.onicecandidate = (event) => {
+          rtc.onicecandidate = (event) => {
             if (event.candidate) {
                const c = event.candidate;
                const candidateObj = { 
@@ -232,12 +228,12 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
     
                  const data = snapshot.data();
                  // Check if we have an offer and haven't set remote desc yet
-                 if (pc.current && !pc.current.currentRemoteDescription && data?.offer) {
+                 if (!rtc.currentRemoteDescription && data?.offer) {
                      const offerDescription = new RTCSessionDescription(data.offer);
-                     await pc.current.setRemoteDescription(offerDescription);
+                     await rtc.setRemoteDescription(offerDescription);
     
-                     const answerDescription = await pc.current.createAnswer();
-                     await pc.current.setLocalDescription(answerDescription);
+                     const answerDescription = await rtc.createAnswer();
+                     await rtc.setLocalDescription(answerDescription);
     
                      const answer = {
                          type: answerDescription.type,
@@ -258,7 +254,7 @@ const CallModal: React.FC<CallModalProps> = ({ roomKey, currentUserUid, isHost, 
               if (change.type === 'added') {
                 const data = change.doc.data();
                 const candidate = new RTCIceCandidate(data as RTCIceCandidateInit);
-                pc.current?.addIceCandidate(candidate).catch(e => console.warn("Ice Candidate Error", e));
+                rtc.addIceCandidate(candidate).catch(e => console.warn("Ice Candidate Error", e));
               }
             });
           });
