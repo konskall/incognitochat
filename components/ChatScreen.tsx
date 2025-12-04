@@ -910,7 +910,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
                  <button 
                     onClick={() => setShowEmoji(!showEmoji)}
-                    className="p-2 mb-1 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full transition hidden sm:block flex-shrink-0"
+                    className="p-2 mb-1 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full transition flex-shrink-0 block"
                  >
                      <Smile size={24} />
                  </button>
