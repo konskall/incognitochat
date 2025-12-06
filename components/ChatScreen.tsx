@@ -138,7 +138,28 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     };
   }, []);
 
-  // 1.5 Initialize Room Document and get Creator
+  // 1.1 Unlock Audio on First Interaction (Critical for Desktop Autoplay Policy)
+  useEffect(() => {
+      const unlockAudioContext = () => {
+          initAudio();
+          // Remove listeners once triggered
+          document.removeEventListener('click', unlockAudioContext);
+          document.removeEventListener('keydown', unlockAudioContext);
+          document.removeEventListener('touchstart', unlockAudioContext);
+      };
+
+      document.addEventListener('click', unlockAudioContext);
+      document.addEventListener('keydown', unlockAudioContext);
+      document.addEventListener('touchstart', unlockAudioContext);
+
+      return () => {
+          document.removeEventListener('click', unlockAudioContext);
+          document.removeEventListener('keydown', unlockAudioContext);
+          document.removeEventListener('touchstart', unlockAudioContext);
+      };
+  }, []);
+
+  // 1.5 Initialize Room Document
   useEffect(() => {
     const checkAndCreateRoom = async () => {
       if (!user || !config.roomKey) return;
@@ -149,13 +170,23 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         const roomDoc = await getDoc(roomRef);
         
         if (roomDoc.exists()) {
-           // Room exists, just update timestamp and get creator
+           // Room exists
            const data = roomDoc.data();
-           setRoomCreatorId(data.createdBy || null);
            
-           await updateDoc(roomRef, {
-             lastActive: serverTimestamp()
-           });
+           // Legacy support: If no creator, set current user as creator
+           let creatorId = data.createdBy;
+           if (!creatorId) {
+               creatorId = user.uid;
+               await updateDoc(roomRef, {
+                   createdBy: creatorId,
+                   lastActive: serverTimestamp()
+               });
+           } else {
+               await updateDoc(roomRef, {
+                   lastActive: serverTimestamp()
+               });
+           }
+           setRoomCreatorId(creatorId);
         } else {
            // Room doesn't exist, create it
            await setDoc(roomRef, {
