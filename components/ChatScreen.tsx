@@ -7,7 +7,8 @@ import { ChatConfig, Message, User, Attachment, Presence } from '../types';
 import { decodeMessage, encodeMessage } from '../utils/helpers';
 import MessageList from './MessageList';
 import EmojiPicker from './EmojiPicker';
-import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun } from 'lucide-react';
+import CallManager from './CallManager';
+import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun, Users } from 'lucide-react';
 import { initAudio } from '../utils/helpers';
 
 interface ChatScreenProps {
@@ -22,12 +23,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
-  const [participants, setParticipants] = useState(0);
+  const [participants, setParticipants] = useState<Presence[]>([]); // Changed to array of Presence objects
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [showEmoji, setShowEmoji] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [showParticipantsList, setShowParticipantsList] = useState(false);
   
   // Theme State
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -271,15 +273,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
      const q = collection(db, "chats", config.roomKey, "presence");
      const unsubscribe = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
-         setParticipants(snapshot.size);
          const typers: string[] = [];
+         const currentUsers: Presence[] = [];
+         
          snapshot.forEach(doc => {
              const data = doc.data() as Presence;
+             currentUsers.push(data);
+             
              // Check if user is actively typing and status is active
              if (data.uid !== user.uid && data.isTyping && data.status === 'active') {
                  typers.push(data.username);
              }
          });
+         setParticipants(currentUsers);
          setTypingUsers(typers);
      }, (error) => {
          console.log("Presence listener warning:", error.message);
@@ -707,7 +713,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         await Promise.allSettled([
             deleteCollection("presence"),
             deleteCollection("messages"),
-            deleteCollection("fcm_tokens")
+            deleteCollection("fcm_tokens"),
+            deleteCollection("calls") // Also delete calls
         ]);
 
         try {
@@ -737,6 +744,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         </div>
       )}
 
+      {/* Call Manager handles the entire lifecycle of WebRTC calls */}
+      {user && isRoomReady && (
+          <CallManager 
+            user={user}
+            config={config}
+            users={participants}
+            showParticipants={showParticipantsList}
+            onCloseParticipants={() => setShowParticipantsList(false)}
+          />
+      )}
+
       <header className="glass-panel px-3 py-3 flex items-center justify-between z-10 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
         <div className="flex items-center gap-3 overflow-hidden">
              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
@@ -751,7 +769,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                             <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isRoomReady ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
                         </span>
                         <span className="text-xs text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">
-                            {participants} Online
+                            {participants.length} Online
                         </span>
                      </div>
                      <span className="text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 truncate font-medium">
@@ -762,10 +780,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              </div>
         </div>
         <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center">
+            {/* Participants Button */}
+            <button 
+                onClick={() => setShowParticipantsList(true)}
+                className={`p-2 rounded-lg transition ${showParticipantsList ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                title="View Participants & Call"
+            >
+                <Users size={20} />
+            </button>
+
             {canVibrate && (
                 <button 
                     onClick={() => setVibrationEnabled(!vibrationEnabled)}
-                    className={`p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                    className={`hidden sm:block p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                     title={vibrationEnabled ? "Vibration Enabled" : "Enable Vibration"}
                 >
                     {vibrationEnabled ? <Vibrate size={20} /> : <VibrateOff size={20} />}
@@ -773,14 +800,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             )}
             <button 
                 onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`p-2 rounded-lg transition ${soundEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                className={`hidden sm:block p-2 rounded-lg transition ${soundEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                 title={soundEnabled ? "Mute Sounds" : "Enable Sounds"}
             >
                 {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
             </button>
             <button 
                 onClick={toggleNotifications}
-                className={`p-2 rounded-lg transition ${notificationsEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                className={`hidden sm:block p-2 rounded-lg transition ${notificationsEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                 title={notificationsEnabled ? "Notifications Active" : "Enable Notifications"}
             >
                 {notificationsEnabled ? <Bell size={20} /> : <BellOff size={20} />}
