@@ -169,7 +169,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         if (roomDoc.exists()) {
            // Room exists, just update timestamp and get creator
            const data = roomDoc.data();
-           setRoomCreatorId(data.createdBy || null);
+           // Backfill createdBy if missing (for legacy rooms)
+           if (!data.createdBy) {
+              await updateDoc(roomRef, { createdBy: user.uid });
+              setRoomCreatorId(user.uid);
+           } else {
+              setRoomCreatorId(data.createdBy);
+           }
            
            await updateDoc(roomRef, {
              lastActive: serverTimestamp()
@@ -184,6 +190,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              lastActive: serverTimestamp()
            });
            setRoomCreatorId(user.uid);
+
+           // Add initial system message for room creation
+           await addDoc(collection(db, "chats", config.roomKey, "messages"), {
+              text: encodeMessage(`Room created by ${config.username}`),
+              uid: "system",
+              username: "System",
+              avatarURL: "",
+              createdAt: serverTimestamp(),
+              type: 'system',
+              reactions: {}
+           });
         }
         setIsRoomReady(true);
       } catch (error) {
@@ -193,7 +210,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     };
     
     checkAndCreateRoom();
-  }, [user, config.roomKey, config.roomName]);
+  }, [user, config.roomKey, config.roomName, config.username]);
 
   // Handle Join Message (Once per session per room)
   useEffect(() => {
