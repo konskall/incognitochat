@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw, X } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw } from 'lucide-react';
 import { db } from '../services/firebase';
-import { collection, doc, onSnapshot, addDoc, setDoc, updateDoc, serverTimestamp, query, where, getDocs, deleteDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, addDoc, updateDoc, serverTimestamp, query, where, deleteDoc } from 'firebase/firestore';
 import { User, ChatConfig } from '../types';
-import { initAudio, playBeep } from '../utils/helpers';
+import { initAudio } from '../utils/helpers';
 
 // Standard public STUN servers
 const ICE_SERVERS = {
@@ -446,7 +446,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
             <div className="bg-white dark:bg-slate-800 w-full max-w-xs rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden animate-in slide-in-from-right-4 mt-14" onClick={e => e.stopPropagation()}>
                 <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
                     <h3 className="font-bold text-slate-800 dark:text-slate-100">Active Participants ({users.length})</h3>
-                    <button onClick={onCloseParticipants}><X size={20} className="text-slate-400" /></button>
+                    <button onClick={onCloseParticipants}><div className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition"><X size={20} className="text-slate-500 dark:text-slate-400" /></div></button>
                 </div>
                 <div className="max-h-[60vh] overflow-y-auto p-2">
                     {users.length === 0 && <p className="p-4 text-center text-slate-400 text-sm">No one else is here.</p>}
