@@ -1,15 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw, X } from 'lucide-react';
 import { db } from '../services/firebase';
-import { collection, doc, onSnapshot, addDoc, updateDoc, serverTimestamp, query, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, addDoc, updateDoc, serverTimestamp, query, where, getDoc } from 'firebase/firestore';
 import { User, ChatConfig } from '../types';
 import { initAudio } from '../utils/helpers';
 
-// Public STUN servers
 const ICE_SERVERS = {
   iceServers: [
     { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
   ],
+  iceCandidatePoolSize: 10,
 };
 
 interface CallManagerProps {
@@ -25,215 +25,154 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const [activeCall, setActiveCall] = useState<any>(null);
   const [callStatus, setCallStatus] = useState<'idle' | 'calling' | 'connected'>('idle');
   
-  // Media States
+  // Media Control States
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   
-  // Stream States - We store these in state to trigger re-renders when streams arrive
-  const [remoteMediaStream, setRemoteMediaStream] = useState<MediaStream | null>(null);
-  const [localMediaStream, setLocalMediaStream] = useState<MediaStream | null>(null);
-
+  // Video Refs - We manipulate DOM directly for performance and stability in WebRTC
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   
+  // WebRTC Refs (Persistent across renders)
   const peerConnection = useRef<RTCPeerConnection | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null); // Keep ref for logic access
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
-  const candidateQueue = useRef<RTCIceCandidate[]>([]);
-
-  // --- 1. Attach Media to Video Elements when DOM is ready ---
   
-  useEffect(() => {
-      if (remoteVideoRef.current && remoteMediaStream) {
-          remoteVideoRef.current.srcObject = remoteMediaStream;
-          // Ensure audio plays
-          remoteVideoRef.current.play().catch(e => console.error("Remote video play error", e));
+  // Unsubscribe functions container
+  const unsubscribes = useRef<(() => void)[]>([]);
+
+  // --- Helper: Clean up everything ---
+  const cleanup = useCallback(() => {
+      // Stop tracks
+      if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach(t => t.stop());
       }
-  }, [remoteMediaStream, activeCall]);
-
-  useEffect(() => {
-      if (localVideoRef.current && localMediaStream) {
-          localVideoRef.current.srcObject = localMediaStream;
-          localVideoRef.current.muted = true; // Always mute local to avoid feedback
+      // Close PC
+      if (peerConnection.current) {
+          peerConnection.current.close();
+          peerConnection.current = null;
       }
-  }, [localMediaStream, activeCall]);
+      // Unsubscribe listeners
+      unsubscribes.current.forEach(unsub => unsub());
+      unsubscribes.current = [];
+      
+      // Reset Refs
+      localStreamRef.current = null;
+      remoteStreamRef.current = null;
+      
+      // Reset State
+      setActiveCall(null);
+      setCallStatus('idle');
+      setIncomingCall(null);
+      setIsMuted(false);
+      setIsVideoOff(false);
+      
+      if (ringtoneRef.current) {
+          ringtoneRef.current.pause();
+          ringtoneRef.current = null;
+      }
+  }, []);
 
+  // --- Helper: Initialize Peer Connection ---
+  const createPC = useCallback((callId: string, isCaller: boolean) => {
+      const pc = new RTCPeerConnection(ICE_SERVERS);
+      peerConnection.current = pc;
 
-  // --- 2. Signaling Listeners ---
+      // 1. ICE Candidates logic
+      pc.onicecandidate = (event) => {
+          if (event.candidate) {
+              const collectionName = isCaller ? 'offerCandidates' : 'answerCandidates';
+              addDoc(collection(db, "chats", config.roomKey, "calls", callId, collectionName), event.candidate.toJSON());
+          }
+      };
 
+      // 2. Remote Stream Handling
+      pc.ontrack = (event) => {
+          console.log("Track received:", event.streams[0]);
+          const stream = event.streams[0];
+          remoteStreamRef.current = stream;
+          
+          // Direct DOM manipulation to ensure it plays
+          if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = stream;
+              remoteVideoRef.current.play().catch(e => console.error("Remote play error", e));
+          }
+      };
+
+      // 3. Add Local Tracks
+      if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach(track => {
+              pc.addTrack(track, localStreamRef.current!);
+          });
+      }
+
+      return pc;
+  }, [config.roomKey]);
+
+  // --- Listener: Incoming Calls ---
   useEffect(() => {
-    // Listen for incoming calls
     const q = query(
         collection(db, "chats", config.roomKey, "calls"),
         where("calleeId", "==", user.uid),
-        where("status", "==", "offering")
+        where("status", "==", "offering") // Only listen for offering status
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsub = onSnapshot(q, (snapshot) => {
         snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
                 const data = change.doc.data();
-                if (callStatus === 'idle') {
+                // Only accept if we are idle
+                if (callStatus === 'idle' && !activeCall) {
                    setIncomingCall({ id: change.doc.id, ...data });
-                   playRingtone();
+                   
+                   // Ringtone
+                   initAudio();
+                   const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                   audio.loop = true;
+                   audio.play().catch(() => {});
+                   ringtoneRef.current = audio;
                 }
             }
             if (change.type === "removed") {
-               if (incomingCall && incomingCall.id === change.doc.id) {
-                   stopRingtone();
+                if (incomingCall && incomingCall.id === change.doc.id) {
+                   if (ringtoneRef.current) {
+                       ringtoneRef.current.pause();
+                       ringtoneRef.current = null;
+                   }
                    setIncomingCall(null);
-               }
+                }
             }
         });
     });
 
     return () => {
-        unsubscribe();
-        stopRingtone();
-        endCall(false); // Cleanup on unmount
+        unsub();
+        cleanup();
     };
-  }, [config.roomKey, user.uid]); // Removed callStatus/incomingCall dependency to prevent loop
+  }, [config.roomKey, user.uid, callStatus]); // Removed 'incomingCall' and 'activeCall' to prevent re-bind loops
 
-  // Listen to active call updates
-  useEffect(() => {
-      if (!activeCall) return;
-
-      const callDocRef = doc(db, "chats", config.roomKey, "calls", activeCall.id);
-      const unsub = onSnapshot(callDocRef, async (snapshot) => {
-          const data = snapshot.data();
-          if (!data) {
-              endCall(false);
-              return;
-          }
-          
-          // Caller handles "answered"
-          if (activeCall.isCaller && data.status === 'answered' && data.answer && !peerConnection.current?.currentRemoteDescription) {
-               try {
-                   const answerDescription = new RTCSessionDescription(data.answer);
-                   await peerConnection.current?.setRemoteDescription(answerDescription);
-                   setCallStatus('connected');
-                   processCandidateQueue();
-               } catch (e) {
-                   console.error("Error setting remote description", e);
-               }
-          } else if (data.status === 'ended' || data.status === 'declined') {
-              endCall(false);
-          }
-      });
-
-      // Listen for candidates
-      const collectionName = activeCall.isCaller ? 'answerCandidates' : 'offerCandidates';
-      const candidatesRef = collection(callDocRef, collectionName);
-      
-      const unsubCandidates = onSnapshot(candidatesRef, (snapshot) => {
-           snapshot.docChanges().forEach((change) => {
-               if (change.type === 'added') {
-                   const candidateData = change.doc.data();
-                   try {
-                       const candidate = new RTCIceCandidate(candidateData);
-                       if (peerConnection.current && peerConnection.current.remoteDescription) {
-                           peerConnection.current.addIceCandidate(candidate);
-                       } else {
-                           candidateQueue.current.push(candidate);
-                       }
-                   } catch (e) {
-                       console.error("Error adding ICE candidate", e);
-                   }
-               }
-           });
-      });
-
-      return () => {
-          unsub();
-          unsubCandidates();
-      };
-  }, [activeCall?.id]); 
-
-
-  // --- Actions ---
-
-  const processCandidateQueue = async () => {
-      if (!peerConnection.current) return;
-      while (candidateQueue.current.length > 0) {
-          const candidate = candidateQueue.current.shift();
-          if (candidate) {
-              peerConnection.current.addIceCandidate(candidate).catch(e => console.error(e));
-          }
-      }
-  };
-
-  const playRingtone = () => {
-      initAudio();
-      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'); 
-      audio.loop = true;
-      audio.play().catch(() => {});
-      ringtoneRef.current = audio;
-  };
-
-  const stopRingtone = () => {
-      if (ringtoneRef.current) {
-          ringtoneRef.current.pause();
-          ringtoneRef.current = null;
-      }
-  };
-
-  const startLocalStream = async (type: 'audio' | 'video') => {
-    try {
-        // Always request audio. Video is optional based on type.
-        const constraints = {
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-            video: type === 'video' ? { facingMode: facingMode } : false
-        };
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        localStreamRef.current = stream;
-        setLocalMediaStream(stream); // Update state to render
-        return stream;
-    } catch (err) {
-        console.error("Error accessing media devices:", err);
-        alert("Could not access camera/microphone. Please check permissions.");
-        return null;
-    }
-  };
-
-  const createPeerConnection = (callId: string, isCaller: boolean) => {
-      const pc = new RTCPeerConnection(ICE_SERVERS);
-      
-      pc.onicecandidate = (event) => {
-          if (event.candidate) {
-              const collectionName = isCaller ? 'offerCandidates' : 'answerCandidates';
-              const cRef = collection(db, "chats", config.roomKey, "calls", callId, collectionName);
-              addDoc(cRef, event.candidate.toJSON());
-          }
-      };
-
-      pc.ontrack = (event) => {
-          // Important: Store remote stream in state so useEffect can attach it when video DOM is ready
-          if (event.streams && event.streams[0]) {
-              console.log("Received remote stream", event.streams[0]);
-              setRemoteMediaStream(event.streams[0]);
-          }
-      };
-
-      // Add local tracks to PC
-      if (localStreamRef.current) {
-          localStreamRef.current.getTracks().forEach((track) => {
-              pc.addTrack(track, localStreamRef.current!);
-          });
-      }
-
-      peerConnection.current = pc;
-      return pc;
-  };
-
+  // --- Function: Start Call ---
   const initiateCall = async (targetUid: string, targetName: string, targetAvatar: string, type: 'audio' | 'video') => {
       onCloseParticipants();
-
-      const stream = await startLocalStream(type);
-      if(!stream) return;
-
       setCallStatus('calling');
 
+      // 1. Get Media
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+              video: type === 'video' ? { facingMode: 'user' } : false
+          });
+          localStreamRef.current = stream;
+      } catch (e) {
+          console.error("Media Error", e);
+          alert("Could not access media devices.");
+          setCallStatus('idle');
+          return;
+      }
+
+      // 2. Create Doc
       const callDocRef = await addDoc(collection(db, "chats", config.roomKey, "calls"), {
           callerId: user.uid,
           callerName: config.username,
@@ -243,19 +182,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           status: 'offering',
           createdAt: serverTimestamp()
       });
-
-      const pc = createPeerConnection(callDocRef.id, true);
       
-      const offerDescription = await pc.createOffer();
-      await pc.setLocalDescription(offerDescription);
-
-      const offer = {
-          type: offerDescription.type,
-          sdp: offerDescription.sdp,
-      };
-
-      await updateDoc(callDocRef, { offer });
-
       setActiveCall({ 
           id: callDocRef.id, 
           isCaller: true, 
@@ -263,16 +190,59 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           otherAvatar: targetAvatar, 
           type 
       });
+
+      // 3. Create PC & Offer
+      const pc = createPC(callDocRef.id, true);
+      const offerDescription = await pc.createOffer();
+      await pc.setLocalDescription(offerDescription);
+
+      const offer = { type: offerDescription.type, sdp: offerDescription.sdp };
+      await updateDoc(callDocRef, { offer });
+
+      // 4. Listen for Answer
+      const unsub = onSnapshot(callDocRef, (snapshot) => {
+          const data = snapshot.data();
+          if (!data) return; // Call deleted
+
+          if (!pc.currentRemoteDescription && data?.answer) {
+              const answerDescription = new RTCSessionDescription(data.answer);
+              pc.setRemoteDescription(answerDescription);
+              setCallStatus('connected');
+          }
+          
+          // Handle End/Decline
+          if (data.status === 'ended' || data.status === 'declined') {
+              cleanup();
+          }
+      });
+      unsubscribes.current.push(unsub);
+
+      // 5. Listen for Remote Candidates (Callee sent them)
+      const candidateQ = collection(db, "chats", config.roomKey, "calls", callDocRef.id, "answerCandidates");
+      const unsubCand = onSnapshot(candidateQ, (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+              if (change.type === "added") {
+                  const data = change.doc.data();
+                  const candidate = new RTCIceCandidate(data);
+                  pc.addIceCandidate(candidate).catch(console.error);
+              }
+          });
+      });
+      unsubscribes.current.push(unsubCand);
   };
 
+  // --- Function: Answer Call ---
   const answerCall = async () => {
       if (!incomingCall) return;
       const callId = incomingCall.id;
       const callType = incomingCall.type;
       
-      stopRingtone();
-      
-      // Update UI immediately to prevent double clicks
+      // Stop ringing
+      if (ringtoneRef.current) {
+          ringtoneRef.current.pause();
+          ringtoneRef.current = null;
+      }
+
       setActiveCall({ 
           id: callId, 
           isCaller: false, 
@@ -280,120 +250,144 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           otherAvatar: incomingCall.callerAvatar, 
           type: callType 
       });
-      setCallStatus('connected');
       setIncomingCall(null);
+      setCallStatus('connected');
 
-      // Start media
-      const stream = await startLocalStream(callType);
-      if(!stream) { 
-          endCall(true);
-          return; 
+      // 1. Get Media
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+              video: callType === 'video' ? { facingMode: 'user' } : false
+          });
+          localStreamRef.current = stream;
+      } catch (e) {
+          console.error("Media Error", e);
+          cleanup();
+          return;
       }
 
-      // Create PC
-      const pc = createPeerConnection(callId, false);
+      // 2. Create PC
+      const pc = createPC(callId, false);
 
-      // Handle Offer
+      // 3. Set Remote Description (Offer)
       const offerDescription = new RTCSessionDescription(incomingCall.offer);
       await pc.setRemoteDescription(offerDescription);
-      
-      // Create Answer
+
+      // 4. Create Answer
       const answerDescription = await pc.createAnswer();
       await pc.setLocalDescription(answerDescription);
 
-      const answer = {
-          type: answerDescription.type,
-          sdp: answerDescription.sdp,
-      };
-
+      const answer = { type: answerDescription.type, sdp: answerDescription.sdp };
       await updateDoc(doc(db, "chats", config.roomKey, "calls", callId), { answer, status: 'answered' });
-      
-      processCandidateQueue();
+
+      // 5. Listen for Remote Candidates (Caller sent them)
+      const candidateQ = collection(db, "chats", config.roomKey, "calls", callId, "offerCandidates");
+      const unsubCand = onSnapshot(candidateQ, (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+              if (change.type === "added") {
+                  const data = change.doc.data();
+                  const candidate = new RTCIceCandidate(data);
+                  pc.addIceCandidate(candidate).catch(console.error);
+              }
+          });
+      });
+      unsubscribes.current.push(unsubCand);
+
+      // 6. Watch for End Signal
+      const unsubDoc = onSnapshot(doc(db, "chats", config.roomKey, "calls", callId), (snap) => {
+           if (snap.data()?.status === 'ended') {
+               cleanup();
+           }
+      });
+      unsubscribes.current.push(unsubDoc);
   };
 
-  const declineCall = async () => {
-      stopRingtone();
+  const hangupCall = async () => {
+      if (activeCall) {
+         const callRef = doc(db, "chats", config.roomKey, "calls", activeCall.id);
+         // Mark ended in DB to notify other peer
+         await updateDoc(callRef, { status: 'ended' }).catch(() => {});
+      }
+      cleanup();
+  };
+
+  const rejectCall = async () => {
       if (incomingCall) {
-        const callRef = doc(db, "chats", config.roomKey, "calls", incomingCall.id);
-        await updateDoc(callRef, { status: 'declined' }).catch(() => {});
-        setIncomingCall(null);
+          await updateDoc(doc(db, "chats", config.roomKey, "calls", incomingCall.id), { status: 'declined' });
+          setIncomingCall(null);
+      }
+      if (ringtoneRef.current) {
+          ringtoneRef.current.pause();
+          ringtoneRef.current = null;
       }
   };
 
-  const endCall = async (updateDb = true) => {
-      if (peerConnection.current) {
-          peerConnection.current.onicecandidate = null;
-          peerConnection.current.ontrack = null;
-          peerConnection.current.close();
-          peerConnection.current = null;
+  // --- Effects: Local Media Attachment & Toggles ---
+  
+  // Effect to attach Local Video to DOM
+  useEffect(() => {
+      if (localVideoRef.current && localStreamRef.current) {
+          localVideoRef.current.srcObject = localStreamRef.current;
+          localVideoRef.current.muted = true; // Mute local video to prevent echo
       }
-      
-      if (localStreamRef.current) {
-          localStreamRef.current.getTracks().forEach(track => track.stop());
-          localStreamRef.current = null;
-      }
-
-      setLocalMediaStream(null);
-      setRemoteMediaStream(null);
-      
-      if (updateDb && activeCall) {
-          const callRef = doc(db, "chats", config.roomKey, "calls", activeCall.id);
-          try { await updateDoc(callRef, { status: 'ended' }); } catch(e) {}
-      }
-
-      setActiveCall(null);
-      setCallStatus('idle');
-      setIsMuted(false);
-      setIsVideoOff(false);
-      candidateQueue.current = [];
-  };
+  }, [activeCall, callStatus]); // Re-run when call state becomes active
 
   const toggleMute = () => {
       if (localStreamRef.current) {
-          localStreamRef.current.getAudioTracks().forEach(track => track.enabled = !track.enabled);
+          localStreamRef.current.getAudioTracks().forEach(t => t.enabled = !t.enabled);
           setIsMuted(!isMuted);
       }
   };
 
   const toggleVideo = () => {
-    if (localStreamRef.current && activeCall.type === 'video') {
-        localStreamRef.current.getVideoTracks().forEach(track => track.enabled = !track.enabled);
-        setIsVideoOff(!isVideoOff);
-    }
+      if (localStreamRef.current) {
+          localStreamRef.current.getVideoTracks().forEach(t => t.enabled = !t.enabled);
+          setIsVideoOff(!isVideoOff);
+      }
   };
 
   const switchCamera = async () => {
-      if (activeCall.type !== 'video') return;
+      if (!localStreamRef.current) return;
       const newMode = facingMode === 'user' ? 'environment' : 'user';
-      setFacingMode(newMode);
-      
-      if (localStreamRef.current) {
-          // Stop only video tracks
-          localStreamRef.current.getVideoTracks().forEach(track => track.stop());
-      }
       
       try {
-        const newStream = await navigator.mediaDevices.getUserMedia({
-            audio: true, // Re-request audio to keep stream valid
-            video: { facingMode: newMode }
-        });
-        
-        // Replace video track in Peer Connection sender
-        const newVideoTrack = newStream.getVideoTracks()[0];
-        const sender = peerConnection.current?.getSenders().find(s => s.track?.kind === 'video');
-        if (sender) {
-            sender.replaceTrack(newVideoTrack);
-        }
-        
-        // Update ref and state
-        localStreamRef.current = newStream;
-        setLocalMediaStream(newStream);
-      } catch (e) {
-          console.error("Failed to switch camera", e);
+          // Stop old video tracks
+          localStreamRef.current.getVideoTracks().forEach(t => t.stop());
+          
+          // Get new stream
+          const newStream = await navigator.mediaDevices.getUserMedia({
+              audio: true, // Request audio again to keep stream unified if needed, or simpler:
+              video: { facingMode: newMode }
+          });
+          
+          // Replace track in PC
+          const newVideoTrack = newStream.getVideoTracks()[0];
+          const sender = peerConnection.current?.getSenders().find(s => s.track?.kind === 'video');
+          if (sender) {
+              sender.replaceTrack(newVideoTrack);
+          }
+
+          // Update refs
+          const oldAudioTrack = localStreamRef.current.getAudioTracks()[0];
+          if (oldAudioTrack) {
+              // Combine old audio (if kept) with new video
+               // Note: getUserMedia returns fresh audio usually, simpler to just use newStream completely 
+               // but maintaining audio context is tricky. 
+               // For simplicity: Replace entire stream ref
+          }
+          
+          localStreamRef.current = newStream;
+          setFacingMode(newMode);
+          
+          if (localVideoRef.current) {
+              localVideoRef.current.srcObject = newStream;
+          }
+      } catch(e) {
+          console.error("Switch camera failed", e);
       }
   };
 
-  // --- UI ---
+  // --- RENDER ---
 
   if (incomingCall) {
       return (
@@ -405,7 +399,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       Incoming {incomingCall.type === 'video' ? 'Video' : 'Voice'} Call...
                   </p>
                   <div className="flex justify-center gap-8">
-                      <button onClick={declineCall} className="flex flex-col items-center gap-2 group">
+                      <button onClick={rejectCall} className="flex flex-col items-center gap-2 group">
                           <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center text-white shadow-lg group-hover:bg-red-600 transition transform group-hover:scale-110">
                               <PhoneOff size={32} />
                           </div>
@@ -426,32 +420,37 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   if (activeCall) {
       return (
           <div className="fixed inset-0 z-[60] bg-slate-950 flex flex-col">
-              {/* Main Media Area */}
-              <div className="flex-1 relative flex items-center justify-center overflow-hidden">
+              {/* Main Video Area */}
+              <div className="flex-1 relative flex items-center justify-center overflow-hidden bg-black">
                   {/* Remote Video */}
-                  {/* Note: We always render the video tag for Audio calls too, because tracks need an element to play */}
                   <video 
                       ref={remoteVideoRef} 
                       autoPlay 
                       playsInline 
-                      className={`w-full h-full object-contain bg-black ${activeCall.type === 'audio' ? 'opacity-0 absolute h-1 w-1' : ''}`} 
+                      className={`w-full h-full object-contain ${activeCall.type === 'audio' ? 'hidden' : ''}`} 
                   />
                   
-                  {/* Placeholder for Audio Call or Video Loading */}
-                  {(activeCall.type === 'audio' || (!remoteMediaStream && callStatus === 'connected')) && (
+                  {/* Placeholder for Audio Call or Connecting State */}
+                  {(activeCall.type === 'audio') && (
                       <div className="flex flex-col items-center z-10 animate-in fade-in zoom-in">
                            <img src={activeCall.otherAvatar} className="w-32 h-32 rounded-full border-4 border-white/20 shadow-2xl mb-6 bg-slate-800" />
                            <h3 className="text-3xl text-white font-bold mb-2">{activeCall.otherName}</h3>
-                           <p className="text-white/60 text-lg animate-pulse">
-                               {callStatus === 'calling' ? 'Calling...' : (remoteMediaStream ? 'Connected' : 'Connecting...')}
+                           <p className="text-white/60 text-lg">
+                               {callStatus === 'calling' ? 'Calling...' : 'Connected'}
                            </p>
                       </div>
                   )}
 
-                  {/* Local Video (PiP) - Only for video calls */}
+                  {/* Local Video (PiP) */}
                   {activeCall.type === 'video' && (
                       <div className="absolute top-4 right-4 w-28 sm:w-36 aspect-[3/4] bg-slate-800 rounded-xl overflow-hidden shadow-2xl border border-white/10 z-20">
-                          <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
+                          <video 
+                            ref={localVideoRef} 
+                            autoPlay 
+                            playsInline 
+                            muted 
+                            className="w-full h-full object-cover transform scale-x-[-1]" 
+                          />
                       </div>
                   )}
               </div>
@@ -483,7 +482,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   )}
 
                   <button 
-                      onClick={() => endCall(true)} 
+                      onClick={hangupCall} 
                       className="p-4 rounded-full bg-red-500 text-white hover:bg-red-600 transition shadow-lg shadow-red-500/50"
                   >
                       <PhoneOff size={32} fill="currentColor" />
@@ -493,7 +492,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       );
   }
 
-  // Participant List Modal
   if (showParticipants) {
       return (
         <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-start justify-end p-4 sm:p-6" onClick={onCloseParticipants}>
