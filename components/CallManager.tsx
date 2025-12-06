@@ -3,7 +3,7 @@ import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw, X, User as Us
 import { db } from '../services/firebase';
 import { collection, doc, onSnapshot, addDoc, updateDoc, serverTimestamp, query, where, setDoc } from 'firebase/firestore';
 import { User, ChatConfig } from '../types';
-import { initAudio } from '../utils/helpers';
+import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
 
 // Public Google STUN servers are reliable for most P2P scenarios
 const ICE_SERVERS = {
@@ -72,8 +72,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const localStream = useRef<MediaStream | null>(null);
   const remoteStream = useRef<MediaStream | null>(null);
   const unsubscribeRefs = useRef<(() => void)[]>([]);
-  const ringtone = useRef<HTMLAudioElement | null>(null);
-
+  
   // --- DOM Refs ---
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -109,12 +108,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     unsubscribeRefs.current.forEach(unsub => unsub());
     unsubscribeRefs.current = [];
 
-    // 5. Stop Ringtone
-    if (ringtone.current) {
-      ringtone.current.pause();
-      ringtone.current.currentTime = 0;
-      ringtone.current = null;
-    }
+    // 5. Stop Ringtone (Using helper)
+    stopRingtone();
 
     // 6. Reset UI
     setViewState({
@@ -203,30 +198,21 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     }
 
     // B. Handle Remote Stream
-    // We create a new MediaStream and add tracks as they arrive.
-    // This solves issues where audio tracks arrive later or separate from video.
     if (!remoteStream.current) {
         remoteStream.current = new MediaStream();
     }
 
     newPC.ontrack = (event) => {
       console.log("[WebRTC] Remote track received:", event.track.kind, event.track.id);
-      
-      // Ensure the track is enabled
       event.track.enabled = true;
-      
-      // Add track to our stable remote stream reference
       if (remoteStream.current) {
           remoteStream.current.addTrack(event.track);
       }
 
-      // Attach stream to video element immediately
       if (remoteVideoRef.current) {
-        // Only set srcObject if it's different to prevent flickering/reset
         if (remoteVideoRef.current.srcObject !== remoteStream.current) {
             remoteVideoRef.current.srcObject = remoteStream.current;
         }
-        // Force play, ensure not muted
         remoteVideoRef.current.muted = false;
         remoteVideoRef.current.volume = 1.0;
         remoteVideoRef.current.play().catch(e => console.error("AutoPlay blocked", e));
@@ -256,11 +242,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     try {
       onCloseParticipants();
       
-      // 1. Get Local Media
       const stream = await getMediaStream(type, facingMode);
       localStream.current = stream;
 
-      // 2. Setup UI State
       const callDocRef = doc(collection(db, "chats", config.roomKey, "calls"));
       const callId = callDocRef.id;
       
@@ -273,12 +257,10 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
         type: type
       });
 
-      // 3. Create PC & Offer
       const connection = createPC(callId, true);
       const offerDescription = await connection.createOffer();
       await connection.setLocalDescription(offerDescription);
 
-      // 4. Write Offer to Firestore
       const callData = {
         id: callId,
         callerId: user.uid,
@@ -292,7 +274,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       };
       await setDoc(callDocRef, callData);
 
-      // 5. Listen for Answer
       const unsubDoc = onSnapshot(callDocRef, (snapshot) => {
         const data = snapshot.data();
         if (!data) return; 
@@ -309,7 +290,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       });
       unsubscribeRefs.current.push(unsubDoc);
 
-      // 6. Listen for Remote ICE Candidates (Answer Candidates)
       const candidatesQuery = query(collection(db, "chats", config.roomKey, "calls", callId, "answerCandidates"));
       const unsubCandidates = onSnapshot(candidatesQuery, (snapshot) => {
         snapshot.docChanges().forEach((change) => {
@@ -342,34 +322,25 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     const offer = incomingData.offer;
 
     try {
-      initAudio(); // Initialize audio context
-      if (ringtone.current) {
-          ringtone.current.pause();
-          ringtone.current = null;
-      }
+      initAudio();
+      stopRingtone(); // Stop ringtone when answering
 
-      // 1. Get Local Media
       const stream = await getMediaStream(incomingData.type, facingMode);
       localStream.current = stream;
 
-      // 2. Setup PC
       const connection = createPC(callId, false);
 
-      // 3. Set Remote Description
       await connection.setRemoteDescription(new RTCSessionDescription(offer));
 
-      // 4. Create Answer
       const answerDescription = await connection.createAnswer();
       await connection.setLocalDescription(answerDescription);
 
-      // 5. Update Firestore
       const callRef = doc(db, "chats", config.roomKey, "calls", callId);
       await updateDoc(callRef, {
         answer: { type: answerDescription.type, sdp: answerDescription.sdp },
         status: 'answered'
       });
 
-      // 6. UI Update
       setViewState({
         status: 'connected',
         callId: callId,
@@ -380,7 +351,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       });
       setIncomingData(null); 
 
-      // 7. Listen for Remote Candidates (Offer Candidates)
       const candidatesQuery = query(collection(db, "chats", config.roomKey, "calls", callId, "offerCandidates"));
       const unsubCandidates = onSnapshot(candidatesQuery, (snapshot) => {
         snapshot.docChanges().forEach((change) => {
@@ -392,7 +362,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       });
       unsubscribeRefs.current.push(unsubCandidates);
 
-      // 8. Listen for End
       const unsubDoc = onSnapshot(callRef, (snapshot) => {
           if (snapshot.data()?.status === 'ended') {
               cleanup();
@@ -426,15 +395,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           const data = change.doc.data();
           setIncomingData({ id: change.doc.id, ...data });
           
-          // Play Ringtone
-          initAudio();
-          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-          audio.loop = true;
-          audio.play().catch(e => console.log("Audio play error", e));
-          ringtone.current = audio;
+          // Play Ringtone using Web Audio API for iOS support
+          startRingtone();
         }
         if (change.type === 'removed') {
-          if (ringtone.current) ringtone.current.pause();
+          stopRingtone();
           setIncomingData(null);
         }
       });
@@ -452,7 +417,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
        }
        if (remoteVideoRef.current && remoteStream.current) {
            remoteVideoRef.current.srcObject = remoteStream.current;
-           remoteVideoRef.current.muted = false; // Ensure not muted
+           remoteVideoRef.current.muted = false; 
            remoteVideoRef.current.volume = 1.0;
            remoteVideoRef.current.play().catch(console.error);
        }
@@ -504,7 +469,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               if (sender) sender.replaceTrack(videoTrack);
           }
           
-          // Keep old audio track if it exists
           const audioTracks = localStream.current.getAudioTracks();
           if(audioTracks.length > 0) {
               newStream.addTrack(audioTracks[0]);
