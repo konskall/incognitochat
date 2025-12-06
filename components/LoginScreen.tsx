@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChatConfig } from '../types';
 import { generateRoomKey, initAudio } from '../utils/helpers';
-import { Info, ChevronDown, ChevronUp, Eye, EyeOff, Moon, Sun } from 'lucide-react';
+import { Info, ChevronDown, ChevronUp, Eye, EyeOff, Moon, Sun, History, X, Trash2 } from 'lucide-react';
 
 interface LoginScreenProps {
   onJoin: (config: ChatConfig) => void;
@@ -14,6 +14,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false); // State for toggling PIN visibility
   const [showGuide, setShowGuide] = useState(false);
+  
+  // Room History State
+  const [roomHistory, setRoomHistory] = useState<string[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const historyRef = useRef<HTMLDivElement>(null);
   
   // Theme State
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -53,6 +58,28 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
     }
   }, [isDarkMode]);
 
+  // Load history on mount
+  useEffect(() => {
+      try {
+          const history = JSON.parse(localStorage.getItem('chatRoomHistory') || '[]');
+          if (Array.isArray(history)) {
+              setRoomHistory(history);
+          }
+      } catch (e) {
+          console.error("Failed to load room history", e);
+      }
+
+      // Click outside to close history dropdown
+      const handleClickOutside = (event: MouseEvent) => {
+          if (historyRef.current && !historyRef.current.contains(event.target as Node)) {
+              setShowHistory(false);
+          }
+      };
+
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const toggleTheme = () => {
     const newTheme = !isDarkMode;
     setIsDarkMode(newTheme);
@@ -79,6 +106,27 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       }
   };
 
+  const handleRoomSelect = (selectedRoom: string) => {
+      setRoomName(selectedRoom);
+      setShowHistory(false);
+      // Optional: Focus PIN input here if you want
+  };
+
+  const deleteFromHistory = (e: React.MouseEvent, roomToDelete: string) => {
+      e.stopPropagation(); // Prevent selecting the room
+      const newHistory = roomHistory.filter(r => r !== roomToDelete);
+      setRoomHistory(newHistory);
+      localStorage.setItem('chatRoomHistory', JSON.stringify(newHistory));
+  };
+
+  const clearHistory = () => {
+      if (window.confirm('Clear all visited rooms from history?')) {
+          setRoomHistory([]);
+          localStorage.removeItem('chatRoomHistory');
+          setShowHistory(false);
+      }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -95,9 +143,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       return;
     }
 
-    // Initialize Audio Context here, on user gesture (click/submit), 
-    // before entering the chat. This prevents iOS form silencing system sounds
-    // during the input phase.
+    // Initialize Audio Context here, on user gesture (click/submit)
     initAudio();
 
     const roomKey = generateRoomKey(pin, roomName);
@@ -109,7 +155,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
     localStorage.setItem('chatUsername', username);
     localStorage.setItem('chatAvatarURL', finalAvatar);
     localStorage.setItem('chatRoomName', roomName);
-    localStorage.setItem('chatPin', pin); // Added this so App.tsx can restore session
+    localStorage.setItem('chatPin', pin); 
+
+    // Update History
+    const newHistory = [roomName, ...roomHistory.filter(r => r !== roomName)].slice(0, 10); // Keep last 10 unique
+    setRoomHistory(newHistory);
+    localStorage.setItem('chatRoomHistory', JSON.stringify(newHistory));
 
     onJoin({
       username,
@@ -213,15 +264,55 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
 
           <div>
              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 ml-1 mb-1 block uppercase">Destination</label>
-             <input
-              type="text"
-              placeholder="Room Name (e.g. secretbase)"
-              aria-label="Room Name"
-              value={roomName}
-              onChange={(e) => setRoomName(e.target.value)}
-              maxLength={30}
-              className="w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all mb-4 text-base"
-            />
+             
+             <div className="relative" ref={historyRef}>
+                <input
+                    type="text"
+                    placeholder="Room Name (e.g. secretbase)"
+                    aria-label="Room Name"
+                    value={roomName}
+                    onChange={(e) => setRoomName(e.target.value)}
+                    onFocus={() => setShowHistory(true)}
+                    maxLength={30}
+                    className="w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all mb-4 text-base"
+                />
+                
+                {/* Room History Dropdown */}
+                {showHistory && roomHistory.length > 0 && (
+                    <div className="absolute top-[calc(100%-12px)] left-0 right-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-b-xl shadow-xl z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                         <div className="max-h-40 overflow-y-auto">
+                             {roomHistory.map((room) => (
+                                 <div 
+                                    key={room}
+                                    onClick={() => handleRoomSelect(room)}
+                                    className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer group transition-colors"
+                                 >
+                                     <div className="flex items-center gap-3">
+                                         <History size={14} className="text-slate-400" />
+                                         <span className="text-sm text-slate-700 dark:text-slate-200 font-medium">{room}</span>
+                                     </div>
+                                     <button 
+                                        onClick={(e) => deleteFromHistory(e, room)}
+                                        className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-all opacity-0 group-hover:opacity-100"
+                                        title="Remove from history"
+                                     >
+                                         <X size={14} />
+                                     </button>
+                                 </div>
+                             ))}
+                         </div>
+                         <div className="border-t border-slate-100 dark:border-slate-700/50 p-1 bg-slate-50/50 dark:bg-slate-900/50">
+                            <button 
+                                onClick={clearHistory}
+                                className="w-full py-1.5 text-xs text-slate-500 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400 flex items-center justify-center gap-1 transition-colors"
+                            >
+                                <Trash2 size={12} />
+                                Clear History
+                            </button>
+                         </div>
+                    </div>
+                )}
+             </div>
             
             <div className="relative">
                 <input
