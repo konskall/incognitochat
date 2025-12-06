@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw, X, User as UserIcon, AlertCircle, Volume2 } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw, X, User as UserIcon, AlertCircle } from 'lucide-react';
 import { db } from '../services/firebase';
 import { collection, doc, onSnapshot, addDoc, updateDoc, serverTimestamp, query, where, setDoc } from 'firebase/firestore';
 import { User, ChatConfig } from '../types';
@@ -45,9 +45,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const [incomingData, setIncomingData] = useState<any>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  
-  // New state to handle Autoplay policy blocks
-  const [audioBlocked, setAudioBlocked] = useState(false);
 
   // --- Logic Refs ---
   const pc = useRef<RTCPeerConnection | null>(null);
@@ -79,11 +76,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       pc.current = null;
     }
 
-    if (remoteStream.current) {
-        remoteStream.current.getTracks().forEach(t => t.stop());
-        remoteStream.current = null;
-    }
-
     unsubscribeRefs.current.forEach(unsub => unsub());
     unsubscribeRefs.current = [];
 
@@ -105,7 +97,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     setErrorMsg(null);
     setIsMuted(false);
     setIsVideoOff(false);
-    setAudioBlocked(false);
     
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
@@ -115,6 +106,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   // MEDIA HANDLING
   // ============================================================
   const getMediaStream = async (type: 'audio' | 'video', preferredMode: 'user' | 'environment') => {
+      // Desktop often requires HTTPS for media access
       const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
       const isSecure = location.protocol === 'https:';
       if (!isLocalhost && !isSecure) {
@@ -124,26 +116,24 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
       let constraints: MediaStreamConstraints;
-      const audioConstraints = { 
-          echoCancellation: true, 
-          noiseSuppression: true, 
-          autoGainControl: true 
-      };
 
       if (type === 'video') {
           if (isMobile) {
               constraints = {
-                  audio: audioConstraints,
+                  audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
                   video: { facingMode: preferredMode }
               };
           } else {
               constraints = {
-                  audio: audioConstraints,
-                  video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+                  audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+                  video: true
               };
           }
       } else {
-          constraints = { audio: audioConstraints, video: false };
+          constraints = { 
+              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, 
+              video: false 
+          };
       }
 
       try {
@@ -172,29 +162,28 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       });
     }
 
-    // B. Handle Remote Stream
+    // B. Handle Remote Stream (Key Fix for Audio)
     newPC.ontrack = (event) => {
-      console.log(`[WebRTC] Remote track received: ${event.track.kind}`);
+      console.log(`[WebRTC] Received remote track: ${event.track.kind}`);
       
+      // Use the stream provided by the browser to ensure sync
       const stream = event.streams[0];
-      if (!stream) return;
-
-      remoteStream.current = stream;
-
-      // Attach to MAIN remote video element
-      if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = stream;
-          remoteVideoRef.current.muted = false; // Important
-          remoteVideoRef.current.volume = 1.0;  // Important
-
-          // Try to autoplay
-          const playPromise = remoteVideoRef.current.play();
-          if (playPromise !== undefined) {
-              playPromise.catch(error => {
-                  console.warn("Auto-play blocked by browser policy:", error);
-                  // This triggers the UI to show the "Enable Audio" button
-                  setAudioBlocked(true);
-              });
+      
+      if (stream) {
+          remoteStream.current = stream;
+          
+          if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = stream;
+              // Explicitly unmute and play
+              remoteVideoRef.current.muted = false;
+              remoteVideoRef.current.volume = 1.0;
+              
+              const playPromise = remoteVideoRef.current.play();
+              if (playPromise !== undefined) {
+                  playPromise.catch(e => {
+                      console.error("Auto-play failed (likely policy). User interaction needed.", e);
+                  });
+              }
           }
       }
     };
@@ -207,26 +196,15 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
     };
 
-    newPC.onconnectionstatechange = () => {
-        console.log("[WebRTC] State:", newPC.connectionState);
-        if (newPC.connectionState === 'connected') {
-             // Force play attempt again on connection
-             if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
-                 remoteVideoRef.current.play().catch(() => setAudioBlocked(true));
-             }
-        }
-    };
-
     return newPC;
   }, [config.roomKey]);
 
   // ============================================================
-  // CALL ACTIONS
+  // CALL LOGIC
   // ============================================================
   const startCall = async (targetUid: string, targetName: string, targetAvatar: string, type: 'audio' | 'video') => {
     try {
       onCloseParticipants();
-      initAudio(); 
       
       const stream = await getMediaStream(type, facingMode);
       localStream.current = stream;
@@ -305,7 +283,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     const offer = incomingData.offer;
 
     try {
-      initAudio();
+      // Crucial: Unlock Audio Context on user gesture
+      initAudio(); 
       if (ringtone.current) {
           ringtone.current.pause();
           ringtone.current = null;
@@ -380,10 +359,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           const data = change.doc.data();
           setIncomingData({ id: change.doc.id, ...data });
           
+          // Play Ringtone
           initAudio();
           const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
           audio.loop = true;
-          audio.play().catch(e => console.log("Audio play error", e));
+          audio.play().catch(() => {});
           ringtone.current = audio;
         }
         if (change.type === 'removed') {
@@ -396,16 +376,26 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     return () => unsubscribe();
   }, [config.roomKey, user.uid, viewState.status]);
 
-  // Ensure local video matches state
+  // --- Force Attach/Re-attach Stream on State Change ---
   useEffect(() => {
-    if ((viewState.status === 'connected' || viewState.status === 'calling') && localVideoRef.current && localStream.current) {
-        localVideoRef.current.srcObject = localStream.current;
-        localVideoRef.current.muted = true;
+    if (viewState.status === 'connected' || viewState.status === 'calling') {
+       // Local Stream
+       if (localVideoRef.current && localStream.current) {
+           localVideoRef.current.srcObject = localStream.current;
+           localVideoRef.current.muted = true; // Mute local to avoid feedback
+       }
+       // Remote Stream
+       if (remoteVideoRef.current && remoteStream.current) {
+           remoteVideoRef.current.srcObject = remoteStream.current;
+           remoteVideoRef.current.muted = false; // Ensure NOT muted
+           remoteVideoRef.current.volume = 1.0;
+           remoteVideoRef.current.play().catch(e => console.log("Remote play error:", e));
+       }
     }
   }, [viewState.status, viewState.type]);
 
   // ============================================================
-  // USER ACTIONS
+  // ACTIONS
   // ============================================================
   const handleHangup = async () => {
     if (viewState.callId) {
@@ -452,6 +442,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               if (sender) sender.replaceTrack(videoTrack);
           }
           
+          // Combine new video with existing audio
           const audioTracks = localStream.current.getAudioTracks();
           if(audioTracks.length > 0) {
               newStream.addTrack(audioTracks[0]);
@@ -465,15 +456,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           }
       } catch (e) {
           console.error("Switch camera failed", e);
-      }
-  };
-
-  const enableAudioManual = () => {
-      if (remoteVideoRef.current) {
-          remoteVideoRef.current.muted = false;
-          remoteVideoRef.current.play()
-            .then(() => setAudioBlocked(false))
-            .catch(e => console.error("Still blocked", e));
       }
   };
 
@@ -545,9 +527,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       return (
           <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col">
               {/* Main Media Area */}
-              <div className="flex-1 relative overflow-hidden bg-black flex items-center justify-center group">
+              <div className="flex-1 relative overflow-hidden bg-black flex items-center justify-center">
                   
-                  {/* Remote Video - Using One Video element for both Audio/Video to satisfy Autoplay policies */}
+                  {/* Remote Video - Used for both Audio and Video calls to handle the stream */}
                   <video 
                       ref={remoteVideoRef} 
                       autoPlay 
@@ -555,14 +537,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       className={`w-full h-full object-contain ${showRemoteVideo ? '' : 'opacity-0 absolute pointer-events-none h-1 w-1'}`} 
                   />
                   
-                  {/* Browser Blocked Audio Warning */}
-                  {audioBlocked && (
-                      <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 bg-yellow-500/90 text-black px-6 py-3 rounded-full shadow-2xl animate-bounce cursor-pointer flex items-center gap-3" onClick={enableAudioManual}>
-                          <Volume2 size={24} className="animate-pulse" />
-                          <span className="font-bold">Tap to Enable Audio</span>
-                      </div>
-                  )}
-
                   {/* Placeholder / Audio View */}
                   {(!showRemoteVideo) && (
                       <div className="flex flex-col items-center z-10 animate-in fade-in zoom-in duration-500 p-6 text-center">
