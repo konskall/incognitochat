@@ -9,7 +9,7 @@ import { decodeMessage, encodeMessage } from '../utils/helpers';
 import MessageList from './MessageList';
 import EmojiPicker from './EmojiPicker';
 import CallManager from './CallManager';
-import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun, Users, Settings } from 'lucide-react';
+import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun, Users, Settings, Share2 } from 'lucide-react';
 import { initAudio } from '../utils/helpers';
 
 interface ChatScreenProps {
@@ -488,6 +488,36 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       setShowSettingsMenu(false);
   };
 
+  const handleShare = async () => {
+    // Use hardcoded production URL to avoid blob: issues in preview
+    const baseUrl = 'https://konskall.github.io/incognitochat/';
+    const shareUrl = new URL(baseUrl);
+    shareUrl.searchParams.set('room', config.roomName);
+    shareUrl.searchParams.set('pin', config.pin);
+    const inviteUrl = shareUrl.toString();
+
+    const shareData = {
+        title: 'Incognito Chat Invite',
+        // Format exactly as requested: URL inside text, followed by credentials
+        text: `🔒 Join my secure room on Incognito Chat! ${inviteUrl}\n\n🏠 Room: ${config.roomName}\n🔑 PIN: ${config.pin}`,
+    };
+
+    try {
+        if (navigator.share) {
+            await navigator.share({
+                ...shareData,
+                url: inviteUrl // Provide valid URL for metadata fetching in apps
+            });
+        } else {
+            // For clipboard, just copy the formatted text
+            await navigator.clipboard.writeText(shareData.text);
+            alert('Room details copied to clipboard!');
+        }
+    } catch (err) {
+        console.error('Error sharing:', err);
+    }
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -803,6 +833,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              </div>
         </div>
         <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center relative">
+            {/* Share Button */}
+            <button
+                onClick={handleShare}
+                className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                title="Share Room Invite"
+            >
+                <Share2 size={20} />
+            </button>
+
             {/* Participants Button */}
             <button 
                 onClick={() => setShowParticipantsList(true)}
@@ -831,7 +870,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             )}
             <button 
                 onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`hidden sm:block p-2 rounded-lg transition ${soundEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                className={`hidden sm:block p-2 rounded-lg transition ${soundEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                 title={soundEnabled ? "Mute Sounds" : "Enable Sounds"}
             >
                 {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
