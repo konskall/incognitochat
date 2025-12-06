@@ -762,7 +762,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                                 <span className="font-medium text-slate-700 dark:text-slate-200 truncate flex items-center gap-1">
                                     {u.username}
                                     {roomCreatorId === u.uid && (
-                                        <Crown size={14} className="text-yellow-500 fill-yellow-500 ml-1" />
+                                        <Crown size={14} className="text-yellow-500 fill-yellow-500 ml-1 flex-shrink-0" />
                                     )}
                                 </span>
                             </div>
