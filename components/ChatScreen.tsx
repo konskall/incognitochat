@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, setDoc, deleteDoc, getDocs, writeBatch, updateDoc, getDoc, arrayUnion, arrayRemove, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
@@ -70,25 +71,31 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   // Theme effect
   useEffect(() => {
-    // Robustly find or create the meta tag to ensure browser UI updates
-    let metaThemeColor = document.querySelector("meta[name='theme-color']");
-    if (!metaThemeColor) {
-      metaThemeColor = document.createElement('meta');
-      metaThemeColor.setAttribute('name', 'theme-color');
-      document.head.appendChild(metaThemeColor);
-    }
+    const root = document.documentElement;
+    // Exact colors from Tailwind config (slate-950 and slate-50)
+    const darkColor = '#020617'; 
+    const lightColor = '#f8fafc';
+    const themeColor = isDarkMode ? darkColor : lightColor;
 
     if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-      document.documentElement.style.colorScheme = 'dark'; // Helper for Safari UI
-      // Match slate-900 (#0f172a) for Chat Screen
-      metaThemeColor.setAttribute("content", "#0f172a");
+      root.classList.add('dark');
+      root.style.colorScheme = 'dark';
     } else {
-      document.documentElement.classList.remove('dark');
-      document.documentElement.style.colorScheme = 'light'; // Helper for Safari UI
-      // Match slate-100 (#f1f5f9) for Chat Screen
-      metaThemeColor.setAttribute("content", "#f1f5f9");
+      root.classList.remove('dark');
+      root.style.colorScheme = 'light';
     }
+
+    // Force Safari to update by removing and re-adding the meta tag
+    const existingMeta = document.querySelector("meta[name='theme-color']");
+    if (existingMeta) {
+      existingMeta.remove();
+    }
+
+    const newMeta = document.createElement('meta');
+    newMeta.setAttribute('name', 'theme-color');
+    newMeta.setAttribute('content', themeColor);
+    document.head.appendChild(newMeta);
+    
   }, [isDarkMode]);
 
   const toggleTheme = () => {
