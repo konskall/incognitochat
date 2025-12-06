@@ -429,8 +429,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      // If content is huge, max 120px. 
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+      
+      // Force specific height when empty to fix iOS Safari scaling issue on first load
+      if (inputText === '') {
+          textareaRef.current.style.height = '40px';
+      } else {
+          // If content exists, auto-expand up to 120px
+          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+      }
     }
   }, [inputText]);
 
@@ -1013,7 +1019,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                         onKeyDown={handleKeyDown}
                         rows={1}
                         placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
-                        className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-6 text-base min-h-[40px] block"
+                        className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-6 text-base h-[40px] block"
                      />
                  </div>
                  
