@@ -80,10 +80,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
+      document.documentElement.style.colorScheme = 'dark'; // Helper for Safari UI
       // Match slate-900 (#0f172a) for Chat Screen
       metaThemeColor.setAttribute("content", "#0f172a");
     } else {
       document.documentElement.classList.remove('dark');
+      document.documentElement.style.colorScheme = 'light'; // Helper for Safari UI
       // Match slate-100 (#f1f5f9) for Chat Screen
       metaThemeColor.setAttribute("content", "#f1f5f9");
     }
@@ -433,7 +435,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       // Force specific height when empty to fix iOS Safari scaling issue on first load
       if (inputText === '') {
           textareaRef.current.style.height = '40px';
+          // Adding this class ensures it looks correct before JS runs if rendered server-side, 
+          // but here it just reinforces the reset.
+          textareaRef.current.classList.add('h-[40px]');
       } else {
+          textareaRef.current.classList.remove('h-[40px]');
           // If content exists, auto-expand up to 120px
           textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
       }
