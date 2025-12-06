@@ -9,6 +9,11 @@ import { initAudio } from '../utils/helpers';
 const ICE_SERVERS = {
   iceServers: [
     { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
+    {
+      urls: "turn:relay1.expressturn.com:3478", 
+      username: "000000002080400345",
+      credential: "JKtA6jhh/ttjg/M0xeAlleG4ucc="
+    }
   ],
   iceCandidatePoolSize: 10,
 };
