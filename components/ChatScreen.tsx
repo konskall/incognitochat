@@ -32,14 +32,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [showParticipantsList, setShowParticipantsList] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   
+  // Room & Creator State
+  const [isRoomReady, setIsRoomReady] = useState(false);
+  const [roomCreatorId, setRoomCreatorId] = useState<string | null>(null);
+  
   // Theme State
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return localStorage.getItem('theme') === 'dark';
   });
 
-  // New state to prevent listeners from attaching before room exists
-  const [isRoomReady, setIsRoomReady] = useState(false);
-  
   // Edit & Reply State
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -137,28 +138,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     };
   }, []);
 
-  // 1.1 Unlock Audio on First Interaction (Critical for Desktop Autoplay Policy)
-  useEffect(() => {
-      const unlockAudioContext = () => {
-          initAudio();
-          // Remove listeners once triggered
-          document.removeEventListener('click', unlockAudioContext);
-          document.removeEventListener('keydown', unlockAudioContext);
-          document.removeEventListener('touchstart', unlockAudioContext);
-      };
-
-      document.addEventListener('click', unlockAudioContext);
-      document.addEventListener('keydown', unlockAudioContext);
-      document.addEventListener('touchstart', unlockAudioContext);
-
-      return () => {
-          document.removeEventListener('click', unlockAudioContext);
-          document.removeEventListener('keydown', unlockAudioContext);
-          document.removeEventListener('touchstart', unlockAudioContext);
-      };
-  }, []);
-
-  // 1.5 Initialize Room Document
+  // 1.5 Initialize Room Document and get Creator
   useEffect(() => {
     const checkAndCreateRoom = async () => {
       if (!user || !config.roomKey) return;
@@ -169,7 +149,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         const roomDoc = await getDoc(roomRef);
         
         if (roomDoc.exists()) {
-           // Room exists, just update timestamp
+           // Room exists, just update timestamp and get creator
+           const data = roomDoc.data();
+           setRoomCreatorId(data.createdBy || null);
+           
            await updateDoc(roomRef, {
              lastActive: serverTimestamp()
            });
@@ -182,6 +165,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              createdBy: user.uid,
              lastActive: serverTimestamp()
            });
+           setRoomCreatorId(user.uid);
         }
         setIsRoomReady(true);
       } catch (error) {
@@ -825,6 +809,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             users={participants}
             showParticipants={showParticipantsList}
             onCloseParticipants={() => setShowParticipantsList(false)}
+            roomCreatorId={roomCreatorId}
           />
       )}
 
@@ -882,7 +867,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             {canVibrate && (
                 <button 
                     onClick={() => setVibrationEnabled(!vibrationEnabled)}
-                    className={`hidden sm:block p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                    className={`hidden sm:block p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                     title={vibrationEnabled ? "Vibration Enabled" : "Enable Vibration"}
                 >
                     {vibrationEnabled ? <Vibrate size={20} /> : <VibrateOff size={20} />}
@@ -897,7 +882,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             </button>
             <button 
                 onClick={toggleNotifications}
-                className={`hidden sm:block p-2 rounded-lg transition ${notificationsEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                className={`hidden sm:block p-2 rounded-lg transition ${notificationsEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                 title={notificationsEnabled ? "Notifications Active" : "Enable Notifications"}
             >
                 {notificationsEnabled ? <Bell size={20} /> : <BellOff size={20} />}
@@ -950,15 +935,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 </>
             )}
 
-            {/* Delete button only for creator */}
-            {user && config.roomKey.includes(user.uid) /* NOTE: This is a placeholder check. Ideally we store creator in config or check doc */ }
-            <button 
-                onClick={() => setShowDeleteModal(true)}
-                className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
-                title="Delete Chat"
-            >
-                <Trash2 size={20} />
-            </button>
+            {/* Delete button only for creator - verified check */}
+            {user && roomCreatorId === user.uid && (
+                <button 
+                    onClick={() => setShowDeleteModal(true)}
+                    className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
+                    title="Delete Chat"
+                >
+                    <Trash2 size={20} />
+                </button>
+            )}
             <button 
                 onClick={onExit}
                 className="p-2 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition"
