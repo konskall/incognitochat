@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw, X, User as UserIcon, AlertCircle, Volume2, VolumeX } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw, X, User as UserIcon, AlertCircle, Volume2, VolumeX, Signal, Crown } from 'lucide-react';
 import { db } from '../services/firebase';
 import { collection, doc, onSnapshot, addDoc, updateDoc, serverTimestamp, query, where, setDoc } from 'firebase/firestore';
 import { User, ChatConfig } from '../types';
@@ -39,6 +39,7 @@ interface CallManagerProps {
   users: any[]; 
   onCloseParticipants: () => void;
   showParticipants: boolean;
+  roomCreatorId?: string | null;
 }
 
 interface CallState {
@@ -50,7 +51,7 @@ interface CallState {
   type: 'audio' | 'video';
 }
 
-const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseParticipants, showParticipants }) => {
+const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseParticipants, showParticipants, roomCreatorId }) => {
   // --- UI State ---
   const [viewState, setViewState] = useState<CallState>({
     status: 'idle',
@@ -67,12 +68,19 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const [incomingData, setIncomingData] = useState<any>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  // Connection Quality State
+  const [networkQuality, setNetworkQuality] = useState<'good' | 'poor' | 'bad'>('good');
+  const [networkStats, setNetworkStats] = useState({ rtt: 0, loss: 0 });
 
   // --- Logic Refs (No Re-renders) ---
   const pc = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
   const remoteStream = useRef<MediaStream | null>(null);
   const unsubscribeRefs = useRef<(() => void)[]>([]);
+  
+  // To track packet loss over time
+  const prevStats = useRef<{ packetsLost: number; packetsReceived: number } | null>(null);
   
   // --- DOM Refs ---
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -126,6 +134,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     setIsMuted(false);
     setIsSpeakerMuted(false);
     setIsVideoOff(false);
+    setNetworkQuality('good');
+    prevStats.current = null;
     
     // 7. Reset video elements
     if (localVideoRef.current) {
@@ -436,6 +446,66 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     }
   }, [isSpeakerMuted]);
 
+  // Network Quality Monitoring
+  useEffect(() => {
+    if (viewState.status !== 'connected' || !pc.current) return;
+
+    const checkStats = async () => {
+        if (!pc.current) return;
+        
+        try {
+            const stats = await pc.current.getStats();
+            let rtt = 0;
+            let packetsLost = 0;
+            let packetsReceived = 0;
+
+            stats.forEach(report => {
+                // Get Round Trip Time (Latency)
+                if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.currentRoundTripTime) {
+                    rtt = report.currentRoundTripTime * 1000; // ms
+                }
+                
+                // Get Packet Loss
+                if (report.type === 'inbound-rtp' && (report.kind === 'video' || report.kind === 'audio')) {
+                    packetsLost += report.packetsLost || 0;
+                    packetsReceived += report.packetsReceived || 0;
+                }
+            });
+
+            // Calculate instantaneous loss if we have previous data
+            let currentLossPercent = 0;
+            if (prevStats.current && packetsReceived > prevStats.current.packetsReceived) {
+                const deltaLoss = packetsLost - prevStats.current.packetsLost;
+                const deltaReceived = packetsReceived - prevStats.current.packetsReceived;
+                const totalPackets = deltaLoss + deltaReceived;
+                
+                if (totalPackets > 0) {
+                    currentLossPercent = (deltaLoss / totalPackets) * 100;
+                }
+            }
+            
+            // Store current as previous for next loop
+            prevStats.current = { packetsLost, packetsReceived };
+
+            setNetworkStats({ rtt, loss: currentLossPercent });
+
+            // Determine Quality Status
+            if (rtt > 300 || currentLossPercent > 5) {
+                setNetworkQuality('bad');
+            } else if (rtt > 150 || currentLossPercent > 2) {
+                setNetworkQuality('poor');
+            } else {
+                setNetworkQuality('good');
+            }
+        } catch (e) {
+            console.error("Stats monitoring error:", e);
+        }
+    };
+
+    const intervalId = setInterval(checkStats, 2000);
+    return () => clearInterval(intervalId);
+  }, [viewState.status]);
+
   const handleHangup = async () => {
     if (viewState.callId) {
         const callRef = doc(db, "chats", config.roomKey, "calls", viewState.callId);
@@ -577,6 +647,21 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       playsInline 
                       className={`w-full h-full object-contain ${showRemoteVideo ? '' : 'hidden'}`} 
                   />
+
+                  {/* Network Quality Indicator */}
+                  {viewState.status === 'connected' && networkQuality !== 'good' && (
+                      <div className="absolute top-20 left-4 z-50 flex items-center gap-2 bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-white/10 animate-pulse">
+                          <Signal size={16} className={networkQuality === 'bad' ? "text-red-500" : "text-yellow-500"} />
+                          <div className="flex flex-col">
+                              <span className={`text-xs font-bold ${networkQuality === 'bad' ? 'text-red-400' : 'text-yellow-400'}`}>
+                                  Poor Connection
+                              </span>
+                              <span className="text-[10px] text-white/70">
+                                  {networkStats.loss > 0 ? `Loss: ${networkStats.loss.toFixed(0)}%` : `Ping: ${networkStats.rtt.toFixed(0)}ms`}
+                              </span>
+                          </div>
+                      </div>
+                  )}
                   
                   {/* Placeholder / Audio View */}
                   {(!showRemoteVideo) && (
@@ -674,7 +759,12 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                         <div key={u.uid} className="flex items-center justify-between p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-xl transition group">
                             <div className="flex items-center gap-3 overflow-hidden">
                                 <img src={u.avatar} className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-600 object-cover" />
-                                <span className="font-medium text-slate-700 dark:text-slate-200 truncate">{u.username}</span>
+                                <span className="font-medium text-slate-700 dark:text-slate-200 truncate flex items-center gap-1">
+                                    {u.username}
+                                    {roomCreatorId === u.uid && (
+                                        <Crown size={14} className="text-yellow-500 fill-yellow-500 ml-1" />
+                                    )}
+                                </span>
                             </div>
                             <div className="flex gap-1">
                                 <button 
