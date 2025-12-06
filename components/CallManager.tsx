@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw, X, User as UserIcon, AlertCircle } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw, X, User as UserIcon, AlertCircle, Volume2, VolumeX } from 'lucide-react';
 import { db } from '../services/firebase';
 import { collection, doc, onSnapshot, addDoc, updateDoc, serverTimestamp, query, where, setDoc } from 'firebase/firestore';
 import { User, ChatConfig } from '../types';
@@ -61,7 +61,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     type: 'video'
   });
   
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(false); // Microphone mute
+  const [isSpeakerMuted, setIsSpeakerMuted] = useState(false); // Speaker mute
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [incomingData, setIncomingData] = useState<any>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
@@ -123,6 +124,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     setIncomingData(null);
     setErrorMsg(null);
     setIsMuted(false);
+    setIsSpeakerMuted(false);
     setIsVideoOff(false);
     
     // 7. Reset video elements
@@ -216,7 +218,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
         if (remoteVideoRef.current.srcObject !== remoteStream.current) {
             remoteVideoRef.current.srcObject = remoteStream.current;
         }
-        remoteVideoRef.current.muted = false;
+        remoteVideoRef.current.muted = false; // Default unmuted, will be updated by state
         remoteVideoRef.current.volume = 1.0;
         remoteVideoRef.current.play().catch(e => console.error("AutoPlay blocked", e));
       }
@@ -420,12 +422,19 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
        }
        if (remoteVideoRef.current && remoteStream.current) {
            remoteVideoRef.current.srcObject = remoteStream.current;
-           remoteVideoRef.current.muted = false; 
+           remoteVideoRef.current.muted = isSpeakerMuted; // Use state
            remoteVideoRef.current.volume = 1.0;
            remoteVideoRef.current.play().catch(console.error);
        }
     }
   }, [viewState.status, viewState.type]);
+
+  // Handle speaker mute toggle syncing with video element
+  useEffect(() => {
+    if (remoteVideoRef.current) {
+        remoteVideoRef.current.muted = isSpeakerMuted;
+    }
+  }, [isSpeakerMuted]);
 
   const handleHangup = async () => {
     if (viewState.callId) {
@@ -462,7 +471,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       const newMode = facingMode === 'user' ? 'environment' : 'user';
       
       try {
-          // Stop current tracks to release camera hardware (crucial for iOS)
           localStream.current.getVideoTracks().forEach(t => t.stop());
           
           const newStream = await getMediaStream('video', newMode);
@@ -474,13 +482,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               if (sender) sender.replaceTrack(videoTrack);
           }
           
-          // Re-add audio tracks if they exist
           const audioTracks = localStream.current.getAudioTracks();
           if(audioTracks.length > 0) {
-              // Note: We don't need to add audio to newStream if we just want to replace video in PC
-              // But for local state consistency, we keep them together.
-              // However, getMediaStream for video switching might not return audio tracks depending on implementation.
-              // Let's ensure we keep the audio.
               if (newStream.getAudioTracks().length === 0) {
                   newStream.addTrack(audioTracks[0]);
               }
@@ -609,25 +612,36 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               </div>
 
               {/* Controls Bar */}
-              <div className="bg-slate-900/90 backdrop-blur-lg p-6 pb-10 flex items-center justify-center gap-6 z-30 border-t border-white/5">
+              <div className="bg-slate-900/90 backdrop-blur-lg p-6 pb-10 flex items-center justify-center gap-3 sm:gap-6 z-30 border-t border-white/5">
                   <button 
                       onClick={toggleMute} 
-                      className={`p-4 rounded-full transition-all ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
+                      className={`p-3 sm:p-4 rounded-full transition-all ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
+                      title={isMuted ? "Unmute Mic" : "Mute Mic"}
                   >
                       {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
+                  </button>
+
+                  <button 
+                      onClick={() => setIsSpeakerMuted(!isSpeakerMuted)} 
+                      className={`p-3 sm:p-4 rounded-full transition-all ${isSpeakerMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
+                      title={isSpeakerMuted ? "Unmute Sound" : "Mute Sound"}
+                  >
+                      {isSpeakerMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
                   </button>
                   
                   {viewState.type === 'video' && (
                     <>
                         <button 
                             onClick={toggleVideo} 
-                            className={`p-4 rounded-full transition-all ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
+                            className={`p-3 sm:p-4 rounded-full transition-all ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
+                            title={isVideoOff ? "Turn Camera On" : "Turn Camera Off"}
                         >
                             {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
                         </button>
                         <button 
                             onClick={switchCamera} 
-                            className="p-4 rounded-full bg-slate-800 text-white hover:bg-slate-700 transition-all"
+                            className="p-3 sm:p-4 rounded-full bg-slate-800 text-white hover:bg-slate-700 transition-all"
+                            title="Switch Camera"
                         >
                             <RotateCcw size={24} />
                         </button>
@@ -636,7 +650,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
 
                   <button 
                       onClick={handleHangup} 
-                      className="p-4 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all shadow-lg shadow-red-500/40 hover:scale-110"
+                      className="p-3 sm:p-4 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all shadow-lg shadow-red-500/40 hover:scale-110"
+                      title="End Call"
                   >
                       <PhoneOff size={32} fill="currentColor" />
                   </button>
