@@ -615,7 +615,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                         </button>
                         <button 
                             onClick={switchCamera} 
-                            className="p-4 rounded-full bg-slate-800 text-white hover:bg-slate-700 transition-all md:hidden"
+                            className="p-4 rounded-full bg-slate-800 text-white hover:bg-slate-700 transition-all"
                         >
                             <RotateCcw size={24} />
                         </button>
