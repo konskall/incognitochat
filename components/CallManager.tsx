@@ -5,7 +5,6 @@ import { collection, doc, onSnapshot, addDoc, updateDoc, serverTimestamp, query,
 import { User, ChatConfig } from '../types';
 import { initAudio } from '../utils/helpers';
 
-// --- Constants ---
 const ICE_SERVERS = {
   iceServers: [
     { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
@@ -13,7 +12,6 @@ const ICE_SERVERS = {
   iceCandidatePoolSize: 10,
 };
 
-// --- Interfaces ---
 interface CallManagerProps {
   user: User;
   config: ChatConfig;
@@ -65,12 +63,17 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const cleanup = useCallback(() => {
     // 1. Stop Media Tracks
     if (localStream.current) {
-      localStream.current.getTracks().forEach(track => track.stop());
+      localStream.current.getTracks().forEach(track => {
+          track.stop();
+          track.enabled = false; // Explicitly disable
+      });
       localStream.current = null;
     }
     
     // 2. Close Peer Connection
     if (pc.current) {
+      pc.current.onicecandidate = null;
+      pc.current.ontrack = null;
       pc.current.close();
       pc.current = null;
     }
@@ -99,7 +102,42 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     candidateQueue.current = [];
     setIsMuted(false);
     setIsVideoOff(false);
+    
+    // Reset video elements
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
   }, []);
+
+  // ============================================================
+  // HELPER: Get User Media (Robust)
+  // ============================================================
+  const getMediaStream = async (type: 'audio' | 'video', mode: 'user' | 'environment') => {
+      // 1. Check for Secure Context
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+          throw new Error("WebRTC requires HTTPS or localhost. Media devices are blocked on HTTP.");
+      }
+
+      // 2. Try Ideal Constraints (Mobile Friendly)
+      try {
+          const constraints = {
+              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+              video: type === 'video' ? { facingMode: mode } : false
+          };
+          return await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err) {
+          console.warn("Ideal constraints failed, trying generic...", err);
+          // 3. Fallback to Basic Constraints (Desktop Friendly)
+          try {
+             return await navigator.mediaDevices.getUserMedia({
+                 audio: true,
+                 video: type === 'video' // Just ask for any video
+             });
+          } catch (finalErr) {
+              console.error("Media access completely failed", finalErr);
+              throw finalErr;
+          }
+      }
+  };
 
   // ============================================================
   // HELPER: Initialize Peer Connection
@@ -117,11 +155,13 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
 
     // B. Handle Remote Tracks
     newPC.ontrack = (event) => {
+      console.log("Remote track received:", event.streams[0].id);
       const stream = event.streams[0];
       remoteStream.current = stream;
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = stream;
-        remoteVideoRef.current.play().catch(console.error);
+        // Desktop browsers often block autoplay if not muted or interacted with
+        remoteVideoRef.current.play().catch(e => console.error("Remote play error", e));
       }
     };
 
@@ -145,10 +185,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       initAudio(); // Unlock audio context
 
       // 1. Get Local Media
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: type === 'video' ? { facingMode: 'user' } : false
-      });
+      const stream = await getMediaStream(type, facingMode);
+      if (!stream) throw new Error("No stream acquired");
+      
       localStream.current = stream;
 
       // 2. Create Firestore Document first to get ID
@@ -209,20 +248,16 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'added') {
             const candidate = new RTCIceCandidate(change.doc.data());
-            if (connection.remoteDescription) {
-                connection.addIceCandidate(candidate).catch(console.error);
-            } else {
-                // Wait for remote description or rely on PC buffering
-                connection.addIceCandidate(candidate).catch(console.error);
-            }
+            // Modern WebRTC handles buffering, but simple catch protects against state errors
+            connection.addIceCandidate(candidate).catch(e => console.log("Candidate add failed", e));
           }
         });
       });
       unsubscribeRefs.current.push(unsubCandidates);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error starting call:", error);
-      alert("Could not start call. Check permissions.");
+      alert(`Could not start call: ${error.message || "Check Permissions"}`);
       cleanup();
     }
   };
@@ -241,10 +276,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       if (ringtone.current) ringtone.current.pause();
 
       // 1. Get Local Media
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: incomingData.type === 'video' ? { facingMode: 'user' } : false
-      });
+      const stream = await getMediaStream(incomingData.type, facingMode);
+      if (!stream) throw new Error("No stream acquired");
+
       localStream.current = stream;
 
       // 2. Setup PC
@@ -295,9 +329,15 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       });
       unsubscribeRefs.current.push(unsubDoc);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error answering call:", error);
-      cleanup();
+      alert(`Could not answer call: ${error.message || "Check permissions or HTTPS connection"}`);
+      // Don't fully cleanup here, keep the incoming screen so they can try again or reject properly
+      // But stop media if started
+      if(localStream.current) {
+          localStream.current.getTracks().forEach(t => t.stop());
+          localStream.current = null;
+      }
     }
   };
 
@@ -341,7 +381,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   // EFFECT: Update Video Elements (When connected)
   // ============================================================
   useEffect(() => {
-    if (viewState.status === 'connected') {
+    if (viewState.status === 'connected' || viewState.status === 'calling') {
        // Attach Local
        if (localVideoRef.current && localStream.current) {
            localVideoRef.current.srcObject = localStream.current;
@@ -399,10 +439,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           // Stop old video tracks
           localStream.current.getVideoTracks().forEach(t => t.stop());
           
-          const newStream = await navigator.mediaDevices.getUserMedia({
-              audio: true, // Keep audio flowing
-              video: { facingMode: newMode }
-          });
+          const newStream = await getMediaStream('video', newMode);
+          if (!newStream) return;
           
           // Replace track in PeerConnection
           if (pc.current) {
@@ -411,6 +449,13 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               if (sender) sender.replaceTrack(videoTrack);
           }
           
+          // Keep audio track from old stream if possible, or just use new stream
+          // Ideally we mix them, but switching whole stream is safer for simple implementation
+          const audioTracks = localStream.current.getAudioTracks();
+          if(audioTracks.length > 0) {
+              newStream.addTrack(audioTracks[0]);
+          }
+
           localStream.current = newStream;
           setFacingMode(newMode);
           
