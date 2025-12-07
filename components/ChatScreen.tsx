@@ -75,6 +75,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Store the mimeType used for recording to ensure correct playback on iOS/Android
+  const recordingMimeTypeRef = useRef<string>('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -807,7 +809,20 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      
+      // Determine best supported mimeType (iOS/Safari prefers mp4/aac, Android/Chrome prefers webm/opus)
+      let options: MediaRecorderOptions = {};
+      if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        options = { mimeType: 'audio/mp4' };
+      } else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        options = { mimeType: 'audio/webm;codecs=opus' };
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        options = { mimeType: 'audio/webm' };
+      }
+      
+      recordingMimeTypeRef.current = options.mimeType || '';
+
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -818,7 +833,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const type = recordingMimeTypeRef.current || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type });
         await sendVoiceMessage(audioBlob);
         
         stream.getTracks().forEach(track => track.stop());
@@ -874,6 +890,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           reader.onloadend = async () => {
               const base64Audio = reader.result as string;
               
+              // Determine file extension based on MIME type
+              const ext = audioBlob.type.includes('mp4') ? 'm4a' : 'webm';
+              
                await addDoc(collection(db, "chats", config.roomKey, "messages"), {
                 uid: user!.uid,
                 username: config.username,
@@ -883,8 +902,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 type: 'text',
                 attachment: {
                     url: base64Audio,
-                    name: `recorder_${Date.now()}.webm`,
-                    type: 'audio/webm',
+                    name: `recorder_${Date.now()}.${ext}`,
+                    type: audioBlob.type,
                     size: audioBlob.size
                 },
                 reactions: {},
