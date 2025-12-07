@@ -8,7 +8,7 @@ import { decodeMessage, encodeMessage, compressImage } from '../utils/helpers';
 import MessageList from './MessageList';
 import EmojiPicker from './EmojiPicker';
 import CallManager from './CallManager';
-import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun, Users, Settings, Share2, Mail, Check, Mic } from 'lucide-react';
+import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun, Users, Settings, Share2, Mail, Mic, Square } from 'lucide-react';
 import { initAudio } from '../utils/helpers';
 import emailjs from '@emailjs/browser';
 
@@ -21,7 +21,6 @@ interface ChatScreenProps {
 const MAX_FILE_SIZE = 500 * 1024; 
 
 // --- EMAILJS CONFIGURATION ---
-// REPLACE THESE WITH YOUR ACTUAL KEYS FROM EMAILJS DASHBOARD
 const EMAILJS_SERVICE_ID: string = "service_cnerkn6";
 const EMAILJS_TEMPLATE_ID: string = "template_zr9v8bp";
 const EMAILJS_PUBLIC_KEY: string = "cSDU4HLqgylnmX957";
@@ -30,7 +29,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
-  const [participants, setParticipants] = useState<Presence[]>([]); // Changed to array of Presence objects
+  const [participants, setParticipants] = useState<Presence[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [showEmoji, setShowEmoji] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -56,10 +55,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
-  const [canVibrate, setCanVibrate] = useState(false); // Hardware support check
+  const [canVibrate, setCanVibrate] = useState(false);
 
   // Email Alert State
   const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
   const [isSavingEmail, setIsSavingEmail] = useState(false);
   
@@ -67,27 +67,24 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
-  
+
   // Audio Recording State
   const [isRecording, setIsRecording] = useState(false);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingDuration, setRecordingDuration] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const settingsMenuRef = useRef<HTMLDivElement>(null); // Ref for settings dropdown
-  const settingsButtonRef = useRef<HTMLButtonElement>(null); // Ref for settings button
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
-  // Track first load for scrolling and sound
   const isFirstLoad = useRef(true);
   const isFirstSnapshot = useRef(true);
-  
-  // Track previous message count to handle scroll behavior
   const prevMessageCount = useRef(0);
 
   // Close settings menu when clicking outside
@@ -113,7 +110,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   // Theme effect
   useEffect(() => {
     const root = document.documentElement;
-    // Exact colors from Tailwind config (slate-950 and slate-50)
     const darkColor = '#020617'; 
     const lightColor = '#f8fafc';
     const themeColor = isDarkMode ? darkColor : lightColor;
@@ -126,7 +122,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       root.style.colorScheme = 'light';
     }
 
-    // Force Safari to update by removing and re-adding the meta tag
     const existingMeta = document.querySelector("meta[name='theme-color']");
     if (existingMeta) {
       existingMeta.remove();
@@ -143,10 +138,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     const newTheme = !isDarkMode;
     setIsDarkMode(newTheme);
     localStorage.setItem('theme', newTheme ? 'dark' : 'light');
-    setShowSettingsMenu(false); // Close menu on selection
+    setShowSettingsMenu(false);
   };
 
-  // Helper to send system messages - Wrapped in useCallback for stability
   const sendSystemMessage = useCallback(async (text: string) => {
     if (!config.roomKey) return;
     try {
@@ -164,16 +158,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   }, [config.roomKey]);
 
-  // Helper to notify email subscribers
   const notifySubscribers = async (action: 'message' | 'deleted', details: string) => {
       if (!config.roomKey || !user) return;
       
-      // Prevent running if keys are not set (placeholder check)
-      if (EMAILJS_SERVICE_ID === "YOUR_SERVICE_ID") {
-          console.warn("EmailJS is not configured. Please set your Service ID, Template ID, and Public Key in ChatScreen.tsx");
-          return;
-      }
-
       try {
           const subscribersRef = collection(db, "chats", config.roomKey, "subscribers");
           const snapshot = await getDocs(subscribersRef);
@@ -183,7 +170,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           const recipients: string[] = [];
           snapshot.forEach(doc => {
               const sub = doc.data() as Subscriber;
-              // Don't notify yourself (the sender)
               if (sub.uid !== user.uid && sub.email) {
                   recipients.push(sub.email);
               }
@@ -191,11 +177,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
           if (recipients.length > 0) {
               const emailParams = {
-                  to_email: recipients.join(','), // EmailJS usually handles comma-separated lists for multiple recipients
+                  to_email: recipients.join(','),
                   room_name: config.roomName,
                   action_type: action === 'message' ? 'New Message' : 'Room Deleted',
                   message_body: details,
-                  link: window.location.href // Current URL
+                  link: window.location.href
               };
 
               console.log(`[Email Service] Sending notification to ${recipients.length} subscribers...`);
@@ -213,7 +199,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
   };
 
-  // 1. Authentication & Network Status & Feature Detection
   useEffect(() => {
     const unsubAuth = auth.onAuthStateChanged((u) => {
       if (u) {
@@ -229,12 +214,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     window.addEventListener('online', handleNetworkChange);
     window.addEventListener('offline', handleNetworkChange);
 
-    // Check if permission was already granted in a previous session
     if ('Notification' in window && Notification.permission === 'granted') {
       setNotificationsEnabled(true);
     }
 
-    // Check for Vibration API support (iOS does not support it)
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
         setCanVibrate(true);
     }
@@ -246,11 +229,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     };
   }, []);
 
-  // 1.1 Unlock Audio on First Interaction (Critical for Desktop Autoplay Policy)
   useEffect(() => {
       const unlockAudioContext = () => {
           initAudio();
-          // Remove listeners once triggered
           document.removeEventListener('click', unlockAudioContext);
           document.removeEventListener('keydown', unlockAudioContext);
           document.removeEventListener('touchstart', unlockAudioContext);
@@ -267,7 +248,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       };
   }, []);
 
-  // 1.5 Initialize Room Document and get Creator
   useEffect(() => {
     const checkAndCreateRoom = async () => {
       if (!user || !config.roomKey) return;
@@ -278,9 +258,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         const roomDoc = await getDoc(roomRef);
         
         if (roomDoc.exists()) {
-           // Room exists, just update timestamp and get creator
            const data = roomDoc.data();
-           // Backfill createdBy if missing (for legacy rooms)
            if (!data.createdBy) {
               await updateDoc(roomRef, { createdBy: user.uid });
               setRoomCreatorId(user.uid);
@@ -292,7 +270,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              lastActive: serverTimestamp()
            });
         } else {
-           // Room doesn't exist, create it
            await setDoc(roomRef, {
              createdAt: serverTimestamp(),
              roomKey: config.roomKey,
@@ -302,7 +279,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
            });
            setRoomCreatorId(user.uid);
 
-           // Add initial system message for room creation
            await addDoc(collection(db, "chats", config.roomKey, "messages"), {
               text: encodeMessage(`Room created by ${config.username}`),
               uid: "system",
@@ -323,7 +299,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     checkAndCreateRoom();
   }, [user, config.roomKey, config.roomName, config.username]);
 
-  // Check subscription status
   useEffect(() => {
       if (isRoomReady && user && config.roomKey) {
           const checkSubscription = async () => {
@@ -338,7 +313,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
   }, [isRoomReady, user, config.roomKey]);
 
-  // Handle Join Message (Once per session per room)
   useEffect(() => {
       if (isRoomReady && user && config.roomKey) {
           const sessionKey = `joined_${config.roomKey}`;
@@ -349,7 +323,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
   }, [isRoomReady, user, config.roomKey, config.username, sendSystemMessage]);
 
-  // Handle Manual Exit
   const handleExitChat = async () => {
       if (config.roomKey) {
           await sendSystemMessage(`${config.username} left the room`);
@@ -358,15 +331,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       onExit();
   };
 
-  // NEW: Listen for Room Deletion (Kick functionality)
   useEffect(() => {
-    // Only listen if room is ready and WE are not the ones currently deleting it
     if (!config.roomKey || !isRoomReady || isDeleting) return;
 
     const roomRef = doc(db, "chats", config.roomKey);
     
     const unsubscribe = onSnapshot(roomRef, (docSnap) => {
-        // If document doesn't exist, it means it was deleted
         if (!docSnap.exists()) {
             alert("⚠️ The chat room has been deleted by the administrator.");
             onExit();
@@ -378,7 +348,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     return () => unsubscribe();
   }, [config.roomKey, isRoomReady, isDeleting, onExit]);
 
-  // 2. Notification Setup (FCM Token Registration)
   useEffect(() => {
       if (notificationsEnabled && user && messaging && isRoomReady) {
           const registerToken = async () => {
@@ -407,7 +376,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
   }, [notificationsEnabled, user, config.roomKey, config.username, isRoomReady]);
 
-  // Helper function to update presence
   const updatePresence = useCallback((overrides: Partial<Presence> = {}) => {
     if (!user || !config.roomKey || !isRoomReady) return;
     const uid = user.uid;
@@ -423,15 +391,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }, { merge: true }).catch(console.error);
   }, [user, config.roomKey, config.username, config.avatarURL, isRoomReady]);
 
-  // 3. Presence Heartbeat & Visibility Logic
   useEffect(() => {
     if (!user || !config.roomKey || !isRoomReady) return;
 
-    // Initial Active Status
     updatePresence({ isTyping: false, status: 'active' });
     
     const interval = setInterval(() => {
-        // Only send heartbeat if page is visible
         if (document.visibilityState === 'visible') {
             updatePresence({ status: 'active' });
         }
@@ -441,7 +406,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         if (document.visibilityState === 'visible') {
             updatePresence({ status: 'active' });
         } else {
-            // Mark as inactive when user minimizes app/switches tab
             updatePresence({ status: 'inactive' });
         }
     };
@@ -463,7 +427,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     };
   }, [user, config.roomKey, updatePresence, isRoomReady]);
 
-  // 4. Presence Listener
   useEffect(() => {
      if (!config.roomKey || !user || !isRoomReady) return;
 
@@ -476,7 +439,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              const data = doc.data() as Presence;
              currentUsers.push(data);
              
-             // Check if user is actively typing and status is active
              if (data.uid !== user.uid && data.isTyping && data.status === 'active') {
                  typers.push(data.username);
              }
@@ -490,7 +452,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
      return () => unsubscribe();
   }, [config.roomKey, user, isRoomReady]);
 
-  // 5. Message Listener
   useEffect(() => {
     if (!config.roomKey || !user || !isRoomReady) return;
 
@@ -504,11 +465,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       let lastMsg: Message | null = null;
       let hasNewMessageFromOthers = false;
 
-      // Use for-of loop instead of forEach to ensure TypeScript correctly infers closure mutations
       for (const change of snapshot.docChanges()) {
         if (change.type === "added") {
            const data = change.doc.data();
-           // Ensure it's not a local optimistic write, not our own message, not a system message, and NOT the initial history load
            if (!snapshot.metadata.fromCache && data.uid !== user.uid && data.type !== 'system') {
                hasNewMessageFromOthers = true;
                lastMsg = { 
@@ -542,15 +501,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           isEdited: data.isEdited,
           reactions: data.reactions || {},
           replyTo: data.replyTo,
-          type: data.type || 'text' // Fallback to 'text' if type is undefined (legacy messages)
+          type: data.type || 'text'
         });
       });
 
       setMessages(msgs);
 
-      // Play sound only if it's NOT the first snapshot (history load)
       if (!isFirstSnapshot.current && hasNewMessageFromOthers && lastMsg) {
-          // Sound Logic
           if (soundEnabled) {
               initAudio(); 
               setTimeout(() => {
@@ -562,12 +519,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
               }, 10);
           }
 
-          // Vibration Logic - Feature check inside
           if (vibrationEnabled && canVibrate && 'vibrate' in navigator) {
               navigator.vibrate(200);
           }
 
-          // Local Notification Logic
           if (document.hidden && notificationsEnabled) {
              const title = `New message from ${lastMsg.username}`;
              let body = lastMsg.text;
@@ -586,7 +541,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           }
       }
       
-      // Mark first snapshot as done
       if (isFirstSnapshot.current) {
           isFirstSnapshot.current = false;
       }
@@ -597,11 +551,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     return () => unsubscribe();
   }, [config.roomKey, user, notificationsEnabled, isRoomReady, soundEnabled, vibrationEnabled, canVibrate]);
 
-  // Scroll logic
   useEffect(() => {
     if (!messagesEndRef.current) return;
 
-    // Case 1: First Load - Instant scroll
     if (isFirstLoad.current && messages.length > 0) {
         messagesEndRef.current.scrollIntoView({ behavior: "auto" });
         isFirstLoad.current = false;
@@ -609,46 +561,35 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         return;
     }
 
-    // Case 2: New Message - Smooth scroll
-    // Only scroll if the number of messages INCREASED.
-    // This ignores edits, reactions, and typing status changes.
     if (messages.length > prevMessageCount.current) {
         messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
         prevMessageCount.current = messages.length;
     } else {
-        // Sync ref even if we didn't scroll (e.g. deletion or edit)
         prevMessageCount.current = messages.length;
     }
   }, [messages]); 
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       
-      // Force specific height when empty to fix iOS Safari scaling issue on first load
       if (inputText === '') {
           textareaRef.current.style.height = '40px';
-          // Adding this class ensures it looks correct before JS runs if rendered server-side, 
-          // but here it just reinforces the reset.
           textareaRef.current.classList.add('h-[40px]');
       } else {
           textareaRef.current.classList.remove('h-[40px]');
-          // If content exists, auto-expand up to 120px
           textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
       }
     }
   }, [inputText]);
 
   const toggleNotifications = async () => {
-      // If already enabled, disable them
       if (notificationsEnabled) {
           setNotificationsEnabled(false);
           setShowSettingsMenu(false);
           return;
       }
 
-      // If disabled, check permission and enable
       if (!('Notification' in window)) {
           alert('This browser does not support desktop notifications.');
           return;
@@ -675,19 +616,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       setShowSettingsMenu(false);
   };
 
-  // Toggle Email Alerts Logic
   const handleEmailToggle = async () => {
       if (!user || !config.roomKey) return;
 
       if (emailAlertsEnabled) {
-          // Unsubscribe
           const subDocRef = doc(db, "chats", config.roomKey, "subscribers", user.uid);
           await deleteDoc(subDocRef);
           setEmailAlertsEnabled(false);
           setEmailAddress('');
+          setShowEmailModal(false);
       } else {
-          // Just enable UI state to show input
-          setEmailAlertsEnabled(true);
+          setShowEmailModal(true);
       }
   };
 
@@ -706,6 +645,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
               email: emailAddress,
               createdAt: serverTimestamp()
           });
+          setEmailAlertsEnabled(true);
+          setShowEmailModal(false);
           setShowSettingsMenu(false);
           alert("Email alerts enabled for this room.");
       } catch (e) {
@@ -718,14 +659,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
 
   const handleShare = async () => {
-    // Use hardcoded production URL to avoid blob: issues in preview
     const baseUrl = 'https://konskall.github.io/incognitochat/';
     const shareUrl = new URL(baseUrl);
     shareUrl.searchParams.set('room', config.roomName);
     shareUrl.searchParams.set('pin', config.pin);
     const inviteUrl = shareUrl.toString();
 
-    // Defined without the URL to prevent duplication in native share sheet
     const shareText = `🔒 Join my secure room on Incognito Chat!\n\n🏠 Room: ${config.roomName}\n🔑 PIN: ${config.pin}`;
 
     try {
@@ -733,10 +672,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             await navigator.share({
                 title: 'Incognito Chat Invite',
                 text: shareText,
-                url: inviteUrl // Provide valid URL for metadata fetching in apps
+                url: inviteUrl
             });
         } else {
-            // For clipboard, manually append URL
             await navigator.clipboard.writeText(`${shareText}\n\n${inviteUrl}`);
             alert('Room details copied to clipboard!');
         }
@@ -758,7 +696,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             if (confirmCompress) {
                 setIsUploading(true);
                 try {
-                    // Attempt compression
                     const compressed = await compressImage(file);
                     
                     if (compressed.size > MAX_FILE_SIZE) {
@@ -817,14 +754,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const handleEditMessage = useCallback((msg: Message) => {
       setInputText(msg.text);
       setEditingMessageId(msg.id);
-      setReplyingTo(null); // Cancel reply if editing
+      setReplyingTo(null);
       setSelectedFile(null);
       textareaRef.current?.focus();
   }, []);
   
   const handleReply = useCallback((msg: Message) => {
       setReplyingTo(msg);
-      setEditingMessageId(null); // Cancel edit if replying
+      setEditingMessageId(null);
       textareaRef.current?.focus();
   }, []);
 
@@ -843,10 +780,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         let updateOp;
         
         if (userList.includes(user.uid)) {
-            // Remove reaction
             updateOp = arrayRemove(user.uid);
         } else {
-            // Add reaction
             updateOp = arrayUnion(user.uid);
         }
         
@@ -867,6 +802,108 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const cancelReply = useCallback(() => {
       setReplyingTo(null);
   }, []);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await sendVoiceMessage(audioBlob);
+        
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      
+      setRecordingDuration(0);
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      alert("Microphone access denied or not available.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  const cancelRecording = () => {
+     if (mediaRecorderRef.current && isRecording) {
+      // Create a dummy onstop to prevent sending
+      mediaRecorderRef.current.onstop = () => {
+          if(mediaRecorderRef.current && mediaRecorderRef.current.stream) {
+              mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+          }
+      };
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  const sendVoiceMessage = async (audioBlob: Blob) => {
+      if (audioBlob.size > MAX_FILE_SIZE) {
+          alert("Voice message too long (max 500KB).");
+          return;
+      }
+      
+      setIsUploading(true);
+      try {
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = async () => {
+              const base64Audio = reader.result as string;
+              
+               await addDoc(collection(db, "chats", config.roomKey, "messages"), {
+                uid: user!.uid,
+                username: config.username,
+                avatarURL: config.avatarURL,
+                text: "",
+                createdAt: serverTimestamp(),
+                type: 'text',
+                attachment: {
+                    url: base64Audio,
+                    name: `recorder_${Date.now()}.webm`,
+                    type: 'audio/webm',
+                    size: audioBlob.size
+                },
+                reactions: {},
+                replyTo: null
+              });
+              
+              notifySubscribers('message', 'Sent a voice message');
+          };
+      } catch (error) {
+          console.error("Error sending voice message", error);
+      } finally {
+          setIsUploading(false);
+      }
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const handleSendLocation = async () => {
     if (!navigator.geolocation || !user || !isRoomReady || isOffline) {
@@ -900,10 +937,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 } : null
             });
             
-            // Notify subscribers about new message
             notifySubscribers('message', 'Shared a location');
-
-            // Clear states
             setReplyingTo(null);
         } catch (error) {
             console.error("Error sending location:", error);
@@ -938,7 +972,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
     updatePresence({ isTyping: false });
     
-    // Reset height immediately to min-height to prevent jitter
     if (textareaRef.current) {
         textareaRef.current.style.height = '40px';
     }
@@ -983,21 +1016,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
           await addDoc(collection(db, "chats", config.roomKey, "messages"), messageData);
           
-          // Notify subscribers
           notifySubscribers('message', textToSend || 'Sent a file');
           
-          // Clear reply state
           setReplyingTo(null);
-          // Only clear file on success
           clearFile(); 
       }
     } catch (error) {
       console.error("Error sending message:", error);
       alert("Failed to send/edit message: Missing permissions or connection error.");
-      setInputText(textToSend); // Restore text on error
+      setInputText(textToSend);
     } finally {
       setIsUploading(false);
-      // Clear file selection in finally block to avoid accidental re-sending
       if (!editingMessageId) clearFile();
     }
   };
@@ -1013,120 +1042,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   };
 
-  // --- Voice Recording Logic ---
-  const startRecording = async () => {
-      try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const recorder = new MediaRecorder(stream);
-          mediaRecorderRef.current = recorder;
-          audioChunksRef.current = [];
-
-          recorder.ondataavailable = (event) => {
-              if (event.data.size > 0) {
-                  audioChunksRef.current.push(event.data);
-              }
-          };
-
-          recorder.onstop = async () => {
-              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-              
-              // Check file size (approx check before base64 overhead)
-              if (audioBlob.size > MAX_FILE_SIZE * 0.75) {
-                   alert("Audio recording is too long/large. Please try a shorter message.");
-                   return;
-              }
-
-              const reader = new FileReader();
-              reader.readAsDataURL(audioBlob);
-              reader.onloadend = async () => {
-                  const base64Audio = reader.result as string;
-                  
-                  // Ensure we are online and ready
-                  if (!user || isOffline || !isRoomReady) return;
-
-                  try {
-                       await addDoc(collection(db, "chats", config.roomKey, "messages"), {
-                          uid: user.uid,
-                          username: config.username,
-                          avatarURL: config.avatarURL,
-                          text: encodeMessage("Voice Message"),
-                          createdAt: serverTimestamp(),
-                          type: 'text',
-                          reactions: {},
-                          attachment: {
-                              url: base64Audio,
-                              name: 'voice_message.webm',
-                              type: 'audio/webm',
-                              size: audioBlob.size
-                          },
-                          replyTo: replyingTo ? {
-                            id: replyingTo.id,
-                            username: replyingTo.username,
-                            text: replyingTo.text || 'Shared a content',
-                            isAttachment: !!replyingTo.attachment
-                        } : null
-                       });
-                       
-                       notifySubscribers('message', 'Sent a voice message');
-                  } catch (e) {
-                      console.error("Failed to send audio", e);
-                  }
-              };
-
-              // Stop all tracks to release mic
-              stream.getTracks().forEach(track => track.stop());
-          };
-
-          recorder.start();
-          setIsRecording(true);
-          setRecordingSeconds(0);
-          
-          recordingTimerRef.current = setInterval(() => {
-              setRecordingSeconds(prev => {
-                  // Limit recording to 60s
-                  if (prev >= 60) {
-                      stopRecording();
-                      return 60;
-                  }
-                  return prev + 1;
-              });
-          }, 1000);
-
-      } catch (e) {
-          console.error("Error accessing microphone:", e);
-          alert("Could not access microphone. Please check permissions.");
-      }
-  };
-
-  const stopRecording = () => {
-      if (mediaRecorderRef.current && isRecording) {
-          mediaRecorderRef.current.stop();
-          setIsRecording(false);
-          if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-      }
-  };
-
-  const cancelRecording = () => {
-      if (mediaRecorderRef.current) {
-          // Temporarily remove onstop to prevent sending
-          mediaRecorderRef.current.onstop = null;
-          mediaRecorderRef.current.stop();
-          // Also stop tracks
-          mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
-      }
-      setIsRecording(false);
-      setRecordingSeconds(0);
-      audioChunksRef.current = [];
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-  };
-
-
   const handleDeleteChat = async () => {
     if (!config.roomKey) return;
     setIsDeleting(true);
 
     try {
-        // Notify subscribers before deleting
         await notifySubscribers('deleted', 'The chat room has been deleted.');
 
         const chatRef = doc(db, "chats", config.roomKey);
@@ -1147,7 +1067,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             deleteCollection("messages"),
             deleteCollection("fcm_tokens"),
             deleteCollection("calls"), 
-            deleteCollection("subscribers") // Also delete subscribers
+            deleteCollection("subscribers")
         ]);
 
         try {
@@ -1177,7 +1097,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         </div>
       )}
 
-      {/* Call Manager handles the entire lifecycle of WebRTC calls */}
       {user && isRoomReady && (
           <CallManager 
             user={user}
@@ -1214,7 +1133,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              </div>
         </div>
         <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center relative">
-            {/* Share Button */}
             <button
                 onClick={handleShare}
                 className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
@@ -1223,7 +1141,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 <Share2 size={20} />
             </button>
 
-            {/* Participants Button */}
             <button 
                 onClick={() => setShowParticipantsList(true)}
                 className={`p-2 rounded-lg transition ${showParticipantsList ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
@@ -1232,7 +1149,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 <Users size={20} />
             </button>
 
-            {/* Mobile Settings Toggle */}
             <button
                 ref={settingsButtonRef}
                 onClick={() => setShowSettingsMenu(!showSettingsMenu)}
@@ -1266,6 +1182,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             </button>
             
             <button 
+                onClick={() => setShowEmailModal(true)}
+                className={`hidden sm:block p-2 rounded-lg transition ${emailAlertsEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                title="Email Alerts"
+            >
+                <Mail size={20} />
+            </button>
+
+            <button 
                 onClick={toggleTheme}
                 className="hidden sm:block p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
                 title="Toggle Theme"
@@ -1273,7 +1197,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
 
-            {/* Mobile Settings Dropdown */}
             {showSettingsMenu && (
                 <>
                     <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5 sm:hidden" ref={settingsMenuRef}>
@@ -1310,35 +1233,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
                         <div className="h-px bg-slate-100 dark:bg-slate-700/50 my-1" />
 
-                        {/* Email Alerts Toggle Section */}
                         <div className="p-2">
                              <button 
-                                onClick={handleEmailToggle}
+                                onClick={() => { setShowEmailModal(true); setShowSettingsMenu(false); }}
                                 className={`flex items-center gap-3 w-full rounded-lg text-sm font-medium transition ${emailAlertsEnabled ? 'text-blue-600 dark:text-blue-400 mb-2' : 'text-slate-600 dark:text-slate-300 hover:text-blue-500'}`}
                              >
                                 <Mail size={18} />
                                 <span>Email Alerts</span>
                                 {emailAlertsEnabled && <span className="ml-auto text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">ON</span>}
                              </button>
-
-                             {emailAlertsEnabled && (
-                                 <div className="flex gap-1 animate-in slide-in-from-top-2">
-                                     <input 
-                                        type="email" 
-                                        value={emailAddress}
-                                        onChange={(e) => setEmailAddress(e.target.value)}
-                                        placeholder="Enter Email"
-                                        className="w-full text-xs p-1.5 rounded bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-blue-500 outline-none"
-                                     />
-                                     <button 
-                                        onClick={saveEmailSubscription}
-                                        disabled={isSavingEmail}
-                                        className="bg-blue-500 text-white p-1.5 rounded hover:bg-blue-600 disabled:opacity-50"
-                                     >
-                                         {isSavingEmail ? '...' : <Check size={14} />}
-                                     </button>
-                                 </div>
-                             )}
                         </div>
 
                         <div className="h-px bg-slate-100 dark:bg-slate-700/50 my-1" />
@@ -1354,7 +1257,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 </>
             )}
 
-            {/* Delete button for everyone - Hidden on mobile, visible on desktop */}
             <button 
                 onClick={() => setShowDeleteModal(true)}
                 className="hidden sm:block p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
@@ -1448,114 +1350,103 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                   </button>
                </div>
              )}
-             
-             {/* Main Input Area - Swaps between Text/File and Audio Recording */}
-             <div className="flex items-center gap-1.5 sm:gap-2 w-full h-[52px]"> {/* Fixed height container to prevent layout jump */}
-                 
-                 {isRecording ? (
-                     // -- Recording UI --
-                     <div className="flex-1 flex items-center justify-between bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl px-2 py-1 animate-in fade-in duration-200 w-full">
-                         <div className="flex items-center gap-2 px-2">
-                             <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                             <span className="text-red-600 dark:text-red-400 font-mono font-medium">
-                                {Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:{(recordingSeconds % 60).toString().padStart(2, '0')}
-                             </span>
-                         </div>
-                         
-                         <div className="flex items-center gap-1">
-                             <button 
-                                onClick={cancelRecording}
-                                className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-full transition"
-                                title="Cancel"
-                             >
-                                 <Trash2 size={20} />
-                             </button>
-                             <button 
-                                onClick={stopRecording}
-                                className="p-2 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-md transition"
-                                title="Send"
-                             >
-                                 <Send size={18} />
-                             </button>
-                         </div>
+
+            {isRecording ? (
+                 <div className="flex items-center justify-between w-full px-2 py-1 gap-2 animate-in fade-in duration-200">
+                     <button
+                        onClick={cancelRecording}
+                        className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition"
+                        title="Cancel Recording"
+                     >
+                         <Trash2 size={24} />
+                     </button>
+                     
+                     <div className="flex items-center gap-2 text-red-500 font-mono text-sm bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-full animate-pulse">
+                         <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                         <span>{formatDuration(recordingDuration)}</span>
                      </div>
-                 ) : (
-                     // -- Standard Input UI --
-                     <>
-                        {showEmoji && <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmoji(false)} />}
-                        
-                        <input 
-                            type="file" 
-                            ref={fileInputRef}
-                            onChange={handleFileSelect}
-                            className="hidden"
-                            accept="image/*,.pdf,.doc,.docx,.txt"
-                        />
-                        
-                        {!editingMessageId && (
-                            <>
-                                <button 
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${selectedFile ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
-                                    title="Attach File"
-                                >
-                                    <Paperclip size={22} />
-                                </button>
-                                <button 
-                                    onClick={handleSendLocation}
-                                    disabled={isGettingLocation}
-                                    className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${isGettingLocation ? 'animate-pulse text-red-400' : 'text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
-                                    title="Share Location"
-                                >
-                                    <MapPin size={22} />
-                                </button>
-                            </>
-                        )}
 
-                        <button 
-                            onClick={() => setShowEmoji(!showEmoji)}
-                            className="w-10 h-10 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full flex items-center justify-center transition flex-shrink-0"
-                        >
-                            <Smile size={22} />
-                        </button>
-
-                        <div className="flex-1 relative min-w-0 flex items-center">
-                            <textarea
-                                ref={textareaRef}
-                                value={inputText}
-                                onChange={handleInputChange}
-                                onKeyDown={handleKeyDown}
-                                rows={1}
-                                placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
-                                className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-6 text-base h-[40px] block"
-                            />
-                        </div>
-                        
-                        {/* Send / Mic Button Switch */}
-                        {inputText.trim() || selectedFile || editingMessageId ? (
+                     <button
+                        onClick={stopRecording}
+                        className="w-10 h-10 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-red-500/30 transition transform active:scale-95"
+                        title="Send Voice Message"
+                     >
+                         <Send size={20} className="ml-0.5" />
+                     </button>
+                 </div>
+            ) : (
+                <div className="flex items-center gap-1.5 sm:gap-2 w-full">
+                     {showEmoji && <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmoji(false)} />}
+                     
+                     <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        accept="image/*,.pdf,.doc,.docx,.txt"
+                     />
+                     {!editingMessageId && (
+                        <>
                             <button 
-                                onClick={() => handleSend()}
-                                disabled={(!inputText.trim() && !selectedFile) || isOffline || isUploading || !isRoomReady}
-                                className="w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
+                                onClick={() => fileInputRef.current?.click()}
+                                className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${selectedFile ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
+                                title="Attach File"
                             >
-                                {isUploading ? (
-                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                ) : (
-                                    <Send size={20} className="ml-0.5" />
-                                )}
+                                <Paperclip size={22} />
                             </button>
-                        ) : (
-                             <button 
-                                onClick={startRecording}
-                                className="w-10 h-10 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-red-500 hover:text-white dark:hover:bg-red-600 rounded-full transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0 shadow-sm"
-                                title="Hold to record (or click to start)"
+                            <button 
+                                onClick={handleSendLocation}
+                                disabled={isGettingLocation}
+                                className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${isGettingLocation ? 'animate-pulse text-red-400' : 'text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
+                                title="Share Location"
                             >
-                                <Mic size={20} />
+                                <MapPin size={22} />
                             </button>
-                        )}
-                     </>
-                 )}
-             </div>
+                        </>
+                     )}
+
+                     <button 
+                        onClick={() => setShowEmoji(!showEmoji)}
+                        className="w-10 h-10 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full flex items-center justify-center transition flex-shrink-0"
+                     >
+                         <Smile size={22} />
+                     </button>
+
+                     <div className="flex-1 relative min-w-0 flex items-center">
+                         <textarea
+                            ref={textareaRef}
+                            value={inputText}
+                            onChange={handleInputChange}
+                            onKeyDown={handleKeyDown}
+                            rows={1}
+                            placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
+                            className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-6 text-base h-[40px] block"
+                         />
+                     </div>
+                     
+                     {(!inputText.trim() && !selectedFile && !editingMessageId) ? (
+                        <button 
+                             onClick={startRecording}
+                             className="w-10 h-10 text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full flex items-center justify-center transition flex-shrink-0"
+                             title="Record Voice Message"
+                        >
+                             <Mic size={22} />
+                        </button>
+                     ) : (
+                         <button 
+                            onClick={() => handleSend()}
+                            disabled={isOffline || isUploading || !isRoomReady}
+                            className="w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
+                         >
+                             {isUploading ? (
+                                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                             ) : (
+                                 <Send size={20} className="ml-0.5" />
+                             )}
+                         </button>
+                     )}
+                 </div>
+            )}
          </div>
       </footer>
 
@@ -1588,6 +1479,59 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 </div>
             </div>
         </div>
+      )}
+
+      {showEmailModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-white/10 dark:border-slate-800">
+                  <div className="flex flex-col gap-4">
+                      <div className="flex items-center justify-between">
+                          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                              <Mail size={20} className="text-blue-500"/>
+                              Email Alerts
+                          </h3>
+                          <button onClick={() => setShowEmailModal(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full">
+                              <X size={18} className="text-slate-400"/>
+                          </button>
+                      </div>
+                      
+                      {emailAlertsEnabled ? (
+                          <div className="space-y-3">
+                              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-sm border border-blue-100 dark:border-blue-800">
+                                  <p className="text-slate-600 dark:text-slate-300">You are receiving alerts at:</p>
+                                  <p className="font-semibold text-blue-600 dark:text-blue-400 mt-1 truncate">{emailAddress}</p>
+                              </div>
+                              <button 
+                                  onClick={handleEmailToggle}
+                                  className="w-full py-2.5 text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 rounded-xl font-semibold text-sm transition"
+                              >
+                                  Turn Off Alerts
+                              </button>
+                          </div>
+                      ) : (
+                          <div className="space-y-3">
+                              <p className="text-sm text-slate-500 dark:text-slate-400">
+                                  Get notified when someone sends a message or deletes this room.
+                              </p>
+                              <input 
+                                  type="email" 
+                                  value={emailAddress}
+                                  onChange={(e) => setEmailAddress(e.target.value)}
+                                  placeholder="your@email.com"
+                                  className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 focus:border-blue-500 outline-none text-slate-900 dark:text-slate-100"
+                              />
+                              <button 
+                                  onClick={saveEmailSubscription}
+                                  disabled={isSavingEmail}
+                                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 transition disabled:opacity-50"
+                              >
+                                  {isSavingEmail ? 'Saving...' : 'Subscribe'}
+                              </button>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
       )}
     </div>
   );
