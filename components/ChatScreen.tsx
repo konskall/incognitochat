@@ -22,9 +22,9 @@ const MAX_FILE_SIZE = 500 * 1024;
 
 // --- EMAILJS CONFIGURATION ---
 // REPLACE THESE WITH YOUR ACTUAL KEYS FROM EMAILJS DASHBOARD
-const EMAILJS_SERVICE_ID = "service_cnerkn6";
-const EMAILJS_TEMPLATE_ID = "template_zr9v8bp";
-const EMAILJS_PUBLIC_KEY = "cSDU4HLqgylnmX957";
+const EMAILJS_SERVICE_ID: string = "service_cnerkn6";
+const EMAILJS_TEMPLATE_ID: string = "template_zr9v8bp";
+const EMAILJS_PUBLIC_KEY: string = "cSDU4HLqgylnmX957";
 
 const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -161,12 +161,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const notifySubscribers = async (action: 'message' | 'deleted', details: string) => {
       if (!config.roomKey || !user) return;
       
-      // Prevent running if keys are not set (placeholder check)
-      if (EMAILJS_SERVICE_ID === "service_cnerkn6") {
-          console.warn("EmailJS is not configured. Please set your Service ID, Template ID, and Public Key in ChatScreen.tsx");
-          return;
-      }
-
       try {
           const subscribersRef = collection(db, "chats", config.roomKey, "subscribers");
           const snapshot = await getDocs(subscribersRef);
