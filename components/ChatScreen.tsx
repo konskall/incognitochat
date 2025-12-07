@@ -10,6 +10,7 @@ import EmojiPicker from './EmojiPicker';
 import CallManager from './CallManager';
 import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun, Users, Settings, Share2, Mail, Check } from 'lucide-react';
 import { initAudio } from '../utils/helpers';
+import emailjs from '@emailjs/browser';
 
 interface ChatScreenProps {
   config: ChatConfig;
@@ -18,6 +19,12 @@ interface ChatScreenProps {
 
 // Reduced to 500KB to ensure Base64 overhead (~33%) + metadata fits within Firestore 1MB limit
 const MAX_FILE_SIZE = 500 * 1024; 
+
+// --- EMAILJS CONFIGURATION ---
+// REPLACE THESE WITH YOUR ACTUAL KEYS FROM EMAILJS DASHBOARD
+const EMAILJS_SERVICE_ID = "service_cnerkn6";
+const EMAILJS_TEMPLATE_ID = "template_zr9v8bp";
+const EMAILJS_PUBLIC_KEY = "cSDU4HLqgylnmX957";
 
 const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -150,10 +157,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   }, [config.roomKey]);
 
-  // Helper to notify email subscribers (Placeholder for actual API call)
+  // Helper to notify email subscribers
   const notifySubscribers = async (action: 'message' | 'deleted', details: string) => {
       if (!config.roomKey || !user) return;
       
+      // Prevent running if keys are not set (placeholder check)
+      if (EMAILJS_SERVICE_ID === "YOUR_SERVICE_ID") {
+          console.warn("EmailJS is not configured. Please set your Service ID, Template ID, and Public Key in ChatScreen.tsx");
+          return;
+      }
+
       try {
           const subscribersRef = collection(db, "chats", config.roomKey, "subscribers");
           const snapshot = await getDocs(subscribersRef);
@@ -163,27 +176,30 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           const recipients: string[] = [];
           snapshot.forEach(doc => {
               const sub = doc.data() as Subscriber;
-              // Don't notify yourself
+              // Don't notify yourself (the sender)
               if (sub.uid !== user.uid && sub.email) {
                   recipients.push(sub.email);
               }
           });
 
           if (recipients.length > 0) {
-              console.log(`[Email Service] Sending '${action}' notification to:`, recipients);
-              console.log(`[Email Service] Payload:`, { 
-                  roomName: config.roomName, 
-                  action, 
-                  details // Using 'details' variable here to avoid unused variable error
-              });
+              const emailParams = {
+                  to_email: recipients.join(','), // EmailJS usually handles comma-separated lists for multiple recipients
+                  room_name: config.roomName,
+                  action_type: action === 'message' ? 'New Message' : 'Room Deleted',
+                  message_body: details,
+                  link: window.location.href // Current URL
+              };
+
+              console.log(`[Email Service] Sending notification to ${recipients.length} subscribers...`);
               
-              // TODO: Integrate EmailJS or similar service here.
-              // Example:
-              // emailjs.send('service_id', 'template_id', {
-              //    to_email: recipients.join(','),
-              //    message: details,
-              //    room_name: config.roomName
-              // });
+              await emailjs.send(
+                  EMAILJS_SERVICE_ID,
+                  EMAILJS_TEMPLATE_ID,
+                  emailParams,
+                  EMAILJS_PUBLIC_KEY
+              );
+              console.log("[Email Service] Notification sent successfully.");
           }
       } catch (e) {
           console.error("Failed to notify subscribers", e);
@@ -1121,14 +1137,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             )}
             <button 
                 onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`hidden sm:block p-2 rounded-lg transition ${soundEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                className={`hidden sm:block p-2 rounded-lg transition ${soundEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100 dark:hover:bg-slate-100'}`}
                 title={soundEnabled ? "Mute Sounds" : "Enable Sounds"}
             >
                 {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
             </button>
             <button 
                 onClick={toggleNotifications}
-                className={`hidden sm:block p-2 rounded-lg transition ${notificationsEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                className={`hidden sm:block p-2 rounded-lg transition ${notificationsEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100 dark:hover:bg-slate-100'}`}
                 title={notificationsEnabled ? "Notifications Active" : "Enable Notifications"}
             >
                 {notificationsEnabled ? <Bell size={20} /> : <BellOff size={20} />}
