@@ -3,7 +3,7 @@ import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
   FileText, Download, Edit2, 
-  File, FileAudio, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin 
+  File, FileAudio, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, Play, Pause
 } from 'lucide-react';
 
 interface MessageListProps {
@@ -223,6 +223,23 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
     const { url, name, type, size } = msg.attachment;
     const sizeKB = (size / 1024).toFixed(1);
 
+    // Audio Player
+    if (type.startsWith('audio/')) {
+        return (
+            <div className={`mt-1 mb-1 min-w-[200px] sm:min-w-[240px]`}>
+                 <div className={`flex items-center gap-2 p-2 rounded-xl border ${isMe ? 'bg-white/10 border-white/20' : 'bg-slate-50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600'}`}>
+                    <div className={`p-2 rounded-full ${isMe ? 'bg-white/20' : 'bg-blue-100 dark:bg-slate-600 text-blue-600'}`}>
+                        <FileAudio size={20} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <audio controls src={url} className="w-full h-8" />
+                    </div>
+                 </div>
+            </div>
+        );
+    }
+
+    // Image
     if (type.startsWith('image/')) {
         return (
             <div className="mt-2 mb-1 group/image relative">
@@ -239,6 +256,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
         );
     }
 
+    // Generic File
     return (
         <a 
             href={url} 
