@@ -178,6 +178,27 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     };
   }, []);
 
+  // 1.1 Unlock Audio on First Interaction (Critical for Desktop Autoplay Policy)
+  useEffect(() => {
+      const unlockAudioContext = () => {
+          initAudio();
+          // Remove listeners once triggered
+          document.removeEventListener('click', unlockAudioContext);
+          document.removeEventListener('keydown', unlockAudioContext);
+          document.removeEventListener('touchstart', unlockAudioContext);
+      };
+
+      document.addEventListener('click', unlockAudioContext);
+      document.addEventListener('keydown', unlockAudioContext);
+      document.addEventListener('touchstart', unlockAudioContext);
+
+      return () => {
+          document.removeEventListener('click', unlockAudioContext);
+          document.removeEventListener('keydown', unlockAudioContext);
+          document.removeEventListener('touchstart', unlockAudioContext);
+      };
+  }, []);
+
   // 1.5 Initialize Room Document and get Creator
   useEffect(() => {
     const checkAndCreateRoom = async () => {
