@@ -162,7 +162,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       if (!config.roomKey || !user) return;
       
       // Prevent running if keys are not set (placeholder check)
-      if (EMAILJS_SERVICE_ID === "YOUR_SERVICE_ID") {
+      if (EMAILJS_SERVICE_ID === "service_cnerkn6") {
           console.warn("EmailJS is not configured. Please set your Service ID, Template ID, and Public Key in ChatScreen.tsx");
           return;
       }
