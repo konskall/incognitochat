@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
@@ -243,13 +244,13 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
     // 2. Audio/Voice Message Handler
     if (type.startsWith('audio/')) {
         return (
-            <div className="mt-2 mb-1 w-full min-w-[200px] sm:min-w-[260px]">
-                <div className={`flex flex-col gap-1 rounded-xl p-2 ${isMe ? 'bg-blue-700/30' : 'bg-slate-100 dark:bg-slate-700'}`}>
+            <div className="mt-2 mb-1 w-full max-w-full overflow-hidden">
+                <div className={`flex flex-col gap-1 rounded-xl p-2 ${isMe ? 'bg-blue-700/30' : 'bg-slate-100 dark:bg-slate-700'} w-full max-w-full`}>
                     <div className="flex items-center justify-between mb-1 px-1">
-                         <span className={`text-[10px] font-bold uppercase tracking-wider ${isMe ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                         <span className={`text-[10px] font-bold uppercase tracking-wider truncate mr-2 ${isMe ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
                             {name.includes('recorder') ? 'Voice Message' : name}
                          </span>
-                         <span className={`text-[9px] ${isMe ? 'text-blue-200' : 'text-slate-400'}`}>
+                         <span className={`text-[9px] whitespace-nowrap ${isMe ? 'text-blue-200' : 'text-slate-400'}`}>
                             {sizeKB} KB
                          </span>
                     </div>
@@ -258,7 +259,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
                     <audio 
                         controls 
                         preload="metadata"
-                        className="w-full h-8 rounded opacity-90 focus:outline-none" 
+                        className="w-full h-8 rounded opacity-90 focus:outline-none max-w-full" 
                         src={url}
                     />
                 </div>
