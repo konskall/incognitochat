@@ -8,7 +8,7 @@ import { decodeMessage, encodeMessage, compressImage } from '../utils/helpers';
 import MessageList from './MessageList';
 import EmojiPicker from './EmojiPicker';
 import CallManager from './CallManager';
-import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun, Users, Settings, Share2, Mail, Check } from 'lucide-react';
+import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun, Users, Settings, Share2, Mail, Check, Mic, Square } from 'lucide-react';
 import { initAudio } from '../utils/helpers';
 import emailjs from '@emailjs/browser';
 
@@ -67,6 +67,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  
+  // Audio Recording State
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -161,6 +168,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const notifySubscribers = async (action: 'message' | 'deleted', details: string) => {
       if (!config.roomKey || !user) return;
       
+      // Prevent running if keys are not set (placeholder check)
+      if (EMAILJS_SERVICE_ID === "YOUR_SERVICE_ID") {
+          console.warn("EmailJS is not configured. Please set your Service ID, Template ID, and Public Key in ChatScreen.tsx");
+          return;
+      }
+
       try {
           const subscribersRef = collection(db, "chats", config.roomKey, "subscribers");
           const snapshot = await getDocs(subscribersRef);
@@ -1000,6 +1013,114 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   };
 
+  // --- Voice Recording Logic ---
+  const startRecording = async () => {
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const recorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = recorder;
+          audioChunksRef.current = [];
+
+          recorder.ondataavailable = (event) => {
+              if (event.data.size > 0) {
+                  audioChunksRef.current.push(event.data);
+              }
+          };
+
+          recorder.onstop = async () => {
+              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+              
+              // Check file size (approx check before base64 overhead)
+              if (audioBlob.size > MAX_FILE_SIZE * 0.75) {
+                   alert("Audio recording is too long/large. Please try a shorter message.");
+                   return;
+              }
+
+              const reader = new FileReader();
+              reader.readAsDataURL(audioBlob);
+              reader.onloadend = async () => {
+                  const base64Audio = reader.result as string;
+                  
+                  // Ensure we are online and ready
+                  if (!user || isOffline || !isRoomReady) return;
+
+                  try {
+                       await addDoc(collection(db, "chats", config.roomKey, "messages"), {
+                          uid: user.uid,
+                          username: config.username,
+                          avatarURL: config.avatarURL,
+                          text: encodeMessage("Voice Message"),
+                          createdAt: serverTimestamp(),
+                          type: 'text',
+                          reactions: {},
+                          attachment: {
+                              url: base64Audio,
+                              name: 'voice_message.webm',
+                              type: 'audio/webm',
+                              size: audioBlob.size
+                          },
+                          replyTo: replyingTo ? {
+                            id: replyingTo.id,
+                            username: replyingTo.username,
+                            text: replyingTo.text || 'Shared a content',
+                            isAttachment: !!replyingTo.attachment
+                        } : null
+                       });
+                       
+                       notifySubscribers('message', 'Sent a voice message');
+                  } catch (e) {
+                      console.error("Failed to send audio", e);
+                  }
+              };
+
+              // Stop all tracks to release mic
+              stream.getTracks().forEach(track => track.stop());
+          };
+
+          recorder.start();
+          setIsRecording(true);
+          setRecordingSeconds(0);
+          
+          recordingTimerRef.current = setInterval(() => {
+              setRecordingSeconds(prev => {
+                  // Limit recording to 60s
+                  if (prev >= 60) {
+                      stopRecording();
+                      return 60;
+                  }
+                  return prev + 1;
+              });
+          }, 1000);
+
+      } catch (e) {
+          console.error("Error accessing microphone:", e);
+          alert("Could not access microphone. Please check permissions.");
+      }
+  };
+
+  const stopRecording = () => {
+      if (mediaRecorderRef.current && isRecording) {
+          mediaRecorderRef.current.stop();
+          setIsRecording(false);
+          if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      }
+  };
+
+  const cancelRecording = () => {
+      if (mediaRecorderRef.current) {
+          // Temporarily remove onstop to prevent sending
+          mediaRecorderRef.current.onstop = null;
+          mediaRecorderRef.current.stop();
+          // Also stop tracks
+          mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+      }
+      setIsRecording(false);
+      setRecordingSeconds(0);
+      audioChunksRef.current = [];
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+  };
+
+
   const handleDeleteChat = async () => {
     if (!config.roomKey) return;
     setIsDeleting(true);
@@ -1327,67 +1448,113 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                   </button>
                </div>
              )}
-
-             <div className="flex items-center gap-1.5 sm:gap-2 w-full">
-                 {showEmoji && <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmoji(false)} />}
+             
+             {/* Main Input Area - Swaps between Text/File and Audio Recording */}
+             <div className="flex items-center gap-1.5 sm:gap-2 w-full h-[52px]"> {/* Fixed height container to prevent layout jump */}
                  
-                 <input 
-                    type="file" 
-                    ref={fileInputRef}
-                    onChange={handleFileSelect}
-                    className="hidden"
-                    accept="image/*,.pdf,.doc,.docx,.txt"
-                 />
-                 {!editingMessageId && (
-                    <>
+                 {isRecording ? (
+                     // -- Recording UI --
+                     <div className="flex-1 flex items-center justify-between bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl px-2 py-1 animate-in fade-in duration-200 w-full">
+                         <div className="flex items-center gap-2 px-2">
+                             <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                             <span className="text-red-600 dark:text-red-400 font-mono font-medium">
+                                {Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:{(recordingSeconds % 60).toString().padStart(2, '0')}
+                             </span>
+                         </div>
+                         
+                         <div className="flex items-center gap-1">
+                             <button 
+                                onClick={cancelRecording}
+                                className="p-2 text-slate-500 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-full transition"
+                                title="Cancel"
+                             >
+                                 <Trash2 size={20} />
+                             </button>
+                             <button 
+                                onClick={stopRecording}
+                                className="p-2 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-md transition"
+                                title="Send"
+                             >
+                                 <Send size={18} />
+                             </button>
+                         </div>
+                     </div>
+                 ) : (
+                     // -- Standard Input UI --
+                     <>
+                        {showEmoji && <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmoji(false)} />}
+                        
+                        <input 
+                            type="file" 
+                            ref={fileInputRef}
+                            onChange={handleFileSelect}
+                            className="hidden"
+                            accept="image/*,.pdf,.doc,.docx,.txt"
+                        />
+                        
+                        {!editingMessageId && (
+                            <>
+                                <button 
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${selectedFile ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
+                                    title="Attach File"
+                                >
+                                    <Paperclip size={22} />
+                                </button>
+                                <button 
+                                    onClick={handleSendLocation}
+                                    disabled={isGettingLocation}
+                                    className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${isGettingLocation ? 'animate-pulse text-red-400' : 'text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
+                                    title="Share Location"
+                                >
+                                    <MapPin size={22} />
+                                </button>
+                            </>
+                        )}
+
                         <button 
-                            onClick={() => fileInputRef.current?.click()}
-                            className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${selectedFile ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
-                            title="Attach File"
+                            onClick={() => setShowEmoji(!showEmoji)}
+                            className="w-10 h-10 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full flex items-center justify-center transition flex-shrink-0"
                         >
-                            <Paperclip size={22} />
+                            <Smile size={22} />
                         </button>
-                        <button 
-                            onClick={handleSendLocation}
-                            disabled={isGettingLocation}
-                            className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${isGettingLocation ? 'animate-pulse text-red-400' : 'text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
-                            title="Share Location"
-                        >
-                            <MapPin size={22} />
-                        </button>
-                    </>
+
+                        <div className="flex-1 relative min-w-0 flex items-center">
+                            <textarea
+                                ref={textareaRef}
+                                value={inputText}
+                                onChange={handleInputChange}
+                                onKeyDown={handleKeyDown}
+                                rows={1}
+                                placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
+                                className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-6 text-base h-[40px] block"
+                            />
+                        </div>
+                        
+                        {/* Send / Mic Button Switch */}
+                        {inputText.trim() || selectedFile || editingMessageId ? (
+                            <button 
+                                onClick={() => handleSend()}
+                                disabled={(!inputText.trim() && !selectedFile) || isOffline || isUploading || !isRoomReady}
+                                className="w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
+                            >
+                                {isUploading ? (
+                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                ) : (
+                                    <Send size={20} className="ml-0.5" />
+                                )}
+                            </button>
+                        ) : (
+                             <button 
+                                onClick={startRecording}
+                                className="w-10 h-10 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-red-500 hover:text-white dark:hover:bg-red-600 rounded-full transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0 shadow-sm"
+                                title="Hold to record (or click to start)"
+                            >
+                                <Mic size={20} />
+                            </button>
+                        )}
+                     </>
                  )}
-
-                 <button 
-                    onClick={() => setShowEmoji(!showEmoji)}
-                    className="w-10 h-10 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full flex items-center justify-center transition flex-shrink-0"
-                 >
-                     <Smile size={22} />
-                 </button>
-
-                 <div className="flex-1 relative min-w-0 flex items-center">
-                     <textarea
-                        ref={textareaRef}
-                        value={inputText}
-                        onChange={handleInputChange}
-                        onKeyDown={handleKeyDown}
-                        rows={1}
-                        placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
-                        className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-6 text-base h-[40px] block"
-                     />
-                 </div>
-                 
-                 <button 
-                    onClick={() => handleSend()}
-                    disabled={(!inputText.trim() && !selectedFile) || isOffline || isUploading || !isRoomReady}
-                    className="w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
-                 >
-                     {isUploading ? (
-                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                     ) : (
-                         <Send size={20} className="ml-0.5" />
-                     )}
-                 </button>
              </div>
          </div>
       </footer>
