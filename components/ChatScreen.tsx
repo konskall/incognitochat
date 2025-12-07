@@ -50,7 +50,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
   const [canVibrate, setCanVibrate] = useState(false); // Hardware support check
-  
+
   // Email Alert State
   const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
@@ -171,6 +171,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
           if (recipients.length > 0) {
               console.log(`[Email Service] Sending '${action}' notification to:`, recipients);
+              console.log(`[Email Service] Payload:`, { 
+                  roomName: config.roomName, 
+                  action, 
+                  details // Using 'details' variable here to avoid unused variable error
+              });
+              
               // TODO: Integrate EmailJS or similar service here.
               // Example:
               // emailjs.send('service_id', 'template_id', {
