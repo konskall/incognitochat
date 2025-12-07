@@ -65,3 +65,10 @@ export interface CallData {
   renegotiating?: any;
   createdAt: any;
 }
+
+export interface Subscriber {
+    uid: string;
+    email: string;
+    username: string;
+    createdAt: any;
+}
