@@ -58,6 +58,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const settingsMenuRef = useRef<HTMLDivElement>(null); // Ref for settings dropdown
+  const settingsButtonRef = useRef<HTMLButtonElement>(null); // Ref for settings button
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -68,6 +70,26 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   
   // Track previous message count to handle scroll behavior
   const prevMessageCount = useRef(0);
+
+  // Close settings menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+        if (
+            showSettingsMenu &&
+            settingsMenuRef.current &&
+            !settingsMenuRef.current.contains(event.target as Node) &&
+            settingsButtonRef.current &&
+            !settingsButtonRef.current.contains(event.target as Node)
+        ) {
+            setShowSettingsMenu(false);
+        }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showSettingsMenu]);
 
   // Theme effect
   useEffect(() => {
@@ -915,6 +937,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
             {/* Mobile Settings Toggle */}
             <button
+                ref={settingsButtonRef}
                 onClick={() => setShowSettingsMenu(!showSettingsMenu)}
                 className="sm:hidden p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
             >
@@ -924,7 +947,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             {canVibrate && (
                 <button 
                     onClick={() => setVibrationEnabled(!vibrationEnabled)}
-                    className={`hidden sm:block p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                    className={`hidden sm:block p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100 dark:hover:bg-slate-100'}`}
                     title={vibrationEnabled ? "Vibration Enabled" : "Enable Vibration"}
                 >
                     {vibrationEnabled ? <Vibrate size={20} /> : <VibrateOff size={20} />}
@@ -956,8 +979,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             {/* Mobile Settings Dropdown */}
             {showSettingsMenu && (
                 <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowSettingsMenu(false)} />
-                    <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5 sm:hidden">
+                    <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5 sm:hidden" ref={settingsMenuRef}>
                         {canVibrate && (
                              <button 
                                 onClick={() => { setVibrationEnabled(!vibrationEnabled); setShowSettingsMenu(false); }}
@@ -988,20 +1010,28 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                             {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
                             <span>Theme</span>
                         </button>
+
+                        <div className="h-px bg-slate-100 dark:bg-slate-700/50 my-1" />
+
+                        <button 
+                            onClick={() => { setShowDeleteModal(true); setShowSettingsMenu(false); }}
+                            className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
+                        >
+                            <Trash2 size={18} />
+                            <span>Delete Chat</span>
+                        </button>
                     </div>
                 </>
             )}
 
-            {/* Delete button only for creator - verified check */}
-            {user && roomCreatorId === user.uid && (
-                <button 
-                    onClick={() => setShowDeleteModal(true)}
-                    className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
-                    title="Delete Chat"
-                >
-                    <Trash2 size={20} />
-                </button>
-            )}
+            {/* Delete button for everyone - Hidden on mobile, visible on desktop */}
+            <button 
+                onClick={() => setShowDeleteModal(true)}
+                className="hidden sm:block p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
+                title="Delete Chat"
+            >
+                <Trash2 size={20} />
+            </button>
             <button 
                 onClick={handleExitChat}
                 className="p-2 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition"
