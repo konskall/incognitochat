@@ -445,6 +445,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           const data = change.doc.data();
           setIncomingData({ id: change.doc.id, ...data });
           
+          // Force initialize audio first to ensure context is ready
+          initAudio();
           // Play Ringtone using Web Audio API for iOS support
           startRingtone();
         }
@@ -582,6 +584,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   }, [viewState.status]);
 
   const handleHangup = async () => {
+    stopRingtone(); // Ensure ringtone stops
     if (viewState.callId) {
         const callRef = doc(db, "chats", config.roomKey, "calls", viewState.callId);
         await updateDoc(callRef, { status: 'ended' }).catch(() => {});
@@ -590,6 +593,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   };
 
   const handleReject = async () => {
+      stopRingtone(); // Ensure ringtone stops
       if (incomingData) {
           const callRef = doc(db, "chats", config.roomKey, "calls", incomingData.id);
           await updateDoc(callRef, { status: 'declined' }).catch(() => {});
