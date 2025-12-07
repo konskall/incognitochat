@@ -4,7 +4,7 @@ import { signInAnonymously } from 'firebase/auth';
 import { getToken } from 'firebase/messaging';
 import { db, auth, messaging } from '../services/firebase';
 import { ChatConfig, Message, User, Attachment, Presence } from '../types';
-import { decodeMessage, encodeMessage } from '../utils/helpers';
+import { decodeMessage, encodeMessage, compressImage } from '../utils/helpers';
 import MessageList from './MessageList';
 import EmojiPicker from './EmojiPicker';
 import CallManager from './CallManager';
@@ -620,13 +620,45 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
+      let file = e.target.files[0];
+      
       if (file.size > MAX_FILE_SIZE) {
-        alert(`File is too large. Max size is 500KB.`);
-        e.target.value = '';
-        return;
+        if (file.type.startsWith('image/')) {
+            const confirmCompress = window.confirm(
+                `Image is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Compress to under 500KB?`
+            );
+            
+            if (confirmCompress) {
+                setIsUploading(true);
+                try {
+                    // Attempt compression
+                    const compressed = await compressImage(file);
+                    
+                    if (compressed.size > MAX_FILE_SIZE) {
+                         alert(`Still too large after compression (${(compressed.size/1024).toFixed(1)}KB). Please choose a smaller image.`);
+                         if (fileInputRef.current) fileInputRef.current.value = '';
+                         return;
+                    }
+                    file = compressed;
+                } catch (error) {
+                    console.error("Compression failed:", error);
+                    alert("Failed to compress image.");
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                    return;
+                } finally {
+                    setIsUploading(false);
+                }
+            } else {
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                return;
+            }
+        } else {
+            alert(`File is too large. Max size is 500KB.`);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
       }
       setSelectedFile(file);
     }
