@@ -3,12 +3,12 @@ import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, s
 import { signInAnonymously } from 'firebase/auth';
 import { getToken } from 'firebase/messaging';
 import { db, auth, messaging } from '../services/firebase';
-import { ChatConfig, Message, User, Attachment, Presence } from '../types';
+import { ChatConfig, Message, User, Attachment, Presence, Subscriber } from '../types';
 import { decodeMessage, encodeMessage, compressImage } from '../utils/helpers';
 import MessageList from './MessageList';
 import EmojiPicker from './EmojiPicker';
 import CallManager from './CallManager';
-import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun, Users, Settings, Share2 } from 'lucide-react';
+import { Send, Smile, LogOut, Trash2, ShieldAlert, Paperclip, X, FileText, Image as ImageIcon, Bell, BellOff, Edit2, Volume2, VolumeX, Vibrate, VibrateOff, MapPin, Moon, Sun, Users, Settings, Share2, Mail, Check } from 'lucide-react';
 import { initAudio } from '../utils/helpers';
 
 interface ChatScreenProps {
@@ -50,6 +50,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
   const [canVibrate, setCanVibrate] = useState(false); // Hardware support check
+  
+  // Email Alert State
+  const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(false);
+  const [emailAddress, setEmailAddress] = useState('');
+  const [isSavingEmail, setIsSavingEmail] = useState(false);
   
   // File handling state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -144,6 +149,40 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         console.error("Failed to send system message", e);
     }
   }, [config.roomKey]);
+
+  // Helper to notify email subscribers (Placeholder for actual API call)
+  const notifySubscribers = async (action: 'message' | 'deleted', details: string) => {
+      if (!config.roomKey || !user) return;
+      
+      try {
+          const subscribersRef = collection(db, "chats", config.roomKey, "subscribers");
+          const snapshot = await getDocs(subscribersRef);
+          
+          if (snapshot.empty) return;
+
+          const recipients: string[] = [];
+          snapshot.forEach(doc => {
+              const sub = doc.data() as Subscriber;
+              // Don't notify yourself
+              if (sub.uid !== user.uid && sub.email) {
+                  recipients.push(sub.email);
+              }
+          });
+
+          if (recipients.length > 0) {
+              console.log(`[Email Service] Sending '${action}' notification to:`, recipients);
+              // TODO: Integrate EmailJS or similar service here.
+              // Example:
+              // emailjs.send('service_id', 'template_id', {
+              //    to_email: recipients.join(','),
+              //    message: details,
+              //    room_name: config.roomName
+              // });
+          }
+      } catch (e) {
+          console.error("Failed to notify subscribers", e);
+      }
+  };
 
   // 1. Authentication & Network Status & Feature Detection
   useEffect(() => {
@@ -254,6 +293,21 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     
     checkAndCreateRoom();
   }, [user, config.roomKey, config.roomName, config.username]);
+
+  // Check subscription status
+  useEffect(() => {
+      if (isRoomReady && user && config.roomKey) {
+          const checkSubscription = async () => {
+              const subDocRef = doc(db, "chats", config.roomKey, "subscribers", user.uid);
+              const docSnap = await getDoc(subDocRef);
+              if (docSnap.exists()) {
+                  setEmailAlertsEnabled(true);
+                  setEmailAddress(docSnap.data().email);
+              }
+          };
+          checkSubscription();
+      }
+  }, [isRoomReady, user, config.roomKey]);
 
   // Handle Join Message (Once per session per room)
   useEffect(() => {
@@ -592,6 +646,48 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       setShowSettingsMenu(false);
   };
 
+  // Toggle Email Alerts Logic
+  const handleEmailToggle = async () => {
+      if (!user || !config.roomKey) return;
+
+      if (emailAlertsEnabled) {
+          // Unsubscribe
+          const subDocRef = doc(db, "chats", config.roomKey, "subscribers", user.uid);
+          await deleteDoc(subDocRef);
+          setEmailAlertsEnabled(false);
+          setEmailAddress('');
+      } else {
+          // Just enable UI state to show input
+          setEmailAlertsEnabled(true);
+      }
+  };
+
+  const saveEmailSubscription = async () => {
+      if (!user || !config.roomKey || !emailAddress.includes('@')) {
+          alert("Please enter a valid email.");
+          return;
+      }
+      
+      setIsSavingEmail(true);
+      try {
+          const subDocRef = doc(db, "chats", config.roomKey, "subscribers", user.uid);
+          await setDoc(subDocRef, {
+              uid: user.uid,
+              username: config.username,
+              email: emailAddress,
+              createdAt: serverTimestamp()
+          });
+          setShowSettingsMenu(false);
+          alert("Email alerts enabled for this room.");
+      } catch (e) {
+          console.error("Error saving email", e);
+          alert("Failed to save email subscription.");
+      } finally {
+          setIsSavingEmail(false);
+      }
+  };
+
+
   const handleShare = async () => {
     // Use hardcoded production URL to avoid blob: issues in preview
     const baseUrl = 'https://konskall.github.io/incognitochat/';
@@ -775,6 +871,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 } : null
             });
             
+            // Notify subscribers about new message
+            notifySubscribers('message', 'Shared a location');
+
             // Clear states
             setReplyingTo(null);
         } catch (error) {
@@ -854,6 +953,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           if (attachment) messageData.attachment = attachment;
 
           await addDoc(collection(db, "chats", config.roomKey, "messages"), messageData);
+          
+          // Notify subscribers
+          notifySubscribers('message', textToSend || 'Sent a file');
+          
           // Clear reply state
           setReplyingTo(null);
           // Only clear file on success
@@ -886,6 +989,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     setIsDeleting(true);
 
     try {
+        // Notify subscribers before deleting
+        await notifySubscribers('deleted', 'The chat room has been deleted.');
+
         const chatRef = doc(db, "chats", config.roomKey);
         
         const deleteCollection = async (collName: string) => {
@@ -903,7 +1009,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             deleteCollection("presence"),
             deleteCollection("messages"),
             deleteCollection("fcm_tokens"),
-            deleteCollection("calls") // Also delete calls
+            deleteCollection("calls"), 
+            deleteCollection("subscribers") // Also delete subscribers
         ]);
 
         try {
@@ -1032,7 +1139,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             {/* Mobile Settings Dropdown */}
             {showSettingsMenu && (
                 <>
-                    <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5 sm:hidden" ref={settingsMenuRef}>
+                    <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5 sm:hidden" ref={settingsMenuRef}>
                         {canVibrate && (
                              <button 
                                 onClick={() => { setVibrationEnabled(!vibrationEnabled); setShowSettingsMenu(false); }}
@@ -1063,6 +1170,39 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                             {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
                             <span>Theme</span>
                         </button>
+
+                        <div className="h-px bg-slate-100 dark:bg-slate-700/50 my-1" />
+
+                        {/* Email Alerts Toggle Section */}
+                        <div className="p-2">
+                             <button 
+                                onClick={handleEmailToggle}
+                                className={`flex items-center gap-3 w-full rounded-lg text-sm font-medium transition ${emailAlertsEnabled ? 'text-blue-600 dark:text-blue-400 mb-2' : 'text-slate-600 dark:text-slate-300 hover:text-blue-500'}`}
+                             >
+                                <Mail size={18} />
+                                <span>Email Alerts</span>
+                                {emailAlertsEnabled && <span className="ml-auto text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">ON</span>}
+                             </button>
+
+                             {emailAlertsEnabled && (
+                                 <div className="flex gap-1 animate-in slide-in-from-top-2">
+                                     <input 
+                                        type="email" 
+                                        value={emailAddress}
+                                        onChange={(e) => setEmailAddress(e.target.value)}
+                                        placeholder="Enter Email"
+                                        className="w-full text-xs p-1.5 rounded bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-blue-500 outline-none"
+                                     />
+                                     <button 
+                                        onClick={saveEmailSubscription}
+                                        disabled={isSavingEmail}
+                                        className="bg-blue-500 text-white p-1.5 rounded hover:bg-blue-600 disabled:opacity-50"
+                                     >
+                                         {isSavingEmail ? '...' : <Check size={14} />}
+                                     </button>
+                                 </div>
+                             )}
+                        </div>
 
                         <div className="h-px bg-slate-100 dark:bg-slate-700/50 my-1" />
 
