@@ -557,21 +557,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     shareUrl.searchParams.set('pin', config.pin);
     const inviteUrl = shareUrl.toString();
 
-    const shareData = {
-        title: 'Incognito Chat Invite',
-        // Format exactly as requested: URL inside text, followed by credentials
-        text: `🔒 Join my secure room on Incognito Chat! ${inviteUrl}\n\n🏠 Room: ${config.roomName}\n🔑 PIN: ${config.pin}`,
-    };
+    // Defined without the URL to prevent duplication in native share sheet
+    const shareText = `🔒 Join my secure room on Incognito Chat!\n\n🏠 Room: ${config.roomName}\n🔑 PIN: ${config.pin}`;
 
     try {
         if (navigator.share) {
             await navigator.share({
-                ...shareData,
+                title: 'Incognito Chat Invite',
+                text: shareText,
                 url: inviteUrl // Provide valid URL for metadata fetching in apps
             });
         } else {
-            // For clipboard, just copy the formatted text
-            await navigator.clipboard.writeText(shareData.text);
+            // For clipboard, manually append URL
+            await navigator.clipboard.writeText(`${shareText}\n\n${inviteUrl}`);
             alert('Room details copied to clipboard!');
         }
     } catch (err) {
