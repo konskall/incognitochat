@@ -127,8 +127,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     setShowSettingsMenu(false); // Close menu on selection
   };
 
-  // Helper to send system messages
-  const sendSystemMessage = async (text: string) => {
+  // Helper to send system messages - Wrapped in useCallback for stability
+  const sendSystemMessage = useCallback(async (text: string) => {
     if (!config.roomKey) return;
     try {
         await addDoc(collection(db, "chats", config.roomKey, "messages"), {
@@ -143,7 +143,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     } catch (e) {
         console.error("Failed to send system message", e);
     }
-  };
+  }, [config.roomKey]);
 
   // 1. Authentication & Network Status & Feature Detection
   useEffect(() => {
@@ -264,7 +264,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
               sessionStorage.setItem(sessionKey, 'true');
           }
       }
-  }, [isRoomReady, user, config.roomKey, config.username]);
+  }, [isRoomReady, user, config.roomKey, config.username, sendSystemMessage]);
 
   // Handle Manual Exit
   const handleExitChat = async () => {
@@ -439,7 +439,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                    location: data.location,
                    reactions: data.reactions,
                    replyTo: data.replyTo,
-                   type: data.type
+                   type: data.type || 'text'
                };
            }
         }
@@ -459,7 +459,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           isEdited: data.isEdited,
           reactions: data.reactions || {},
           replyTo: data.replyTo,
-          type: data.type
+          type: data.type || 'text' // Fallback to 'text' if type is undefined (legacy messages)
         });
       });
 
