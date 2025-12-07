@@ -3,7 +3,7 @@ import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
   FileText, Download, Edit2, 
-  File, FileAudio, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin 
+  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin 
 } from 'lucide-react';
 
 interface MessageListProps {
@@ -208,7 +208,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
   };
 
   const getFileIcon = (mimeType: string) => {
-    if (mimeType.startsWith('audio/')) return <FileAudio size={20} />;
+    // Audio is now handled separately in renderAttachment, so removed from here
     if (mimeType.startsWith('video/')) return <FileVideo size={20} />;
     if (mimeType.includes('pdf')) return <FileText size={20} />;
     if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('tar') || mimeType.includes('7z') || mimeType.includes('compressed')) return <FileArchive size={20} />;
@@ -223,6 +223,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
     const { url, name, type, size } = msg.attachment;
     const sizeKB = (size / 1024).toFixed(1);
 
+    // 1. Image Handler
     if (type.startsWith('image/')) {
         return (
             <div className="mt-2 mb-1 group/image relative">
@@ -239,6 +240,33 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
         );
     }
 
+    // 2. Audio/Voice Message Handler
+    if (type.startsWith('audio/')) {
+        return (
+            <div className="mt-2 mb-1 w-full min-w-[200px] sm:min-w-[260px]">
+                <div className={`flex flex-col gap-1 rounded-xl p-2 ${isMe ? 'bg-blue-700/30' : 'bg-slate-100 dark:bg-slate-700'}`}>
+                    <div className="flex items-center justify-between mb-1 px-1">
+                         <span className={`text-[10px] font-bold uppercase tracking-wider ${isMe ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                            {name.includes('recorder') ? 'Voice Message' : name}
+                         </span>
+                         <span className={`text-[9px] ${isMe ? 'text-blue-200' : 'text-slate-400'}`}>
+                            {sizeKB} KB
+                         </span>
+                    </div>
+                    
+                    {/* Native Audio Player */}
+                    <audio 
+                        controls 
+                        preload="metadata"
+                        className="w-full h-8 rounded opacity-90 focus:outline-none" 
+                        src={url}
+                    />
+                </div>
+            </div>
+        );
+    }
+
+    // 3. Generic File Handler
     return (
         <a 
             href={url} 
