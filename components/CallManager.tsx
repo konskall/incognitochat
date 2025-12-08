@@ -1,7 +1,8 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw, X, User as UserIcon, AlertCircle, Volume2, VolumeX, Signal, Crown } from 'lucide-react';
 import { db } from '../services/firebase';
-import { collection, doc, onSnapshot, addDoc, updateDoc, serverTimestamp, query, where, setDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, addDoc, updateDoc, serverTimestamp, query, where, setDoc, arrayUnion } from 'firebase/firestore';
 import { User, ChatConfig } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
 
@@ -79,6 +80,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const remoteStream = useRef<MediaStream | null>(null);
   const unsubscribeRefs = useRef<(() => void)[]>([]);
   
+  // Step 1 Optimization: Buffering candidates
+  const candidateBuffer = useRef<any[]>([]);
+  const flushCandidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remoteCandidatesProcessed = useRef<Set<string>>(new Set());
+
   // To track packet loss over time
   const prevStats = useRef<{ packetsLost: number; packetsReceived: number } | null>(null);
   
@@ -120,6 +126,14 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
 
     // 5. Stop Ringtone (Using helper)
     stopRingtone();
+    
+    // Clear buffer timers
+    if (flushCandidateTimer.current) {
+        clearTimeout(flushCandidateTimer.current);
+        flushCandidateTimer.current = null;
+    }
+    candidateBuffer.current = [];
+    remoteCandidatesProcessed.current.clear();
 
     // 6. Reset UI
     setViewState({
@@ -256,11 +270,31 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
     };
 
-    // C. Handle ICE Candidates
+    // C. Handle ICE Candidates (Optimized: Buffering writes)
     newPC.onicecandidate = (event) => {
       if (event.candidate) {
-          const collectionName = isCaller ? 'offerCandidates' : 'answerCandidates';
-          addDoc(collection(db, "chats", config.roomKey, "calls", callId, collectionName), event.candidate.toJSON());
+          const candidateJSON = event.candidate.toJSON();
+          candidateBuffer.current.push(candidateJSON);
+
+          // Debounce the write to batch candidates
+          if (flushCandidateTimer.current) clearTimeout(flushCandidateTimer.current);
+          flushCandidateTimer.current = setTimeout(async () => {
+              if (candidateBuffer.current.length === 0) return;
+              const candidatesToWrite = [...candidateBuffer.current];
+              candidateBuffer.current = []; // Clear buffer
+
+              const fieldName = isCaller ? 'offerCandidates' : 'answerCandidates';
+              const callRef = doc(db, "chats", config.roomKey, "calls", callId);
+
+              try {
+                  // Use arrayUnion to append multiple candidates at once
+                  await updateDoc(callRef, {
+                      [fieldName]: arrayUnion(...candidatesToWrite)
+                  });
+              } catch (e) {
+                  console.error("Error batching candidates:", e);
+              }
+          }, 1000); // 1 second buffer
       }
     };
 
@@ -318,7 +352,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
         type: type,
         offer: { type: offerDescription.type, sdp: offerDescription.sdp },
         status: 'offering',
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        offerCandidates: [], 
+        answerCandidates: []
       };
       await setDoc(callDocRef, callData);
 
@@ -332,23 +368,26 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           connection.setRemoteDescription(answerDescription);
           setViewState(prev => ({ ...prev, status: 'connected' }));
         }
+
+        // Handle Batched Candidates from Callee (answerCandidates)
+        if (data.answerCandidates && Array.isArray(data.answerCandidates)) {
+            data.answerCandidates.forEach((c: any) => {
+                const cStr = JSON.stringify(c);
+                if (!remoteCandidatesProcessed.current.has(cStr)) {
+                    // Only add if not processed
+                    if (connection.remoteDescription) {
+                        connection.addIceCandidate(new RTCIceCandidate(c)).catch(e => console.log("Candidate error", e));
+                    }
+                    remoteCandidatesProcessed.current.add(cStr);
+                }
+            });
+        }
         
         if (data.status === 'ended' || data.status === 'declined') {
           cleanup();
         }
       });
       unsubscribeRefs.current.push(unsubDoc);
-
-      const candidatesQuery = query(collection(db, "chats", config.roomKey, "calls", callId, "answerCandidates"));
-      const unsubCandidates = onSnapshot(candidatesQuery, (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-          if (change.type === 'added') {
-            const candidate = new RTCIceCandidate(change.doc.data());
-            connection.addIceCandidate(candidate).catch(e => console.log("Candidate error", e));
-          }
-        });
-      });
-      unsubscribeRefs.current.push(unsubCandidates);
 
     } catch (error: any) {
       console.error("Start Call Error:", error);
@@ -398,22 +437,40 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
         remoteAvatar: incomingData.callerAvatar,
         type: incomingData.type
       });
+      
+      // Process any existing offer candidates immediately if available in incomingData
+      if (incomingData.offerCandidates && Array.isArray(incomingData.offerCandidates)) {
+         incomingData.offerCandidates.forEach((c: any) => {
+            const cStr = JSON.stringify(c);
+            if (!remoteCandidatesProcessed.current.has(cStr)) {
+                 connection.addIceCandidate(new RTCIceCandidate(c)).catch(console.error);
+                 remoteCandidatesProcessed.current.add(cStr);
+            }
+         });
+      }
+
       setIncomingData(null); 
 
-      const candidatesQuery = query(collection(db, "chats", config.roomKey, "calls", callId, "offerCandidates"));
-      const unsubCandidates = onSnapshot(candidatesQuery, (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-          if (change.type === 'added') {
-            const candidate = new RTCIceCandidate(change.doc.data());
-            connection.addIceCandidate(candidate).catch(e => console.log("Candidate error", e));
-          }
-        });
-      });
-      unsubscribeRefs.current.push(unsubCandidates);
-
       const unsubDoc = onSnapshot(callRef, (snapshot) => {
-          if (snapshot.data()?.status === 'ended') {
+          const data = snapshot.data();
+          if (!data) return;
+
+          if (data.status === 'ended') {
               cleanup();
+              return;
+          }
+
+          // Handle Batched Candidates from Caller (offerCandidates)
+          if (data.offerCandidates && Array.isArray(data.offerCandidates)) {
+             data.offerCandidates.forEach((c: any) => {
+                const cStr = JSON.stringify(c);
+                if (!remoteCandidatesProcessed.current.has(cStr)) {
+                     if(connection.remoteDescription) {
+                        connection.addIceCandidate(new RTCIceCandidate(c)).catch(console.error);
+                     }
+                     remoteCandidatesProcessed.current.add(cStr);
+                }
+             });
           }
       });
       unsubscribeRefs.current.push(unsubDoc);
