@@ -380,11 +380,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
     updatePresence({ isTyping: false, status: 'active' });
     
+    // Step 2 Optimization: Increase heartbeat to 5 minutes (300,000ms) to reduce writes
     const interval = setInterval(() => {
         if (document.visibilityState === 'visible') {
             updatePresence({ status: 'active' });
         }
-    }, 30000);
+    }, 300000); // Changed from 30000 to 300000
 
     const handleVisibilityChange = () => {
         if (document.visibilityState === 'visible') {
