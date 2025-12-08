@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw, X, User as UserIcon, AlertCircle, Volume2, VolumeX, Signal, Crown } from 'lucide-react';
 import { db } from '../services/firebase';
-import { collection, doc, onSnapshot, addDoc, updateDoc, serverTimestamp, query, where, setDoc, arrayUnion } from 'firebase/firestore';
+import { collection, doc, onSnapshot, updateDoc, serverTimestamp, query, where, setDoc, arrayUnion } from 'firebase/firestore';
 import { User, ChatConfig } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
 
@@ -63,9 +63,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     type: 'video'
   });
   
-  const [isMuted, setIsMuted] = useState(false); // Microphone mute
-  const [isSpeakerMuted, setIsSpeakerMuted] = useState(false); // Speaker mute
-  const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isMuted, setIsMuted] = useState<boolean>(false); // Microphone mute
+  const [isSpeakerMuted, setIsSpeakerMuted] = useState<boolean>(false); // Speaker mute
+  const [isVideoOff, setIsVideoOff] = useState<boolean>(false);
   const [incomingData, setIncomingData] = useState<any>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
