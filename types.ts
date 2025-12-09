@@ -24,14 +24,15 @@ export interface Message {
   uid: string;
   username: string;
   avatarURL: string;
-  createdAt: string; // ISO string from Supabase
+  // Supabase returns ISO strings for dates
+  createdAt: string; 
   attachment?: Attachment;
   location?: {
     lat: number;
     lng: number;
   };
   isEdited?: boolean;
-  reactions?: { [emoji: string]: string[] };
+  reactions?: { [emoji: string]: string[] }; // Key: emoji char, Value: array of uids
   replyTo?: ReplyInfo | null;
   type?: 'text' | 'system';
 }
@@ -48,8 +49,10 @@ export interface Presence {
   uid: string;
   username: string;
   avatar: string;
-  onlineAt: string;
+  status: 'active' | 'inactive';
+  lastSeen: string;
   isTyping?: boolean;
+  onlineAt?: string; // Supabase presence timestamp
 }
 
 // Webrtc Signaling Data
