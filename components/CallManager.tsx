@@ -1,6 +1,5 @@
-
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Phone, Video, Mic, MicOff, VideoOff, PhoneOff, RotateCcw, X, User as UserIcon, AlertCircle, Volume2, VolumeX, Signal, Crown } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Phone, Video, Mic, MicOff, PhoneOff, X } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
@@ -43,13 +42,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   });
   
   const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [isSpeakerMuted, setIsSpeakerMuted] = useState<boolean>(false);
-  const [isVideoOff, setIsVideoOff] = useState<boolean>(false);
   const [incomingCall, setIncomingCall] = useState<SignalData | null>(null);
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [networkQuality, setNetworkQuality] = useState<'good' | 'poor' | 'bad'>('good');
-  const [networkStats, setNetworkStats] = useState({ rtt: 0, loss: 0 });
 
   // --- Logic Refs ---
   const pc = useRef<RTCPeerConnection | null>(null);
@@ -182,7 +175,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           return stream;
       } catch (e) {
           console.error("Media error", e);
-          setErrorMsg("Could not access camera/microphone");
+          // setErrorMsg("Could not access camera/microphone");
           throw e;
       }
   };
@@ -275,7 +268,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       stopRingtone();
       setViewState({ status: 'idle', callId: null, isCaller: false, remoteName: '', remoteAvatar: '', type: 'video' });
       setIncomingCall(null);
-      setErrorMsg(null);
   };
 
   const handleHangup = async () => {
@@ -408,7 +400,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                                 <img src={u.avatar} className="w-10 h-10 rounded-full bg-slate-200 object-cover" />
                                 <span className="font-medium text-slate-700 dark:text-slate-200 truncate flex items-center gap-1">
                                     {u.username}
-                                    {roomCreatorId === u.uid && <Crown size={14} className="text-yellow-500 fill-yellow-500 ml-1" />}
+                                    {roomCreatorId === u.uid && <span className="text-xs text-yellow-500 ml-1">👑</span>}
                                 </span>
                             </div>
                             <div className="flex gap-1">
