@@ -186,7 +186,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
 
         <div className="flex flex-col items-center mb-6">
            <img 
-            src="https://konskall.github.io/incognitochatapp/favicon-96x96.png" 
+            src="https://konskall.github.io/incognitochat/favicon-96x96.png" 
             alt="Logo"
             style={{ width: '64px', height: '64px' }}
             className="w-16 h-16 rounded-2xl shadow-lg mb-4"
