@@ -21,6 +21,14 @@ const ImagePreviewModal: React.FC<{
     onClose: () => void; 
 }> = ({ src, alt, onClose }) => {
     
+    // Lock body scroll when modal is open to prevent UI jumping on mobile
+    useEffect(() => {
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = 'unset';
+        };
+    }, []);
+
     const handleDownload = async () => {
         try {
             const response = await fetch(src);
@@ -42,34 +50,34 @@ const ImagePreviewModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-[200] bg-black flex flex-col h-[100dvh] w-screen animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center animate-in fade-in duration-300">
             
-            {/* Top Controls - Strong Gradient Overlay */}
-            <div className="absolute top-0 left-0 right-0 z-[210] flex justify-end p-4 pt-[calc(1rem+env(safe-area-inset-top))] bg-gradient-to-b from-black/90 via-black/60 to-transparent pb-20 pointer-events-none">
+            {/* Top Bar - Fixed to Top Safe Area */}
+            <div className="absolute top-0 left-0 right-0 z-[210] flex justify-end p-4 pt-[calc(1.5rem+env(safe-area-inset-top))]">
                  <button 
                     onClick={onClose} 
-                    className="pointer-events-auto p-3 text-white/90 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 border border-white/20 transition active:scale-90 shadow-xl"
-                    aria-label="Close Preview"
+                    className="p-3 bg-slate-800/80 text-white rounded-full hover:bg-slate-700 transition shadow-lg border border-white/10 active:scale-95"
+                    aria-label="Close"
                  >
                     <X size={28} />
                  </button>
             </div>
                  
-            {/* Image Area - Centered & Responsive */}
-            <div className="flex-1 flex items-center justify-center overflow-hidden w-full h-full relative p-0" onClick={onClose}>
+            {/* Image Area - Restricted height to leave room for bars */}
+            <div className="w-full h-full flex items-center justify-center p-2" onClick={onClose}>
                 <img 
                     src={src} 
                     alt={alt} 
-                    className="max-w-full max-h-full object-contain transition-transform duration-200"
+                    className="max-w-full max-h-[80vh] object-contain shadow-2xl rounded-sm"
                     onClick={(e) => e.stopPropagation()} 
                 />
             </div>
 
-            {/* Bottom Controls - Strong Gradient Overlay */}
-            <div className="absolute bottom-0 left-0 right-0 z-[210] flex justify-center p-6 pb-[calc(2rem+env(safe-area-inset-bottom))] bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-20 pointer-events-none">
+            {/* Bottom Bar - Fixed to Bottom Safe Area */}
+            <div className="absolute bottom-0 left-0 right-0 z-[210] flex justify-center p-6 pb-[calc(2rem+env(safe-area-inset-bottom))] bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
                  <button 
                     onClick={handleDownload}
-                    className="pointer-events-auto flex items-center gap-2.5 px-8 py-4 bg-white text-slate-900 rounded-full text-sm font-bold shadow-2xl active:scale-95 transition hover:bg-slate-200"
+                    className="pointer-events-auto flex items-center gap-2 px-8 py-3.5 bg-white text-slate-900 rounded-full font-bold text-base shadow-xl active:scale-95 transition hover:bg-slate-200"
                  >
                     <Download size={20} />
                     <span>Save Image</span>
