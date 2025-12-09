@@ -1,14 +1,15 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Phone, Video, Mic, MicOff, PhoneOff, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
 
 // Servers που βοηθούν στη σύνδεση (STUN) - Χρησιμοποιούμε τους δωρεάν της Google
+// ΣΗΜΕΙΩΣΗ: Για παραγωγή σε δίκτυα κινητής (4G/5G) ή αυστηρά εταιρικά δίκτυα,
+// συνίσταται η προσθήκη TURN servers (π.χ. από Metered.ca ή Twilio).
 const ICE_SERVERS = {
   iceServers: [
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
+    { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
   ],
   iceCandidatePoolSize: 10,
 };
