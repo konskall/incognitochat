@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatConfig } from '../types';
 import { generateRoomKey, initAudio } from '../utils/helpers';
@@ -142,7 +141,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
     initAudio();
 
     // Authenticate with Supabase anonymously
-    const { data, error } = await supabase.auth.signInAnonymously();
+    const { error } = await supabase.auth.signInAnonymously();
 
     if (error) {
         console.error("Login failed:", error);
