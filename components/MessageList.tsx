@@ -14,7 +14,7 @@ interface MessageListProps {
   onReply: (msg: Message) => void;
 }
 
-// -- Image Preview Modal Component (Mobile Optimized: Floating Buttons) --
+// -- Image Preview Modal Component (iOS Fixed) --
 const ImagePreviewModal: React.FC<{ 
     src: string; 
     alt: string; 
@@ -29,60 +29,65 @@ const ImagePreviewModal: React.FC<{
         };
     }, []);
 
-    const handleDownload = async () => {
+    const handleDownload = async (e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent closing
         try {
+            // Attempt standard download
             const response = await fetch(src);
             const blob = await response.blob();
             const blobUrl = window.URL.createObjectURL(blob);
             
             const link = document.createElement('a');
             link.href = blobUrl;
-            link.download = alt || 'image';
+            link.download = alt || `image-${Date.now()}.jpg`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
             window.URL.revokeObjectURL(blobUrl);
-        } catch (e) {
-            console.error("Download failed", e);
-            // Fallback
+        } catch (err) {
+            console.error("Download failed, falling back to open", err);
+            // Fallback for iOS/Safari where programmatic click might fail
             window.open(src, '_blank');
         }
     };
 
     return (
-        <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center animate-in fade-in duration-200">
-            
-            {/* Controls Layer - Floating Buttons at Top Corners */}
-            {/* pointer-events-none ensures clicks between buttons go to the background/close action */}
-            <div className="absolute top-0 left-0 right-0 z-[210] flex justify-between items-start p-4 pt-[calc(1rem+env(safe-area-inset-top))] pointer-events-none">
-                 
-                 {/* Download Button - Top Left */}
+        <div 
+            className="fixed inset-0 z-[9999] bg-black flex flex-col"
+            onClick={onClose}
+        >
+            {/* Top Bar - Close Button */}
+            {/* Using padding-top with safe-area env for notches */}
+            <div className="absolute top-0 right-0 z-[10000] p-4 pt-[calc(1.5rem+env(safe-area-inset-top))]">
                  <button 
-                    onClick={handleDownload}
-                    className="pointer-events-auto p-3.5 bg-black/40 text-white/90 rounded-full backdrop-blur-xl border border-white/10 shadow-lg active:scale-90 transition hover:bg-black/60"
-                    aria-label="Download Image"
-                 >
-                    <Download size={24} />
-                 </button>
-
-                 {/* Close Button - Top Right */}
-                 <button 
-                    onClick={onClose} 
-                    className="pointer-events-auto p-3.5 bg-black/40 text-white/90 rounded-full backdrop-blur-xl border border-white/10 shadow-lg active:scale-90 transition hover:bg-black/60"
-                    aria-label="Close Preview"
+                    onClick={(e) => { e.stopPropagation(); onClose(); }}
+                    className="p-3 bg-white/10 text-white rounded-full hover:bg-white/20 backdrop-blur-md border border-white/10 active:scale-95 transition-all shadow-lg"
+                    aria-label="Close"
                  >
                     <X size={24} />
                  </button>
             </div>
                  
             {/* Image Area */}
-            <div className="w-full h-full flex items-center justify-center overflow-hidden" onClick={onClose}>
+            <div className="flex-1 flex items-center justify-center p-2 w-full h-full overflow-hidden">
                 <img 
                     src={src} 
                     alt={alt} 
                     className="max-w-full max-h-full object-contain"
                     onClick={(e) => e.stopPropagation()} 
                 />
+            </div>
+
+            {/* Bottom Bar - Download Button */}
+            {/* Using padding-bottom with safe-area env for home bars */}
+            <div className="absolute bottom-0 left-0 right-0 z-[10000] flex justify-center p-6 pb-[calc(2rem+env(safe-area-inset-bottom))] bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
+                 <button 
+                    onClick={handleDownload}
+                    className="pointer-events-auto flex items-center gap-2 px-6 py-3 bg-white text-black rounded-full font-bold text-sm shadow-xl active:scale-95 transition hover:bg-slate-200"
+                 >
+                    <Download size={18} />
+                    <span>Save Image</span>
+                 </button>
             </div>
         </div>
     );
@@ -311,10 +316,10 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
             <div className="mt-2 mb-1 group/image relative">
                 <button 
                     onClick={() => onImagePreview(url, name)} 
-                    title="Click to preview" 
-                    className="block relative overflow-hidden rounded-lg cursor-zoom-in"
+                    title="Tap to preview" 
+                    className="block relative overflow-hidden rounded-lg cursor-zoom-in active:opacity-90 transition-opacity"
                 >
-                    <div className="absolute inset-0 bg-black/0 group-hover/image:bg-black/10 transition-colors z-10 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/0 group-hover/image:bg-black/10 transition-colors z-10 flex items-center justify-center pointer-events-none">
                         <ZoomIn className="text-white opacity-0 group-hover/image:opacity-100 transition-opacity" size={24} />
                     </div>
                     <img 
