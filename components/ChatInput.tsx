@@ -37,7 +37,7 @@ interface ChatInputProps {
   typingUsers: string[];
 }
 
-const MAX_FILE_SIZE = 500 * 1024;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 const ChatInput: React.FC<ChatInputProps> = ({
   inputText,
@@ -84,7 +84,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       if (file.size > MAX_FILE_SIZE) {
         if (file.type.startsWith('image/')) {
             const confirmCompress = window.confirm(
-                `Image is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Compress to under 500KB?`
+                `Image is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Compress to under 10MB?`
             );
             
             if (confirmCompress) {
@@ -93,7 +93,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 try {
                     const compressed = await compressImage(file);
                     if (compressed.size > MAX_FILE_SIZE) {
-                         alert(`Still too large after compression (${(compressed.size/1024).toFixed(1)}KB). Please choose a smaller image.`);
+                         alert(`Still too large after compression (${(compressed.size/1024/1024).toFixed(1)}MB). Please choose a smaller image.`);
                          if (fileInputRef.current) fileInputRef.current.value = '';
                          return;
                     }
@@ -109,7 +109,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 return;
             }
         } else {
-            alert(`File is too large. Max size is 500KB.`);
+            alert(`File is too large. Max size is 10MB.`);
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
