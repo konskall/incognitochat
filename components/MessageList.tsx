@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
   FileText, Download, Edit2, 
-  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin 
+  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, ZoomIn
 } from 'lucide-react';
 
 interface MessageListProps {
@@ -14,6 +14,66 @@ interface MessageListProps {
   onReact: (msg: Message, emoji: string) => void;
   onReply: (msg: Message) => void;
 }
+
+// -- Image Preview Modal Component --
+const ImagePreviewModal: React.FC<{ 
+    src: string; 
+    alt: string; 
+    onClose: () => void; 
+}> = ({ src, alt, onClose }) => {
+    
+    const handleDownload = async () => {
+        try {
+            const response = await fetch(src);
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = alt || 'image';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(blobUrl);
+        } catch (e) {
+            console.error("Download failed", e);
+            // Fallback
+            window.open(src, '_blank');
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm animate-in fade-in duration-200">
+            {/* Toolbar */}
+            <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-50 bg-black/40">
+                 <button 
+                    onClick={onClose} 
+                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition"
+                 >
+                    <X size={24} />
+                 </button>
+                 
+                 <button 
+                    onClick={handleDownload}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full text-sm font-semibold transition shadow-lg"
+                 >
+                    <Download size={18} />
+                    Download
+                 </button>
+            </div>
+
+            {/* Image Container */}
+            <div className="w-full h-full p-4 flex items-center justify-center overflow-hidden" onClick={onClose}>
+                <img 
+                    src={src} 
+                    alt={alt} 
+                    className="max-w-full max-h-full object-contain shadow-2xl rounded-md cursor-zoom-out"
+                    onClick={(e) => e.stopPropagation()} // Prevent closing when clicking image
+                />
+            </div>
+        </div>
+    );
+};
 
 // -- Link Preview Component --
 const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
@@ -98,7 +158,15 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
 };
 
 // Memoized Message Item to prevent re-renders of the whole list
-const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onReply }: { msg: Message; isMe: boolean; currentUid: string; onEdit: (msg: Message) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; }) => {
+const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onReply, onImagePreview }: { 
+    msg: Message; 
+    isMe: boolean; 
+    currentUid: string; 
+    onEdit: (msg: Message) => void; 
+    onReact: (msg: Message, emoji: string) => void; 
+    onReply: (msg: Message) => void;
+    onImagePreview: (url: string, name: string) => void;
+}) => {
   const [showReactions, setShowReactions] = useState(false);
 
   const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
@@ -228,15 +296,21 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
     if (type.startsWith('image/')) {
         return (
             <div className="mt-2 mb-1 group/image relative">
-                <a href={url} download={name} title="Click to download full size" className="block relative overflow-hidden rounded-lg">
-                    <div className="absolute inset-0 bg-black/0 group-hover/image:bg-black/10 transition-colors z-10" />
+                <button 
+                    onClick={() => onImagePreview(url, name)} 
+                    title="Click to preview" 
+                    className="block relative overflow-hidden rounded-lg cursor-zoom-in"
+                >
+                    <div className="absolute inset-0 bg-black/0 group-hover/image:bg-black/10 transition-colors z-10 flex items-center justify-center">
+                        <ZoomIn className="text-white opacity-0 group-hover/image:opacity-100 transition-opacity" size={24} />
+                    </div>
                     <img 
                         src={url} 
                         alt={name} 
                         loading="lazy"
                         className="max-w-full rounded-lg shadow-sm border border-white/10 max-h-[300px] w-auto object-contain bg-black/5 dark:bg-white/5" 
                     />
-                </a>
+                </button>
             </div>
         );
     }
@@ -532,27 +606,45 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
 });
 
 const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onReact, onReply }) => {
+  const [previewImage, setPreviewImage] = useState<{url: string; name: string} | null>(null);
+
+  const handleImagePreview = useCallback((url: string, name: string) => {
+      setPreviewImage({ url, name });
+  }, []);
+
+  const closePreview = () => setPreviewImage(null);
+
   return (
-    <div className="flex flex-col justify-end min-h-full pb-2">
-      {messages.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60">
-            <p>No messages yet.</p>
-            <p className="text-xs">Say hello! 👋</p>
+    <>
+        {previewImage && (
+            <ImagePreviewModal 
+                src={previewImage.url} 
+                alt={previewImage.name} 
+                onClose={closePreview} 
+            />
+        )}
+        <div className="flex flex-col justify-end min-h-full pb-2">
+        {messages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60">
+                <p>No messages yet.</p>
+                <p className="text-xs">Say hello! 👋</p>
+            </div>
+        ) : (
+            messages.map((msg) => (
+            <MessageItem 
+                key={msg.id} 
+                msg={msg} 
+                isMe={msg.uid === currentUserUid}
+                currentUid={currentUserUid}
+                onEdit={onEdit}
+                onReact={onReact}
+                onReply={onReply}
+                onImagePreview={handleImagePreview}
+            />
+            ))
+        )}
         </div>
-      ) : (
-        messages.map((msg) => (
-          <MessageItem 
-            key={msg.id} 
-            msg={msg} 
-            isMe={msg.uid === currentUserUid}
-            currentUid={currentUserUid}
-            onEdit={onEdit}
-            onReact={onReact}
-            onReply={onReply}
-          />
-        ))
-      )}
-    </div>
+    </>
   );
 };
 
