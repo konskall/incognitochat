@@ -4,17 +4,11 @@ import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
 
-// Ενισχυμένη λίστα STUN & TURN servers για μέγιστη συνδεσιμότητα
 const ICE_SERVERS = {
   iceServers: [
-    // Google STUN Servers (Δωρεάν / Backup)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    
-    // Metered.ca STUN Server
     { urls: "stun:stun.relay.metered.ca:80" },
-
-    // Metered.ca TURN Servers (Για παράκαμψη NAT/Firewall & 4G/5G)
     {
       urls: "turn:standard.relay.metered.ca:80",
       username: "4aa8db5b8a8c31527e2495be",
@@ -74,12 +68,19 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const localStream = useRef<MediaStream | null>(null);
   const remoteStream = useRef<MediaStream | null>(null);
   const channelRef = useRef<any>(null);
-  
-  // Κρίσιμο: Ουρά για τα ICE candidates που έρχονται πριν ετοιμαστεί η σύνδεση
   const candidateQueue = useRef<RTCIceCandidateInit[]>([]);
+  
+  // Refs to track state inside callbacks without stale closures
+  const isCallerRef = useRef(false);
+  const remoteUidRef = useRef<string | null>(null);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+
+  // Sync refs with state
+  useEffect(() => {
+      isCallerRef.current = viewState.isCaller;
+  }, [viewState.isCaller]);
 
   useEffect(() => {
      if (!config.roomKey) return;
@@ -88,7 +89,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
      
      channel.on('broadcast', { event: 'signal' }, ({ payload }: { payload: SignalData }) => {
          if (payload.fromUid === user.uid) return;
-         // Αν δεν είναι για εμάς (και υπάρχει συγκεκριμένος παραλήπτης), το αγνοούμε
          if (payload.toUid && payload.toUid !== user.uid) return;
 
          handleSignalMessage(payload);
@@ -117,9 +117,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       if (data.type === 'offer') {
           if (viewState.status !== 'idle' && viewState.status !== 'incoming') return;
           
-          // Καθαρίζουμε την ουρά από παλιά δεδομένα
           candidateQueue.current = [];
           setIncomingCall(data);
+          remoteUidRef.current = data.fromUid; // Store caller ID for reference
           initAudio();
           startRingtone();
       }
@@ -129,8 +129,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                try {
                    await pc.current.setRemoteDescription(new RTCSessionDescription(data.payload));
                    setViewState(prev => ({ ...prev, status: 'connected' }));
-                   // Επεξεργασία των candidates που ήρθαν όσο περιμέναμε την απάντηση
-                   processCandidateQueue();
+                   await processCandidateQueue();
                } catch (err) {
                    console.error("Error setting remote description", err);
                }
@@ -145,7 +144,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                    console.error("Error adding ice candidate", e);
                }
            } else {
-               // Αν η σύνδεση δεν είναι έτοιμη ακόμα, αποθηκεύουμε το candidate για μετά
                candidateQueue.current.push(data.payload);
            }
       }
@@ -174,19 +172,22 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
-  const createPC = () => {
+  const createPC = (targetUid?: string) => {
       const newPC = new RTCPeerConnection(ICE_SERVERS);
       pc.current = newPC;
 
       newPC.onicecandidate = (event) => {
           if (event.candidate) {
+              // Determine destination: if we are caller, send to target. If we are callee, send to caller (stored in remoteUidRef or passed)
+              const destUid = isCallerRef.current ? targetUid : remoteUidRef.current;
+              
               sendSignal({
                   type: 'candidate',
                   payload: event.candidate.toJSON(),
                   fromUid: user.uid,
                   fromName: config.username,
                   fromAvatar: config.avatarURL,
-                  toUid: viewState.isCaller ? undefined : incomingCall?.fromUid,
+                  toUid: destUid || undefined, 
               });
           }
       };
@@ -208,11 +209,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       newPC.oniceconnectionstatechange = () => {
           if (newPC.iceConnectionState === 'disconnected' || newPC.iceConnectionState === 'failed') {
                setViewState(prev => ({...prev, status: 'reconnecting'}));
-               setTimeout(() => {
-                   if (pc.current?.iceConnectionState !== 'connected') {
-                       cleanup();
-                   }
-               }, 5000);
           } else if (newPC.iceConnectionState === 'connected') {
                setViewState(prev => ({...prev, status: 'connected'}));
           }
@@ -238,10 +234,13 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
 
   const startCall = async (targetUid: string, targetName: string, targetAvatar: string, type: 'audio' | 'video') => {
       onCloseParticipants();
-      candidateQueue.current = []; // Reset queue
+      candidateQueue.current = [];
+      remoteUidRef.current = targetUid;
+      isCallerRef.current = true;
+      
       try {
           const stream = await getMedia(type === 'video');
-          const connection = createPC();
+          const connection = createPC(targetUid);
           
           stream.getTracks().forEach(t => connection.addTrack(t, stream));
 
@@ -276,16 +275,16 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const answerCall = async () => {
       if (!incomingCall) return;
       stopRingtone();
+      isCallerRef.current = false;
+      remoteUidRef.current = incomingCall.fromUid;
       
       try {
           const stream = await getMedia(incomingCall.callType === 'video');
-          const connection = createPC();
+          const connection = createPC(incomingCall.fromUid);
           
           stream.getTracks().forEach(t => connection.addTrack(t, stream));
           
           await connection.setRemoteDescription(new RTCSessionDescription(incomingCall.payload));
-          
-          // Τώρα που έχουμε Remote Description, μπορούμε να προσθέσουμε τα candidates που ήρθαν νωρίτερα
           await processCandidateQueue();
 
           const answer = await connection.createAnswer();
@@ -330,6 +329,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       setViewState({ status: 'idle', callId: null, isCaller: false, remoteName: '', remoteAvatar: '', type: 'video' });
       setIncomingCall(null);
       candidateQueue.current = [];
+      remoteUidRef.current = null;
   };
 
   const handleHangup = async () => {
