@@ -1,18 +1,13 @@
-
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
 
-// Servers for NAT Traversal (STUN/TURN)
-const ICE_SERVERS = {
+const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
-    // Google STUN (Free, works for simple WiFi)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    
-    // Metered.ca (Provided Credentials for robust connection)
     { urls: "stun:stun.relay.metered.ca:80" },
     {
       urls: "turn:standard.relay.metered.ca:80",
@@ -57,7 +52,6 @@ interface CallState {
 }
 
 const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseParticipants, showParticipants, roomCreatorId }) => {
-  // --- UI State ---
   const [viewState, setViewState] = useState<CallState>({
     status: 'idle',
     callId: null,
@@ -70,44 +64,63 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [incomingCall, setIncomingCall] = useState<SignalData | null>(null);
 
-  // --- Logic Refs ---
   const pc = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
   const remoteStream = useRef<MediaStream | null>(null);
   const channelRef = useRef<any>(null);
-  
-  // Queue for ICE candidates received before remote description is set
   const candidateQueue = useRef<RTCIceCandidateInit[]>([]);
   
   // Refs to track state inside callbacks without stale closures
   const isCallerRef = useRef(false);
   const remoteUidRef = useRef<string | null>(null);
   
+  // Video Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+
+  // --- 1. HANDLE DOM VIDEO ATTACHMENT (CRITICAL FIX) ---
+  // This effect ensures that whenever the video elements appear (viewState changes),
+  // we re-attach the streams. This solves the "connected but black screen" issue.
+  useEffect(() => {
+    if (viewState.status === 'connected' || viewState.status === 'calling' || viewState.status === 'reconnecting') {
+        console.log("[WebRTC] Checking video elements...");
+        
+        // Attach Local Stream
+        if (localVideoRef.current && localStream.current) {
+            console.log("[WebRTC] Attaching local stream");
+            localVideoRef.current.srcObject = localStream.current;
+        }
+
+        // Attach Remote Stream
+        if (remoteVideoRef.current && remoteStream.current) {
+            console.log("[WebRTC] Attaching remote stream");
+            remoteVideoRef.current.srcObject = remoteStream.current;
+            remoteVideoRef.current.play().catch(e => console.error("[WebRTC] Remote play error:", e));
+        }
+    }
+  }, [viewState.status, viewState.type]);
 
   // Sync refs with state
   useEffect(() => {
       isCallerRef.current = viewState.isCaller;
   }, [viewState.isCaller]);
 
-  // 1. Initialize Supabase Broadcast Channel for Signaling
+  // --- 2. SIGNALING SETUP ---
   useEffect(() => {
      if (!config.roomKey) return;
      
      const channel = supabase.channel(`calls:${config.roomKey}`);
      
      channel.on('broadcast', { event: 'signal' }, ({ payload }: { payload: SignalData }) => {
-         // Ignore own messages
          if (payload.fromUid === user.uid) return;
-         
-         // If message is targeted to someone else, ignore it
          if (payload.toUid && payload.toUid !== user.uid) return;
 
          handleSignalMessage(payload);
      });
 
-     channel.subscribe();
+     channel.subscribe((status) => {
+         if (status === 'SUBSCRIBED') console.log("[WebRTC] Signaling Connected");
+     });
      channelRef.current = channel;
 
      return () => {
@@ -116,7 +129,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
      };
   }, [config.roomKey, user.uid]);
 
-  // 2. Send Signal Helper
   const sendSignal = async (data: SignalData) => {
       if (channelRef.current) {
           await channelRef.current.send({
@@ -127,17 +139,15 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
-  // 3. Handle Incoming Signals
   const handleSignalMessage = async (data: SignalData) => {
+      console.log(`[WebRTC] Signal Received: ${data.type}`);
+
       if (data.type === 'offer') {
-          // If we are already busy, ignore
           if (viewState.status !== 'idle' && viewState.status !== 'incoming') return;
           
-          // Clear queue for new call
           candidateQueue.current = [];
-          
           setIncomingCall(data);
-          remoteUidRef.current = data.fromUid; // Store who is calling
+          remoteUidRef.current = data.fromUid;
           initAudio();
           startRingtone();
       }
@@ -147,10 +157,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                try {
                    await pc.current.setRemoteDescription(new RTCSessionDescription(data.payload));
                    setViewState(prev => ({ ...prev, status: 'connected' }));
-                   // Process any candidates that arrived before the answer
                    await processCandidateQueue();
                } catch (err) {
-                   console.error("Error setting remote description:", err);
+                   console.error("[WebRTC] Error setting remote answer:", err);
                }
            }
       }
@@ -160,10 +169,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                try {
                    await pc.current.addIceCandidate(new RTCIceCandidate(data.payload));
                } catch (e) {
-                   console.error("Error adding ice candidate", e);
+                   console.error("[WebRTC] Error adding ice candidate:", e);
                }
            } else {
-               // Queue candidate if connection not yet ready
                candidateQueue.current.push(data.payload);
            }
       }
@@ -178,31 +186,30 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
-  // 4. Flush Candidate Queue
   const processCandidateQueue = async () => {
       if (!pc.current) return;
+      console.log(`[WebRTC] Processing ${candidateQueue.current.length} queued candidates`);
       while (candidateQueue.current.length > 0) {
           const candidate = candidateQueue.current.shift();
           if (candidate) {
               try {
                   await pc.current.addIceCandidate(new RTCIceCandidate(candidate));
               } catch (e) {
-                  console.error("Error processing queued candidate", e);
+                  console.error("[WebRTC] Error processing queued candidate", e);
               }
           }
       }
   };
 
-  // 5. Create Peer Connection
+  // --- 3. PEER CONNECTION ---
+
   const createPC = (targetUid?: string) => {
       const newPC = new RTCPeerConnection(ICE_SERVERS);
       pc.current = newPC;
 
       newPC.onicecandidate = (event) => {
           if (event.candidate) {
-              // Send candidate to specific target if known, or broadcast
               const destUid = isCallerRef.current ? targetUid : remoteUidRef.current;
-              
               sendSignal({
                   type: 'candidate',
                   payload: event.candidate.toJSON(),
@@ -215,23 +222,23 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       };
 
       newPC.ontrack = (event) => {
-          console.log("Stream received!");
-          if (event.streams && event.streams[0]) {
-              remoteStream.current = event.streams[0];
-          } else {
-              if (!remoteStream.current) remoteStream.current = new MediaStream();
-              remoteStream.current.addTrack(event.track);
+          console.log("[WebRTC] Track received:", event.track.kind);
+          
+          if (!remoteStream.current) {
+              remoteStream.current = new MediaStream();
           }
           
+          remoteStream.current.addTrack(event.track);
+
+          // Attempt immediate attachment if ref exists
           if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteStream.current;
-              // Ensure video plays (some browsers block autoplay without interaction)
-              remoteVideoRef.current.play().catch(e => console.error("Remote video play error", e));
+              remoteVideoRef.current.play().catch(e => console.warn("Auto-play prevented", e));
           }
       };
       
       newPC.oniceconnectionstatechange = () => {
-          console.log("ICE State:", newPC.iceConnectionState);
+          console.log("[WebRTC] ICE State Change:", newPC.iceConnectionState);
           if (newPC.iceConnectionState === 'disconnected' || newPC.iceConnectionState === 'failed') {
                setViewState(prev => ({...prev, status: 'reconnecting'}));
           } else if (newPC.iceConnectionState === 'connected') {
@@ -242,7 +249,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       return newPC;
   };
 
-  // 6. Get User Media
   const getMedia = async (video: boolean) => {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -250,19 +256,14 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               video: video ? { facingMode: 'user' } : false 
           });
           localStream.current = stream;
-          
-          if (video && localVideoRef.current) {
-              localVideoRef.current.srcObject = stream;
-          }
           return stream;
       } catch (e) {
-          console.error("Media access error", e);
-          alert("Could not access camera or microphone. Please allow permissions.");
+          console.error("[WebRTC] Media access error:", e);
+          alert("Could not access camera or microphone. Check permissions.");
           throw e;
       }
   };
 
-  // 7. Start Call (Caller Side)
   const startCall = async (targetUid: string, targetName: string, targetAvatar: string, type: 'audio' | 'video') => {
       onCloseParticipants();
       candidateQueue.current = [];
@@ -303,7 +304,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
-  // 8. Answer Call (Callee Side)
   const answerCall = async () => {
       if (!incomingCall) return;
       stopRingtone();
@@ -317,8 +317,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           stream.getTracks().forEach(t => connection.addTrack(t, stream));
           
           await connection.setRemoteDescription(new RTCSessionDescription(incomingCall.payload));
-          
-          // CRITICAL: Process queued candidates now that we have remote description
           await processCandidateQueue();
 
           const answer = await connection.createAnswer();
@@ -359,6 +357,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           pc.current.close();
           pc.current = null;
       }
+      if (remoteStream.current) {
+          remoteStream.current.getTracks().forEach(t => t.stop());
+          remoteStream.current = null;
+      }
+      
       stopRingtone();
       setViewState({ status: 'idle', callId: null, isCaller: false, remoteName: '', remoteAvatar: '', type: 'video' });
       setIncomingCall(null);
