@@ -370,7 +370,15 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       
       <footer className="mt-8 text-center text-slate-400 dark:text-slate-500 text-xs pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
         <p>
-          Incognito Chat © 2025 • Powered by Supabase
+                   Incognito Chat © 2025 • Powered by{' '}
+          <a 
+            href="http://linkedin.com/in/konstantinos-kalliakoudis-902b90103" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:text-blue-600 font-semibold hover:underline transition-colors"
+          >
+            KonsKall
+          </a>
         </p>
       </footer>
     </div>
