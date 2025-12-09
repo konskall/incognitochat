@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatConfig } from '../types';
 import { generateRoomKey, initAudio } from '../utils/helpers';
 import { Info, ChevronDown, ChevronUp, Eye, EyeOff, Moon, Sun, History, X, Trash2 } from 'lucide-react';
+import { supabase } from '../services/supabase';
 
 interface LoginScreenProps {
   onJoin: (config: ChatConfig) => void;
@@ -12,8 +14,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
   const [avatar, setAvatar] = useState(localStorage.getItem('chatAvatarURL') || '');
   const [roomName, setRoomName] = useState(localStorage.getItem('chatRoomName') || '');
   const [pin, setPin] = useState('');
-  const [showPin, setShowPin] = useState(false); // State for toggling PIN visibility
+  const [showPin, setShowPin] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [loading, setLoading] = useState(false);
   
   // Room History State
   const [roomHistory, setRoomHistory] = useState<string[]>([]);
@@ -39,7 +42,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
   ];
 
   useEffect(() => {
-    // Robustly find or create the meta tag
     let metaThemeColor = document.querySelector("meta[name='theme-color']");
     if (!metaThemeColor) {
       metaThemeColor = document.createElement('meta');
@@ -49,16 +51,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
 
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
-      // Match slate-950 (#020617) for Login Screen
       metaThemeColor.setAttribute("content", "#020617");
     } else {
       document.documentElement.classList.remove('dark');
-      // Match slate-50 (#f8fafc) for Login Screen
       metaThemeColor.setAttribute("content", "#f8fafc");
     }
   }, [isDarkMode]);
 
-  // Load history on mount
   useEffect(() => {
       try {
           const history = JSON.parse(localStorage.getItem('chatRoomHistory') || '[]');
@@ -69,7 +68,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
           console.error("Failed to load room history", e);
       }
 
-      // Click outside to close history dropdown
       const handleClickOutside = (event: MouseEvent) => {
           if (historyRef.current && !historyRef.current.contains(event.target as Node)) {
               setShowHistory(false);
@@ -99,8 +97,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       const willBeCustom = !useCustomUrl;
       setUseCustomUrl(willBeCustom);
       
-      // If switching TO custom URL and the current value is a generated one (DiceBear),
-      // clear the input so the user doesn't have to delete the long URL manually.
       if (willBeCustom && avatar.includes('dicebear')) {
           setAvatar('');
       }
@@ -109,11 +105,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
   const handleRoomSelect = (selectedRoom: string) => {
       setRoomName(selectedRoom);
       setShowHistory(false);
-      // Optional: Focus PIN input here if you want
   };
 
   const deleteFromHistory = (e: React.MouseEvent, roomToDelete: string) => {
-      e.stopPropagation(); // Prevent selecting the room
+      e.stopPropagation();
       const newHistory = roomHistory.filter(r => r !== roomToDelete);
       setRoomHistory(newHistory);
       localStorage.setItem('chatRoomHistory', JSON.stringify(newHistory));
@@ -127,7 +122,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (username.length < 2) {
@@ -143,12 +138,20 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       return;
     }
 
-    // Initialize Audio Context here, on user gesture (click/submit)
+    setLoading(true);
     initAudio();
 
-    const roomKey = generateRoomKey(pin, roomName);
+    // Authenticate with Supabase anonymously
+    const { data, error } = await supabase.auth.signInAnonymously();
 
-    // Finalize Avatar URL
+    if (error) {
+        console.error("Login failed:", error);
+        alert("Could not connect to server. Please try again.");
+        setLoading(false);
+        return;
+    }
+
+    const roomKey = generateRoomKey(pin, roomName);
     const finalAvatar = useCustomUrl ? avatar : getDiceBearUrl(avatarStyle, avatarSeed);
 
     // Save to local storage
@@ -157,11 +160,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
     localStorage.setItem('chatRoomName', roomName);
     localStorage.setItem('chatPin', pin); 
 
-    // Update History
-    const newHistory = [roomName, ...roomHistory.filter(r => r !== roomName)].slice(0, 10); // Keep last 10 unique
+    const newHistory = [roomName, ...roomHistory.filter(r => r !== roomName)].slice(0, 10);
     setRoomHistory(newHistory);
     localStorage.setItem('chatRoomHistory', JSON.stringify(newHistory));
 
+    setLoading(false);
     onJoin({
       username,
       avatarURL: finalAvatar,
@@ -207,7 +210,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
             />
           </div>
           
-          {/* Avatar Section */}
           <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
              <div className="flex justify-between items-center mb-2">
                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Avatar</label>
@@ -277,7 +279,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                     className="w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all mb-4 text-base"
                 />
                 
-                {/* Room History Dropdown */}
                 {showHistory && roomHistory.length > 0 && (
                     <div className="absolute top-[calc(100%-12px)] left-0 right-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-b-xl shadow-xl z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
                          <div className="max-h-40 overflow-y-auto">
@@ -337,9 +338,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
 
           <button
             type="submit"
-            className="mt-4 w-full py-3.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 transform transition active:scale-95 flex items-center justify-center gap-2"
+            disabled={loading}
+            className="mt-4 w-full py-3.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 transform transition active:scale-95 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            Enter Room
+            {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Enter Room'}
           </button>
         </form>
 
@@ -369,15 +371,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       
       <footer className="mt-8 text-center text-slate-400 dark:text-slate-500 text-xs pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
         <p>
-          Incognito Chat © 2025 • Powered by{' '}
-          <a 
-            href="http://linkedin.com/in/konstantinos-kalliakoudis-902b90103" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-blue-500 hover:text-blue-600 font-semibold hover:underline transition-colors"
-          >
-            KonsKall
-          </a>
+          Incognito Chat © 2025 • Powered by Supabase
         </p>
       </footer>
     </div>
