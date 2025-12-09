@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { ChatConfig, Message, User, Attachment, Presence } from '../types';
@@ -79,6 +80,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
+  // Ref to track if we've already sent "isTyping: true" to server to avoid spam
+  const isTypingRef = useRef(false);
+
   const isFirstLoad = useRef(true);
   const prevMessageCount = useRef(0);
 
@@ -293,11 +297,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   };
 
   // ----------------------------------------------------------------------
-  // SUPABASE REALTIME PRESENCE
+  // SUPABASE REALTIME PRESENCE (Channel 1)
   // ----------------------------------------------------------------------
   useEffect(() => {
     if (!user || !config.roomKey || !isRoomReady) return;
 
+    // Use a unified channel for Presence and Broadcast (Calls)
     const channel = supabase.channel(`room:${config.roomKey}`, {
       config: {
         presence: {
@@ -308,21 +313,23 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
     channel
       .on('presence', { event: 'sync' }, () => {
-        const newState = channel.presenceState();
+        const newState = channel.presenceState<Presence>();
+        // Flatten the presence state to a list of users
         const users: Presence[] = [];
         const typers: string[] = [];
         
         for (const key in newState) {
-            const presences = newState[key] as unknown as Presence[];
-            if (presences.length > 0) {
-                // Take the most recent presence state for this user
-                const p = presences[0];
-                users.push(p);
-                if (p.uid !== user.uid && p.isTyping) {
-                    typers.push(p.username);
-                }
-            }
+             const userPresences = newState[key];
+             if (userPresences && userPresences.length > 0) {
+                 // Use the most recent presence for this user
+                 const p = userPresences[0]; 
+                 users.push(p);
+                 if (p.uid !== user.uid && p.isTyping) {
+                     typers.push(p.username);
+                 }
+             }
         }
+        
         setParticipants(users);
         setTypingUsers(typers);
       })
@@ -332,9 +339,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             uid: user.uid,
             username: config.username,
             avatar: config.avatarURL,
-            status: 'active',
-            isTyping: false,
-            lastSeen: new Date().toISOString(),
+            onlineAt: new Date().toISOString(),
+            isTyping: false
           });
         }
       });
@@ -344,23 +350,33 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     };
   }, [user, config.roomKey, isRoomReady, config.username, config.avatarURL]);
 
+  // Optimized Presence Update (for Typing)
   const updatePresence = useCallback(async (overrides: Partial<Presence>) => {
       if (!user || !config.roomKey) return;
       const channel = supabase.channel(`room:${config.roomKey}`);
-      // We rely on the existing channel state, tracking updates the object
+      
+      // Only track if we are tracking something different than last time to avoid spamming
+      if (overrides.isTyping !== undefined && overrides.isTyping === isTypingRef.current) {
+          return;
+      }
+      
+      if (overrides.isTyping !== undefined) {
+          isTypingRef.current = overrides.isTyping;
+      }
+
       await channel.track({
             uid: user.uid,
             username: config.username,
             avatar: config.avatarURL,
-            status: 'active',
-            lastSeen: new Date().toISOString(),
+            onlineAt: new Date().toISOString(),
+            isTyping: isTypingRef.current,
             ...overrides
       });
   }, [user, config.roomKey, config.username, config.avatarURL]);
 
 
   // ----------------------------------------------------------------------
-  // SUPABASE REALTIME MESSAGES
+  // SUPABASE DATABASE CHANGES (Channel 2)
   // ----------------------------------------------------------------------
   useEffect(() => {
     if (!config.roomKey || !user || !isRoomReady) return;
@@ -383,7 +399,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                  createdAt: d.created_at,
                  attachment: d.attachment,
                  location: d.location,
-                 isEdited: false, // You might want to add is_edited column to DB if needed
+                 isEdited: false, // Schema update pending for is_edited
                  reactions: d.reactions || {},
                  replyTo: d.reply_to,
                  type: d.type || 'text'
@@ -394,8 +410,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
     fetchMessages();
 
-    // Subscribe to new messages
-    const channel = supabase.channel(`messages:${config.roomKey}`)
+    // Subscribe to new messages using a dedicated channel for DB changes
+    const dbChannel = supabase.channel(`db-messages:${config.roomKey}`)
         .on('postgres_changes', { 
             event: '*', 
             schema: 'public', 
@@ -447,7 +463,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                      ...m,
                      text: decodeMessage(d.text || ''),
                      reactions: d.reactions || {},
-                     isEdited: true // Simplified logic
+                     isEdited: true 
                 } : m));
             }
             else if (payload.eventType === 'DELETE') {
@@ -457,12 +473,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         .subscribe();
 
     return () => {
-        supabase.removeChannel(channel);
+        supabase.removeChannel(dbChannel);
     };
 
   }, [config.roomKey, user, isRoomReady, soundEnabled, vibrationEnabled, notificationsEnabled, canVibrate]);
 
-  // Scroll to bottom
+  // Scroll to bottom logic (kept same)
   useEffect(() => {
     if (!messagesEndRef.current) return;
     if (isFirstLoad.current && messages.length > 0) {
@@ -543,8 +559,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
   };
 
-  // ... (FileUpload and Location logic needs Supabase Storage) ...
-
   const uploadFile = async (file: File): Promise<Attachment | null> => {
       if (!user) return null;
       // Upload to Supabase Storage
@@ -578,9 +592,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       setInputText(e.target.value);
       if (!user) return;
       
-      if (!typingTimeoutRef.current) updatePresence({ isTyping: true });
+      // Start typing if not already
+      if (!typingTimeoutRef.current) {
+         updatePresence({ isTyping: true });
+      }
       
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      // Clear existing timeout
+      if (typingTimeoutRef.current) {
+         clearTimeout(typingTimeoutRef.current);
+      }
+      
+      // Set new timeout to stop typing
       typingTimeoutRef.current = setTimeout(() => {
           updatePresence({ isTyping: false });
           typingTimeoutRef.current = null;
@@ -633,8 +655,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, []);
 
   const startRecording = async () => {
-    // ... same logic as before for MediaRecorder ...
-    // Using simple implementation
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const mediaRecorder = new MediaRecorder(stream);
@@ -670,9 +690,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   };
 
   const cancelRecording = () => {
-      // same logic
       if(mediaRecorderRef.current && isRecording) {
-          // hack to prevent onstop triggering upload
           mediaRecorderRef.current.onstop = null; 
           mediaRecorderRef.current.stop();
           setIsRecording(false);
@@ -739,13 +757,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           textareaRef.current.focus();
           textareaRef.current.style.height = '40px';
       }
+      
+      // Explicitly stop typing immediately on send
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       updatePresence({ isTyping: false });
 
       try {
           if (editingMessageId) {
                await supabase.from('messages').update({
                    text: encodeMessage(textToSend),
-                   // You might need a JSON column for metadata or just rely on convention
                }).eq('id', editingMessageId);
                setEditingMessageId(null);
           } else {
@@ -799,15 +819,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       if (!config.roomKey) return;
       setIsDeleting(true);
       try {
-          // SQL cascade delete should handle messages if room is deleted, 
-          // but if we just want to clear messages:
+          // SQL cascade delete should handle messages if room is deleted
+          // but we delete explicitly just in case or for future soft-delete logic
           await supabase.from('messages').delete().eq('room_key', config.roomKey);
           
-          // Optionally notify and delete room
-           notifySubscribers('deleted', 'Room was deleted');
-           await supabase.from('rooms').delete().eq('room_key', config.roomKey);
+          notifySubscribers('deleted', 'Room was deleted');
+          await supabase.from('rooms').delete().eq('room_key', config.roomKey);
            
-           onExit();
+          onExit();
       } catch(e) {
           console.error("Delete failed", e);
       } finally {
