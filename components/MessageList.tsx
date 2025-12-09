@@ -14,14 +14,14 @@ interface MessageListProps {
   onReply: (msg: Message) => void;
 }
 
-// -- Image Preview Modal Component (Mobile Optimized) --
+// -- Image Preview Modal Component (Mobile Optimized: Floating Buttons) --
 const ImagePreviewModal: React.FC<{ 
     src: string; 
     alt: string; 
     onClose: () => void; 
 }> = ({ src, alt, onClose }) => {
     
-    // Lock body scroll when modal is open to prevent UI jumping on mobile
+    // Lock body scroll when modal is open
     useEffect(() => {
         document.body.style.overflow = 'hidden';
         return () => {
@@ -50,38 +50,39 @@ const ImagePreviewModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center animate-in fade-in duration-200">
             
-            {/* Top Bar - Fixed to Top Safe Area */}
-            <div className="absolute top-0 left-0 right-0 z-[210] flex justify-end p-4 pt-[calc(1.5rem+env(safe-area-inset-top))]">
+            {/* Controls Layer - Floating Buttons at Top Corners */}
+            {/* pointer-events-none ensures clicks between buttons go to the background/close action */}
+            <div className="absolute top-0 left-0 right-0 z-[210] flex justify-between items-start p-4 pt-[calc(1rem+env(safe-area-inset-top))] pointer-events-none">
+                 
+                 {/* Download Button - Top Left */}
+                 <button 
+                    onClick={handleDownload}
+                    className="pointer-events-auto p-3.5 bg-black/40 text-white/90 rounded-full backdrop-blur-xl border border-white/10 shadow-lg active:scale-90 transition hover:bg-black/60"
+                    aria-label="Download Image"
+                 >
+                    <Download size={24} />
+                 </button>
+
+                 {/* Close Button - Top Right */}
                  <button 
                     onClick={onClose} 
-                    className="p-3 bg-slate-800/80 text-white rounded-full hover:bg-slate-700 transition shadow-lg border border-white/10 active:scale-95"
-                    aria-label="Close"
+                    className="pointer-events-auto p-3.5 bg-black/40 text-white/90 rounded-full backdrop-blur-xl border border-white/10 shadow-lg active:scale-90 transition hover:bg-black/60"
+                    aria-label="Close Preview"
                  >
-                    <X size={28} />
+                    <X size={24} />
                  </button>
             </div>
                  
-            {/* Image Area - Restricted height to leave room for bars */}
-            <div className="w-full h-full flex items-center justify-center p-2" onClick={onClose}>
+            {/* Image Area */}
+            <div className="w-full h-full flex items-center justify-center overflow-hidden" onClick={onClose}>
                 <img 
                     src={src} 
                     alt={alt} 
-                    className="max-w-full max-h-[80vh] object-contain shadow-2xl rounded-sm"
+                    className="max-w-full max-h-full object-contain"
                     onClick={(e) => e.stopPropagation()} 
                 />
-            </div>
-
-            {/* Bottom Bar - Fixed to Bottom Safe Area */}
-            <div className="absolute bottom-0 left-0 right-0 z-[210] flex justify-center p-6 pb-[calc(2rem+env(safe-area-inset-bottom))] bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
-                 <button 
-                    onClick={handleDownload}
-                    className="pointer-events-auto flex items-center gap-2 px-8 py-3.5 bg-white text-slate-900 rounded-full font-bold text-base shadow-xl active:scale-95 transition hover:bg-slate-200"
-                 >
-                    <Download size={20} />
-                    <span>Save Image</span>
-                 </button>
             </div>
         </div>
     );
