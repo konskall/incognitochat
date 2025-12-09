@@ -4,14 +4,37 @@ import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
 
-// Ενισχυμένη λίστα δωρεάν STUN servers για καλύτερη συνδεσιμότητα
+// Ενισχυμένη λίστα STUN & TURN servers για μέγιστη συνδεσιμότητα
 const ICE_SERVERS = {
   iceServers: [
+    // Google STUN Servers (Δωρεάν / Backup)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
+    
+    // Metered.ca STUN Server
+    { urls: "stun:stun.relay.metered.ca:80" },
+
+    // Metered.ca TURN Servers (Για παράκαμψη NAT/Firewall & 4G/5G)
+    {
+      urls: "turn:standard.relay.metered.ca:80",
+      username: "4aa8db5b8a8c31527e2495be",
+      credential: "8O6d1Nc3j8iAsTiq",
+    },
+    {
+      urls: "turn:standard.relay.metered.ca:80?transport=tcp",
+      username: "4aa8db5b8a8c31527e2495be",
+      credential: "8O6d1Nc3j8iAsTiq",
+    },
+    {
+      urls: "turn:standard.relay.metered.ca:443",
+      username: "4aa8db5b8a8c31527e2495be",
+      credential: "8O6d1Nc3j8iAsTiq",
+    },
+    {
+      urls: "turns:standard.relay.metered.ca:443?transport=tcp",
+      username: "4aa8db5b8a8c31527e2495be",
+      credential: "8O6d1Nc3j8iAsTiq",
+    },
   ],
   iceCandidatePoolSize: 10,
 };
