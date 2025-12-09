@@ -1,7 +1,6 @@
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
-import { ChatConfig, Message, User, Attachment, Presence, Subscriber } from '../types';
+import { ChatConfig, Message, User, Attachment, Presence } from '../types';
 import { decodeMessage, encodeMessage } from '../utils/helpers';
 import MessageList from './MessageList';
 import CallManager from './CallManager';
@@ -17,9 +16,6 @@ interface ChatScreenProps {
   config: ChatConfig;
   onExit: () => void;
 }
-
-// Reduced to 5MB for Supabase Storage
-const MAX_FILE_SIZE = 5 * 1024 * 1024; 
 
 // --- EMAILJS CONFIGURATION ---
 const EMAILJS_SERVICE_ID: string = "service_cnerkn6";
@@ -76,8 +72,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const recordingMimeTypeRef = useRef<string>('');
-
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -186,7 +181,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              setUser({ uid: session.user.id, isAnonymous: true });
         } else {
              // Should have been logged in by LoginScreen, but handle refresh
-             const { data: anonData, error } = await supabase.auth.signInAnonymously();
+             const { data: anonData } = await supabase.auth.signInAnonymously();
              if (anonData.user) {
                  setUser({ uid: anonData.user.id, isAnonymous: true });
              }
@@ -220,7 +215,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       
       try {
         // Check if room exists
-        const { data: room, error } = await supabase
+        const { data: room } = await supabase
             .from('rooms')
             .select('*')
             .eq('room_key', config.roomKey)
@@ -372,7 +367,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
     // Load initial messages
     const fetchMessages = async () => {
-        const { data, error } = await supabase
+        const { data } = await supabase
             .from('messages')
             .select('*')
             .eq('room_key', config.roomKey)
@@ -557,7 +552,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       const fileName = `${Math.random()}.${fileExt}`;
       const filePath = `${config.roomKey}/${fileName}`;
       
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('attachments')
         .upload(filePath, file);
 
