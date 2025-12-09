@@ -72,7 +72,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   }, [showSettingsMenu, setShowSettingsMenu]);
 
   const handleShare = async () => {
-    const baseUrl = window.location.href.split('?')[0]; // Use current base URL dynamically if needed, or hardcode
+    const baseUrl = window.location.href.split('?')[0];
     const shareUrl = new URL(baseUrl);
     shareUrl.searchParams.set('room', config.roomName);
     shareUrl.searchParams.set('pin', config.pin);
