@@ -1,13 +1,18 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
 
+// Servers for NAT Traversal (STUN/TURN)
 const ICE_SERVERS = {
   iceServers: [
+    // Google STUN (Free, works for simple WiFi)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    
+    // Metered.ca (Provided Credentials for robust connection)
     { urls: "stun:stun.relay.metered.ca:80" },
     {
       urls: "turn:standard.relay.metered.ca:80",
@@ -52,6 +57,7 @@ interface CallState {
 }
 
 const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseParticipants, showParticipants, roomCreatorId }) => {
+  // --- UI State ---
   const [viewState, setViewState] = useState<CallState>({
     status: 'idle',
     callId: null,
@@ -64,10 +70,13 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [incomingCall, setIncomingCall] = useState<SignalData | null>(null);
 
+  // --- Logic Refs ---
   const pc = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
   const remoteStream = useRef<MediaStream | null>(null);
   const channelRef = useRef<any>(null);
+  
+  // Queue for ICE candidates received before remote description is set
   const candidateQueue = useRef<RTCIceCandidateInit[]>([]);
   
   // Refs to track state inside callbacks without stale closures
@@ -82,13 +91,17 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       isCallerRef.current = viewState.isCaller;
   }, [viewState.isCaller]);
 
+  // 1. Initialize Supabase Broadcast Channel for Signaling
   useEffect(() => {
      if (!config.roomKey) return;
      
      const channel = supabase.channel(`calls:${config.roomKey}`);
      
      channel.on('broadcast', { event: 'signal' }, ({ payload }: { payload: SignalData }) => {
+         // Ignore own messages
          if (payload.fromUid === user.uid) return;
+         
+         // If message is targeted to someone else, ignore it
          if (payload.toUid && payload.toUid !== user.uid) return;
 
          handleSignalMessage(payload);
@@ -103,6 +116,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
      };
   }, [config.roomKey, user.uid]);
 
+  // 2. Send Signal Helper
   const sendSignal = async (data: SignalData) => {
       if (channelRef.current) {
           await channelRef.current.send({
@@ -113,13 +127,17 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
+  // 3. Handle Incoming Signals
   const handleSignalMessage = async (data: SignalData) => {
       if (data.type === 'offer') {
+          // If we are already busy, ignore
           if (viewState.status !== 'idle' && viewState.status !== 'incoming') return;
           
+          // Clear queue for new call
           candidateQueue.current = [];
+          
           setIncomingCall(data);
-          remoteUidRef.current = data.fromUid; // Store caller ID for reference
+          remoteUidRef.current = data.fromUid; // Store who is calling
           initAudio();
           startRingtone();
       }
@@ -129,9 +147,10 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                try {
                    await pc.current.setRemoteDescription(new RTCSessionDescription(data.payload));
                    setViewState(prev => ({ ...prev, status: 'connected' }));
+                   // Process any candidates that arrived before the answer
                    await processCandidateQueue();
                } catch (err) {
-                   console.error("Error setting remote description", err);
+                   console.error("Error setting remote description:", err);
                }
            }
       }
@@ -144,6 +163,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                    console.error("Error adding ice candidate", e);
                }
            } else {
+               // Queue candidate if connection not yet ready
                candidateQueue.current.push(data.payload);
            }
       }
@@ -158,6 +178,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
+  // 4. Flush Candidate Queue
   const processCandidateQueue = async () => {
       if (!pc.current) return;
       while (candidateQueue.current.length > 0) {
@@ -172,13 +193,14 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
+  // 5. Create Peer Connection
   const createPC = (targetUid?: string) => {
       const newPC = new RTCPeerConnection(ICE_SERVERS);
       pc.current = newPC;
 
       newPC.onicecandidate = (event) => {
           if (event.candidate) {
-              // Determine destination: if we are caller, send to target. If we are callee, send to caller (stored in remoteUidRef or passed)
+              // Send candidate to specific target if known, or broadcast
               const destUid = isCallerRef.current ? targetUid : remoteUidRef.current;
               
               sendSignal({
@@ -193,6 +215,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       };
 
       newPC.ontrack = (event) => {
+          console.log("Stream received!");
           if (event.streams && event.streams[0]) {
               remoteStream.current = event.streams[0];
           } else {
@@ -202,11 +225,13 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           
           if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteStream.current;
+              // Ensure video plays (some browsers block autoplay without interaction)
               remoteVideoRef.current.play().catch(e => console.error("Remote video play error", e));
           }
       };
       
       newPC.oniceconnectionstatechange = () => {
+          console.log("ICE State:", newPC.iceConnectionState);
           if (newPC.iceConnectionState === 'disconnected' || newPC.iceConnectionState === 'failed') {
                setViewState(prev => ({...prev, status: 'reconnecting'}));
           } else if (newPC.iceConnectionState === 'connected') {
@@ -217,21 +242,27 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       return newPC;
   };
 
+  // 6. Get User Media
   const getMedia = async (video: boolean) => {
       try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video });
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+              audio: true, 
+              video: video ? { facingMode: 'user' } : false 
+          });
           localStream.current = stream;
+          
           if (video && localVideoRef.current) {
               localVideoRef.current.srcObject = stream;
           }
           return stream;
       } catch (e) {
           console.error("Media access error", e);
-          alert("Could not access camera or microphone.");
+          alert("Could not access camera or microphone. Please allow permissions.");
           throw e;
       }
   };
 
+  // 7. Start Call (Caller Side)
   const startCall = async (targetUid: string, targetName: string, targetAvatar: string, type: 'audio' | 'video') => {
       onCloseParticipants();
       candidateQueue.current = [];
@@ -272,6 +303,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
+  // 8. Answer Call (Callee Side)
   const answerCall = async () => {
       if (!incomingCall) return;
       stopRingtone();
@@ -285,6 +317,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           stream.getTracks().forEach(t => connection.addTrack(t, stream));
           
           await connection.setRemoteDescription(new RTCSessionDescription(incomingCall.payload));
+          
+          // CRITICAL: Process queued candidates now that we have remote description
           await processCandidateQueue();
 
           const answer = await connection.createAnswer();
@@ -364,6 +398,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
   
+  // --- UI ---
+
   if (incomingCall) {
       return (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in zoom-in-95 duration-300">
