@@ -294,6 +294,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           }
           const dbChannel = supabase.channel(`messages:${config.roomKey}`);
           await dbChannel.unsubscribe();
+          
+          const roomStatusChannel = supabase.channel(`room_status:${config.roomKey}`);
+          await roomStatusChannel.unsubscribe();
       }
       onExit();
   };
@@ -474,6 +477,32 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     };
 
   }, [config.roomKey, user, isRoomReady, soundEnabled, vibrationEnabled, notificationsEnabled, canVibrate]);
+  
+  // ----------------------------------------------------------------------
+  // SUPABASE ROOM DELETION LISTENER (Force Eject)
+  // ----------------------------------------------------------------------
+  useEffect(() => {
+    if (!config.roomKey || !isRoomReady) return;
+
+    // Listen for room deletion event on the rooms table
+    const roomStatusChannel = supabase.channel(`room_status:${config.roomKey}`)
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'rooms',
+        filter: `room_key=eq.${config.roomKey}`
+      }, () => {
+        // Alert and exit when room is deleted
+        alert("This room has been deleted by the host.");
+        onExit();
+      })
+      .subscribe();
+
+    return () => {
+        supabase.removeChannel(roomStatusChannel);
+    };
+  }, [config.roomKey, isRoomReady, onExit]);
+
 
   // Scroll to bottom
   useEffect(() => {
@@ -819,11 +848,22 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       if (!config.roomKey) return;
       setIsDeleting(true);
       try {
-          await supabase.from('messages').delete().eq('room_key', config.roomKey);
-          
+           // 1. Notify Subscribers first
            notifySubscribers('deleted', 'Room was deleted');
+
+           // 2. Delete all files in the storage bucket for this room
+           // Storage does not cascade delete automatically based on DB rows.
+           const { data: files } = await supabase.storage.from('attachments').list(config.roomKey);
+           if (files && files.length > 0) {
+               const filesToRemove = files.map(x => `${config.roomKey}/${x.name}`);
+               await supabase.storage.from('attachments').remove(filesToRemove);
+           }
+           
+           // 3. Delete the room from the database
+           // This will cascade delete messages because of foreign key constraint
            await supabase.from('rooms').delete().eq('room_key', config.roomKey);
            
+           // 4. Exit the chat locally
            onExit();
       } catch(e) {
           console.error("Delete failed", e);
