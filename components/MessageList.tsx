@@ -14,7 +14,7 @@ interface MessageListProps {
   onReply: (msg: Message) => void;
 }
 
-// -- Image Preview Modal Component --
+// -- Image Preview Modal Component (Mobile Friendly) --
 const ImagePreviewModal: React.FC<{ 
     src: string; 
     alt: string; 
@@ -42,35 +42,35 @@ const ImagePreviewModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex flex-col bg-black/95 backdrop-blur-sm animate-in fade-in duration-200">
-            {/* Close Button - Top Right (Safe Area Respected) */}
-            <div className="absolute top-0 right-0 z-50 p-4 pt-[max(1rem,env(safe-area-inset-top))]">
+        <div className="fixed inset-0 z-[150] bg-black flex flex-col animate-in fade-in duration-300">
+            {/* Top Bar with Gradient & Close Button */}
+            <div className="absolute top-0 left-0 right-0 z-[160] p-4 pt-[max(1rem,env(safe-area-inset-top))] flex justify-end bg-gradient-to-b from-black/70 to-transparent">
                  <button 
                     onClick={onClose} 
-                    className="p-3 text-white/90 hover:text-white bg-black/40 hover:bg-white/10 rounded-full transition backdrop-blur-md shadow-lg"
+                    className="p-3 text-white bg-white/10 hover:bg-white/20 rounded-full transition backdrop-blur-md active:scale-95"
                  >
-                    <X size={28} />
+                    <X size={26} />
                  </button>
             </div>
                  
             {/* Image Container */}
-            <div className="flex-1 w-full h-full flex items-center justify-center p-4 overflow-hidden" onClick={onClose}>
+            <div className="flex-1 w-full h-full flex items-center justify-center overflow-hidden" onClick={onClose}>
                 <img 
                     src={src} 
                     alt={alt} 
-                    className="max-w-full max-h-[80vh] object-contain shadow-2xl rounded-md cursor-zoom-out"
-                    onClick={(e) => e.stopPropagation()} // Prevent closing when clicking image
+                    className="max-w-full max-h-full object-contain"
+                    onClick={(e) => e.stopPropagation()} 
                 />
             </div>
 
-            {/* Download Button - Bottom Center (Safe Area Respected) */}
-            <div className="absolute bottom-0 left-0 right-0 flex justify-center z-50 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pointer-events-none">
+            {/* Bottom Bar with Gradient & Download */}
+            <div className="absolute bottom-0 left-0 right-0 z-[160] p-8 pb-[max(2.5rem,env(safe-area-inset-bottom))] flex justify-center bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none">
                  <button 
                     onClick={handleDownload}
-                    className="pointer-events-auto flex items-center gap-3 px-6 py-3.5 bg-white/10 hover:bg-white/20 text-white rounded-full text-base font-semibold transition shadow-xl backdrop-blur-md border border-white/10 active:scale-95"
+                    className="pointer-events-auto flex items-center gap-3 px-6 py-3.5 bg-white/10 hover:bg-white/20 text-white rounded-full text-base font-semibold transition backdrop-blur-md border border-white/20 active:scale-95 active:bg-white/30"
                  >
                     <Download size={22} />
-                    <span>Download</span>
+                    <span>Save Image</span>
                  </button>
             </div>
         </div>
