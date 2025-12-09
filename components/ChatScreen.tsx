@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { ChatConfig, Message, User, Attachment, Presence } from '../types';
@@ -16,9 +15,6 @@ interface ChatScreenProps {
   config: ChatConfig;
   onExit: () => void;
 }
-
-// Reduced to 5MB for Supabase Storage
-const MAX_FILE_SIZE = 5 * 1024 * 1024; 
 
 // --- EMAILJS CONFIGURATION ---
 const EMAILJS_SERVICE_ID: string = "service_cnerkn6";
@@ -308,7 +304,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   useEffect(() => {
     if (!user || !config.roomKey || !isRoomReady) return;
 
-    // Use a unique channel name for Presence/Signaling to keep it separate from DB events
+    // Use a unique channel name for Presence to prevent conflict with CallManager
     const channel = supabase.channel(`presence:${config.roomKey}`, {
       config: {
         presence: {
