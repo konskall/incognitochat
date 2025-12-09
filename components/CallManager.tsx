@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
