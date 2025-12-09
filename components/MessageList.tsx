@@ -14,7 +14,7 @@ interface MessageListProps {
   onReply: (msg: Message) => void;
 }
 
-// -- Image Preview Modal Component (Mobile Friendly) --
+// -- Image Preview Modal Component (Mobile Optimized) --
 const ImagePreviewModal: React.FC<{ 
     src: string; 
     alt: string; 
@@ -42,34 +42,36 @@ const ImagePreviewModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-[150] bg-black flex flex-col animate-in fade-in duration-300">
-            {/* Top Bar with Gradient & Close Button */}
-            <div className="absolute top-0 left-0 right-0 z-[160] p-4 pt-[max(1rem,env(safe-area-inset-top))] flex justify-end bg-gradient-to-b from-black/70 to-transparent">
+        <div className="fixed inset-0 z-[200] bg-black flex flex-col h-[100dvh] w-screen animate-in fade-in duration-200">
+            
+            {/* Top Controls - Strong Gradient Overlay */}
+            <div className="absolute top-0 left-0 right-0 z-[210] flex justify-end p-4 pt-[calc(1rem+env(safe-area-inset-top))] bg-gradient-to-b from-black/90 via-black/60 to-transparent pb-20 pointer-events-none">
                  <button 
                     onClick={onClose} 
-                    className="p-3 text-white bg-white/10 hover:bg-white/20 rounded-full transition backdrop-blur-md active:scale-95"
+                    className="pointer-events-auto p-3 text-white/90 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 border border-white/20 transition active:scale-90 shadow-xl"
+                    aria-label="Close Preview"
                  >
-                    <X size={26} />
+                    <X size={28} />
                  </button>
             </div>
                  
-            {/* Image Container */}
-            <div className="flex-1 w-full h-full flex items-center justify-center overflow-hidden" onClick={onClose}>
+            {/* Image Area - Centered & Responsive */}
+            <div className="flex-1 flex items-center justify-center overflow-hidden w-full h-full relative p-0" onClick={onClose}>
                 <img 
                     src={src} 
                     alt={alt} 
-                    className="max-w-full max-h-full object-contain"
+                    className="max-w-full max-h-full object-contain transition-transform duration-200"
                     onClick={(e) => e.stopPropagation()} 
                 />
             </div>
 
-            {/* Bottom Bar with Gradient & Download */}
-            <div className="absolute bottom-0 left-0 right-0 z-[160] p-8 pb-[max(2.5rem,env(safe-area-inset-bottom))] flex justify-center bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none">
+            {/* Bottom Controls - Strong Gradient Overlay */}
+            <div className="absolute bottom-0 left-0 right-0 z-[210] flex justify-center p-6 pb-[calc(2rem+env(safe-area-inset-bottom))] bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-20 pointer-events-none">
                  <button 
                     onClick={handleDownload}
-                    className="pointer-events-auto flex items-center gap-3 px-6 py-3.5 bg-white/10 hover:bg-white/20 text-white rounded-full text-base font-semibold transition backdrop-blur-md border border-white/20 active:scale-95 active:bg-white/30"
+                    className="pointer-events-auto flex items-center gap-2.5 px-8 py-4 bg-white text-slate-900 rounded-full text-sm font-bold shadow-2xl active:scale-95 transition hover:bg-slate-200"
                  >
-                    <Download size={22} />
+                    <Download size={20} />
                     <span>Save Image</span>
                  </button>
             </div>
