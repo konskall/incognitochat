@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   // Base path set to repository name for GitHub Pages
-  base: '/incognitochatapp/', 
+  base: '/incognitochat/', 
   build: {
     outDir: 'dist',
     sourcemap: false,
