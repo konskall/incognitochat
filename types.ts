@@ -24,7 +24,6 @@ export interface Message {
   uid: string;
   username: string;
   avatarURL: string;
-  // Supabase returns ISO strings for dates
   createdAt: string; 
   attachment?: Attachment;
   location?: {
@@ -32,7 +31,7 @@ export interface Message {
     lng: number;
   };
   isEdited?: boolean;
-  reactions?: { [emoji: string]: string[] }; // Key: emoji char, Value: array of uids
+  reactions?: { [emoji: string]: string[] }; 
   replyTo?: ReplyInfo | null;
   type?: 'text' | 'system';
 }
@@ -49,10 +48,9 @@ export interface Presence {
   uid: string;
   username: string;
   avatar: string;
+  isTyping: boolean;
+  onlineAt: string;
   status: 'active' | 'inactive';
-  lastSeen: string;
-  isTyping?: boolean;
-  onlineAt?: string; // Supabase presence timestamp
 }
 
 // Webrtc Signaling Data
@@ -62,7 +60,7 @@ export interface SignalData {
   fromUid: string;
   fromName: string;
   fromAvatar: string;
-  toUid?: string; // If specific target
+  toUid?: string; 
   callId?: string;
   callType?: 'audio' | 'video';
 }
