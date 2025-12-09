@@ -4,12 +4,14 @@ import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
 
-// Servers που βοηθούν στη σύνδεση (STUN) - Χρησιμοποιούμε τους δωρεάν της Google
-// ΣΗΜΕΙΩΣΗ: Για παραγωγή σε δίκτυα κινητής (4G/5G) ή αυστηρά εταιρικά δίκτυα,
-// συνίσταται η προσθήκη TURN servers (π.χ. από Metered.ca ή Twilio).
+// Ενισχυμένη λίστα δωρεάν STUN servers για καλύτερη συνδεσιμότητα
 const ICE_SERVERS = {
   iceServers: [
-    { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
   ],
   iceCandidatePoolSize: 10,
 };
@@ -33,7 +35,6 @@ interface CallState {
 }
 
 const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseParticipants, showParticipants, roomCreatorId }) => {
-  // --- UI State ---
   const [viewState, setViewState] = useState<CallState>({
     status: 'idle',
     callId: null,
@@ -46,49 +47,39 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [incomingCall, setIncomingCall] = useState<SignalData | null>(null);
 
-  // --- Logic Refs (Δεν προκαλούν re-render) ---
   const pc = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
   const remoteStream = useRef<MediaStream | null>(null);
-  const channelRef = useRef<any>(null); // Το κανάλι του Supabase
+  const channelRef = useRef<any>(null);
   
-  // DOM Refs για τα Video Elements
+  // Κρίσιμο: Ουρά για τα ICE candidates που έρχονται πριν ετοιμαστεί η σύνδεση
+  const candidateQueue = useRef<RTCIceCandidateInit[]>([]);
+  
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
-  // 1. Σύνδεση στο Κανάλι Σηματοδοσίας (Signaling Channel)
   useEffect(() => {
      if (!config.roomKey) return;
      
-     // Δημιουργία ξεχωριστού καναλιού για τις κλήσεις (για να μην μπλέκεται με τα μηνύματα)
      const channel = supabase.channel(`calls:${config.roomKey}`);
      
      channel.on('broadcast', { event: 'signal' }, ({ payload }: { payload: SignalData }) => {
-         // Αγνοούμε τα δικά μας μηνύματα
          if (payload.fromUid === user.uid) return;
-         
-         // Αν το μήνυμα προορίζεται για συγκεκριμένο χρήστη και δεν είμαστε εμείς, το αγνοούμε
+         // Αν δεν είναι για εμάς (και υπάρχει συγκεκριμένος παραλήπτης), το αγνοούμε
          if (payload.toUid && payload.toUid !== user.uid) return;
 
          handleSignalMessage(payload);
      });
 
-     channel.subscribe((status) => {
-         if (status === 'SUBSCRIBED') {
-             console.log("Call Signaling Channel Connected");
-         }
-     });
-     
+     channel.subscribe();
      channelRef.current = channel;
 
      return () => {
-         // Καθαρισμός κατά την αποσύνδεση
          supabase.removeChannel(channel);
          cleanup();
      };
   }, [config.roomKey, user.uid]);
 
-  // 2. Αποστολή Σημάτων (Signaling) μέσω Supabase Broadcast
   const sendSignal = async (data: SignalData) => {
       if (channelRef.current) {
           await channelRef.current.send({
@@ -99,31 +90,30 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
-  // 3. Διαχείριση Εισερχόμενων Σημάτων
   const handleSignalMessage = async (data: SignalData) => {
-      // Περίπτωση A: Κάποιος μας καλεί (Offer)
       if (data.type === 'offer') {
-          // Αν μιλάμε ήδη, αγνοούμε την κλήση (ή θα μπορούσαμε να στείλουμε 'busy')
           if (viewState.status !== 'idle' && viewState.status !== 'incoming') return;
           
+          // Καθαρίζουμε την ουρά από παλιά δεδομένα
+          candidateQueue.current = [];
           setIncomingCall(data);
-          initAudio(); // Ξυπνάμε το Audio Context (για iOS)
+          initAudio();
           startRingtone();
       }
       
-      // Περίπτωση B: Απαντήσανε στην κλήση μας (Answer)
       else if (data.type === 'answer') {
            if (viewState.status === 'calling' && pc.current) {
                try {
                    await pc.current.setRemoteDescription(new RTCSessionDescription(data.payload));
                    setViewState(prev => ({ ...prev, status: 'connected' }));
+                   // Επεξεργασία των candidates που ήρθαν όσο περιμέναμε την απάντηση
+                   processCandidateQueue();
                } catch (err) {
                    console.error("Error setting remote description", err);
                }
            }
       }
       
-      // Περίπτωση Γ: Λαμβάνουμε ICE Candidates (στοιχεία δικτύου)
       else if (data.type === 'candidate') {
            if (pc.current && pc.current.remoteDescription) {
                try {
@@ -131,30 +121,40 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                } catch (e) {
                    console.error("Error adding ice candidate", e);
                }
+           } else {
+               // Αν η σύνδεση δεν είναι έτοιμη ακόμα, αποθηκεύουμε το candidate για μετά
+               candidateQueue.current.push(data.payload);
            }
       }
       
-      // Περίπτωση Δ: Τερματισμός ή Απόρριψη (Bye / Reject)
       else if (data.type === 'bye' || data.type === 'reject') {
-           // Αν μας απέρριψαν ή έκλεισαν τη γραμμή, κάνουμε reset
            if (incomingCall && incomingCall.fromUid === data.fromUid) {
-               // Αν χτυπούσε και το έκλεισαν
                setIncomingCall(null);
                stopRingtone();
            } else if (viewState.status !== 'idle') {
-               // Αν μιλούσαμε
                cleanup();
            }
       }
   };
 
-  // --- WebRTC Core Functions ---
+  const processCandidateQueue = async () => {
+      if (!pc.current) return;
+      while (candidateQueue.current.length > 0) {
+          const candidate = candidateQueue.current.shift();
+          if (candidate) {
+              try {
+                  await pc.current.addIceCandidate(new RTCIceCandidate(candidate));
+              } catch (e) {
+                  console.error("Error processing queued candidate", e);
+              }
+          }
+      }
+  };
 
   const createPC = () => {
       const newPC = new RTCPeerConnection(ICE_SERVERS);
       pc.current = newPC;
 
-      // Όταν βρούμε υποψήφιο δίκτυο (ICE), το στέλνουμε στον άλλο
       newPC.onicecandidate = (event) => {
           if (event.candidate) {
               sendSignal({
@@ -168,26 +168,26 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           }
       };
 
-      // Όταν έρθει εικόνα/ήχος από τον άλλο
       newPC.ontrack = (event) => {
-          if (!remoteStream.current) remoteStream.current = new MediaStream();
+          if (event.streams && event.streams[0]) {
+              remoteStream.current = event.streams[0];
+          } else {
+              if (!remoteStream.current) remoteStream.current = new MediaStream();
+              remoteStream.current.addTrack(event.track);
+          }
           
-          remoteStream.current.addTrack(event.track);
-          
-          // Σύνδεση με το HTML Video Element
           if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteStream.current;
-              remoteVideoRef.current.play().catch(e => console.error("Error playing remote video", e));
+              remoteVideoRef.current.play().catch(e => console.error("Remote video play error", e));
           }
       };
       
-      // Παρακολούθηση κατάστασης σύνδεσης
       newPC.oniceconnectionstatechange = () => {
           if (newPC.iceConnectionState === 'disconnected' || newPC.iceConnectionState === 'failed') {
                setViewState(prev => ({...prev, status: 'reconnecting'}));
                setTimeout(() => {
                    if (pc.current?.iceConnectionState !== 'connected') {
-                       cleanup(); // Αν δεν επανέλθει, κλείσιμο
+                       cleanup();
                    }
                }, 5000);
           } else if (newPC.iceConnectionState === 'connected') {
@@ -202,31 +202,26 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video });
           localStream.current = stream;
-          
-          // Εμφάνιση τοπικού βίντεο αν υπάρχει
           if (video && localVideoRef.current) {
               localVideoRef.current.srcObject = stream;
           }
-          
           return stream;
       } catch (e) {
           console.error("Media access error", e);
-          alert("Could not access camera or microphone. Please ensure you have given permission.");
+          alert("Could not access camera or microphone.");
           throw e;
       }
   };
 
-  // Έναρξη Κλήσης (Caller)
   const startCall = async (targetUid: string, targetName: string, targetAvatar: string, type: 'audio' | 'video') => {
-      onCloseParticipants(); // Κλείσιμο λίστας
+      onCloseParticipants();
+      candidateQueue.current = []; // Reset queue
       try {
           const stream = await getMedia(type === 'video');
           const connection = createPC();
           
-          // Προσθήκη των tracks (ήχος/εικόνα) στη σύνδεση
           stream.getTracks().forEach(t => connection.addTrack(t, stream));
 
-          // Δημιουργία Offer
           const offer = await connection.createOffer();
           await connection.setLocalDescription(offer);
 
@@ -239,7 +234,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               type
           });
 
-          // Αποστολή Offer
           await sendSignal({
               type: 'offer',
               payload: offer,
@@ -256,7 +250,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
-  // Απάντηση Κλήσης (Callee)
   const answerCall = async () => {
       if (!incomingCall) return;
       stopRingtone();
@@ -267,10 +260,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           
           stream.getTracks().forEach(t => connection.addTrack(t, stream));
           
-          // Ρύθμιση Remote Description (τι έστειλε ο caller)
           await connection.setRemoteDescription(new RTCSessionDescription(incomingCall.payload));
           
-          // Δημιουργία Answer
+          // Τώρα που έχουμε Remote Description, μπορούμε να προσθέσουμε τα candidates που ήρθαν νωρίτερα
+          await processCandidateQueue();
+
           const answer = await connection.createAnswer();
           await connection.setLocalDescription(answer);
 
@@ -283,7 +277,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               type: incomingCall.callType || 'audio'
           });
 
-          // Αποστολή Answer
           await sendSignal({
               type: 'answer',
               payload: answer,
@@ -301,14 +294,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
-  // Καθαρισμός / Τερματισμός
   const cleanup = () => {
-      // Σταμάτημα τοπικής κάμερας/μικροφώνου
       if (localStream.current) {
           localStream.current.getTracks().forEach(t => t.stop());
           localStream.current = null;
       }
-      // Κλείσιμο σύνδεσης
       if (pc.current) {
           pc.current.close();
           pc.current = null;
@@ -316,10 +306,10 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       stopRingtone();
       setViewState({ status: 'idle', callId: null, isCaller: false, remoteName: '', remoteAvatar: '', type: 'video' });
       setIncomingCall(null);
+      candidateQueue.current = [];
   };
 
   const handleHangup = async () => {
-      // Ενημέρωση του άλλου ότι το κλείσαμε
       await sendSignal({
           type: 'bye',
           payload: null,
@@ -351,9 +341,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
   
-  // --- UI Renders ---
-
-  // 1. Οθόνη Εισερχόμενης Κλήσης
   if (incomingCall) {
       return (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in zoom-in-95 duration-300">
@@ -396,11 +383,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       );
   }
 
-  // 2. Οθόνη Ενεργής Κλήσης (Calling / Connected)
   if (viewState.status !== 'idle') {
        return (
           <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col">
-              {/* Main Video Area */}
               <div className="flex-1 relative overflow-hidden bg-black flex items-center justify-center">
                   <video 
                       ref={remoteVideoRef} 
@@ -409,7 +394,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       className={`w-full h-full object-contain ${viewState.type === 'video' ? '' : 'hidden'}`} 
                   />
                   
-                  {/* Audio Call UI (or Video Call without remote video yet) */}
                   {(viewState.type === 'audio' || viewState.status !== 'connected') && (
                       <div className="flex flex-col items-center z-10 p-6 text-center">
                            <img src={viewState.remoteAvatar} className="w-32 h-32 rounded-full border-4 border-white/10 shadow-2xl bg-slate-800 object-cover mb-6" />
@@ -420,7 +404,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       </div>
                   )}
 
-                  {/* Local Video Picture-in-Picture */}
                   {viewState.type === 'video' && (
                       <div className="absolute top-4 right-4 w-28 sm:w-36 aspect-[3/4] bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-white/20 z-20">
                           <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
@@ -428,7 +411,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   )}
               </div>
 
-              {/* Controls Bar */}
               <div className="bg-slate-900/90 backdrop-blur-lg p-6 pb-10 flex items-center justify-center gap-8 z-30 border-t border-white/10">
                   <button 
                       onClick={toggleMute} 
@@ -444,7 +426,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       <PhoneOff size={36} fill="currentColor" />
                   </button>
                   
-                  {/* Placeholder for camera toggle (future feature) */}
                   {viewState.type === 'video' && (
                      <div className="p-4 w-[60px]"></div> 
                   )}
@@ -453,7 +434,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
        );
   }
 
-  // 3. Λίστα Συμμετεχόντων (Για να καλέσεις κάποιον)
   if (showParticipants) {
       return (
         <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-start justify-end p-4 sm:p-6" onClick={onCloseParticipants}>
