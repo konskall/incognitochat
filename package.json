@@ -13,7 +13,8 @@
     "lucide-react": "^0.303.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@emailjs/browser": "^4.4.1"
+    "@emailjs/browser": "^4.4.1",
+    "@supabase/supabase-js": "^2.39.7"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
