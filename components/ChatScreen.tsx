@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { ChatConfig, Message, User, Attachment, Presence } from '../types';
@@ -71,6 +72,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordingMimeTypeRef = useRef<string>(''); // Store the MIME type used for recording
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -680,10 +682,21 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, []);
 
   const startRecording = async () => {
-    // ... same logic as before for MediaRecorder ...
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
+        
+        // Detect supported MIME type (prefer MP4 for iOS/Safari, then WEBM)
+        const types = [
+          'audio/mp4',
+          'audio/aac',
+          'audio/webm;codecs=opus',
+          'audio/webm'
+        ];
+        
+        const mimeType = types.find(type => MediaRecorder.isTypeSupported(type)) || 'audio/webm';
+        recordingMimeTypeRef.current = mimeType;
+        
+        const mediaRecorder = new MediaRecorder(stream, { mimeType });
         mediaRecorderRef.current = mediaRecorder;
         audioChunksRef.current = [];
 
@@ -692,7 +705,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         };
 
         mediaRecorder.onstop = async () => {
-             const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+             // Create blob using the correct mime type determined at start
+             const audioBlob = new Blob(audioChunksRef.current, { type: recordingMimeTypeRef.current });
              await sendVoiceMessage(audioBlob);
              stream.getTracks().forEach(track => track.stop());
         };
@@ -727,7 +741,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const sendVoiceMessage = async (audioBlob: Blob) => {
       setIsUploading(true);
       try {
-           const file = new File([audioBlob], `voice_${Date.now()}.webm`, { type: 'audio/webm' });
+           // Determine extension based on mime type
+           const ext = recordingMimeTypeRef.current.includes('mp4') || recordingMimeTypeRef.current.includes('aac') ? 'mp4' : 'webm';
+           const file = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: recordingMimeTypeRef.current });
            const attachment = await uploadFile(file);
            
            if (attachment) {
