@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
 
+// Servers για παράκαμψη Firewalls (TURN) και εύρεση IP (STUN)
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -66,52 +67,34 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const [incomingCall, setIncomingCall] = useState<SignalData | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
 
-  // WebRTC Logic Refs
+  // WebRTC Refs
   const pc = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
   const remoteStream = useRef<MediaStream | null>(null);
   const channelRef = useRef<any>(null);
   
-  // Important: Queue for candidates arriving before remote description is set
+  // Queue για τα candidates που έρχονται πριν γίνει setRemoteDescription
   const candidateQueue = useRef<RTCIceCandidateInit[]>([]);
   
-  // HTML Refs
+  // Video Elements Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
-  // --- EFFECT: Attach Streams to Video Elements ---
-  // This runs whenever the call status changes to ensure videos are attached
-  useEffect(() => {
-    if (viewState.status === 'connected' || viewState.status === 'reconnecting') {
-        
-        // 1. Attach Remote Stream
-        if (remoteVideoRef.current && remoteStream.current) {
-            console.log("Attaching REMOTE stream to video element");
-            remoteVideoRef.current.srcObject = remoteStream.current;
-            remoteVideoRef.current.play().catch(e => console.warn("Remote autoplay failed", e));
-        }
+  // Αποθηκεύουμε το UID του άλλου χρήστη για να ξέρουμε πού να στείλουμε τα μηνύματα
+  const remoteUidRef = useRef<string | null>(null);
 
-        // 2. Attach Local Stream
-        if (localVideoRef.current && localStream.current) {
-             console.log("Attaching LOCAL stream to video element");
-             localVideoRef.current.srcObject = localStream.current;
-             localVideoRef.current.muted = true; // Always mute local to avoid feedback
-             localVideoRef.current.play().catch(e => console.warn("Local autoplay failed", e));
-        }
-    }
-  }, [viewState.status, viewState.type, isVideoOff]);
-
-  // --- EFFECT: Signaling Channel ---
+  // --- 1. SIGNALING: Σύνδεση στο Supabase Channel ---
   useEffect(() => {
      if (!config.roomKey) return;
      
-     console.log("Joining signaling channel:", `calls:${config.roomKey}`);
+     console.log("[CallManager] Joining signaling channel:", `calls:${config.roomKey}`);
      const channel = supabase.channel(`calls:${config.roomKey}`);
      
      channel.on('broadcast', { event: 'signal' }, ({ payload }: { payload: SignalData }) => {
-         // Filter out own messages
+         // Αγνοούμε τα δικά μας μηνύματα
          if (payload.fromUid === user.uid) return;
-         // Filter out messages not meant for us (if toUid is specified)
+
+         // Αν το μήνυμα έχει συγκεκριμένο παραλήπτη και δεν είμαστε εμείς, το αγνοούμε
          if (payload.toUid && payload.toUid !== user.uid) return;
 
          handleSignalMessage(payload);
@@ -126,76 +109,88 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
      };
   }, [config.roomKey, user.uid]);
 
-  // --- HELPER: Send Signaling Data ---
-  const sendSignal = async (data: SignalData) => {
-      if (channelRef.current) {
-          await channelRef.current.send({
-              type: 'broadcast',
-              event: 'signal',
-              payload: data
-          });
-      }
-  };
+  // --- 2. STREAM ATTACHMENT: Σύνδεση Βίντεο στο DOM ---
+  // Αυτό το Effect τρέχει κάθε φορά που αλλάζει το status ή το type
+  // και βεβαιώνει ότι τα streams έχουν συνδεθεί στα <video> tags.
+  useEffect(() => {
+    if (viewState.status === 'connected' || viewState.status === 'reconnecting') {
+        
+        // Συνδεση Remote Stream
+        if (remoteVideoRef.current && remoteStream.current) {
+            console.log("[CallManager] Attaching REMOTE stream to video element");
+            remoteVideoRef.current.srcObject = remoteStream.current;
+            remoteVideoRef.current.play().catch(e => console.warn("Remote autoplay failed", e));
+        }
 
-  // --- CORE: Handle Incoming Signals ---
+        // Σύνδεση Local Stream (αν υπάρχει βίντεο)
+        if (localVideoRef.current && localStream.current) {
+             console.log("[CallManager] Attaching LOCAL stream to video element");
+             localVideoRef.current.srcObject = localStream.current;
+             localVideoRef.current.muted = true; // Mute local to avoid feedback
+             localVideoRef.current.play().catch(e => console.warn("Local autoplay failed", e));
+        }
+    }
+  }, [viewState.status, viewState.type]);
+
+  // --- 3. CORE: Signaling Handler ---
   const handleSignalMessage = async (data: SignalData) => {
-      // CASE 1: Incoming Offer (Someone calling us)
-      if (data.type === 'offer') {
-          if (viewState.status !== 'idle' && viewState.status !== 'incoming') return;
-          
-          console.log("Received Offer from:", data.fromName);
-          candidateQueue.current = []; // Clear queue for new call
-          setIncomingCall(data);
-          initAudio();
-          startRingtone();
-      }
-      
-      // CASE 2: Incoming Answer (They picked up)
-      else if (data.type === 'answer') {
-           console.log("Received Answer");
-           if (viewState.status === 'calling' && pc.current) {
-               try {
-                   const remoteDesc = new RTCSessionDescription(data.payload);
-                   await pc.current.setRemoteDescription(remoteDesc);
-                   setViewState(prev => ({ ...prev, status: 'connected' }));
-                   
-                   // Now that remote desc is set, process queued candidates
-                   processCandidateQueue();
-               } catch (err) {
-                   console.error("Error setting remote description:", err);
+      console.log(`[CallManager] Received Signal: ${data.type} from ${data.fromName}`);
+
+      switch (data.type) {
+          case 'offer':
+              if (viewState.status !== 'idle' && viewState.status !== 'incoming') {
+                  console.log("Busy, ignoring offer");
+                  return;
+              }
+              candidateQueue.current = []; // Reset queue
+              setIncomingCall(data);
+              remoteUidRef.current = data.fromUid;
+              initAudio();
+              startRingtone();
+              break;
+
+          case 'answer':
+               if (viewState.status === 'calling' && pc.current) {
+                   try {
+                       const remoteDesc = new RTCSessionDescription(data.payload);
+                       await pc.current.setRemoteDescription(remoteDesc);
+                       setViewState(prev => ({ ...prev, status: 'connected' }));
+                       
+                       // Τώρα που έχουμε Remote Desc, επεξεργαζόμαστε τα queued candidates
+                       await processCandidateQueue();
+                   } catch (err) {
+                       console.error("Error setting remote description:", err);
+                   }
                }
-           }
-      }
-      
-      // CASE 3: Incoming ICE Candidate (Network path)
-      else if (data.type === 'candidate') {
-           const candidate = new RTCIceCandidate(data.payload);
-           
-           if (pc.current && pc.current.remoteDescription) {
-               // Connection ready, add immediately
-               pc.current.addIceCandidate(candidate).catch(e => console.error("AddIceCandidate Error", e));
-           } else {
-               // Connection NOT ready, buffer it for later
-               console.log("Buffering ICE candidate...");
-               candidateQueue.current.push(data.payload);
-           }
-      }
-      
-      // CASE 4: Hangup / Reject
-      else if (data.type === 'bye' || data.type === 'reject') {
-           if (incomingCall && incomingCall.fromUid === data.fromUid) {
-               setIncomingCall(null);
-               stopRingtone();
-           } else if (viewState.status !== 'idle') {
-               cleanup();
-           }
+               break;
+
+          case 'candidate':
+               const candidate = new RTCIceCandidate(data.payload);
+               if (pc.current && pc.current.remoteDescription) {
+                   pc.current.addIceCandidate(candidate).catch(e => console.error("AddCandidate Error", e));
+               } else {
+                   // Αν δεν είμαστε έτοιμοι ακόμα, τα βάζουμε στην ουρά
+                   console.log("Buffering ICE candidate...");
+                   candidateQueue.current.push(data.payload);
+               }
+               break;
+
+          case 'bye':
+          case 'reject':
+               if (incomingCall && incomingCall.fromUid === data.fromUid) {
+                   // Αν μας έκλεισαν ενώ χτυπούσε
+                   setIncomingCall(null);
+                   stopRingtone();
+               } else if (viewState.status !== 'idle') {
+                   // Αν μιλούσαμε και το έκλεισαν
+                   cleanup();
+               }
+               break;
       }
   };
 
-  // --- HELPER: Process Buffered Candidates ---
   const processCandidateQueue = async () => {
-      if (!pc.current || candidateQueue.current.length === 0) return;
-      
+      if (!pc.current) return;
       console.log(`Processing ${candidateQueue.current.length} buffered candidates`);
       for (const candidateData of candidateQueue.current) {
           try {
@@ -207,11 +202,20 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       candidateQueue.current = [];
   };
 
-  // --- CORE: Create Peer Connection ---
+  const sendSignal = async (data: SignalData) => {
+      if (channelRef.current) {
+          await channelRef.current.send({
+              type: 'broadcast',
+              event: 'signal',
+              payload: data
+          });
+      }
+  };
+
+  // --- 4. CORE: WebRTC Setup ---
   const createPC = (targetUid: string) => {
       const newPC = new RTCPeerConnection(ICE_SERVERS);
       
-      // 1. ICE Candidates (Send to other peer)
       newPC.onicecandidate = (event) => {
           if (event.candidate) {
               sendSignal({
@@ -225,26 +229,24 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           }
       };
 
-      // 2. Track Received (Remote Stream)
       newPC.ontrack = (event) => {
           console.log(`Track received: ${event.track.kind}`);
-          
           if (!remoteStream.current) {
               remoteStream.current = new MediaStream();
           }
           remoteStream.current.addTrack(event.track);
           
-          // Force update UI if we are already connected to trigger useEffect
+          // Προσπάθεια άμεσης ενημέρωσης αν το DOM υπάρχει ήδη
           if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteStream.current;
           }
       };
       
-      // 3. Connection State
       newPC.oniceconnectionstatechange = () => {
           console.log(`ICE Connection State: ${newPC.iceConnectionState}`);
           if (newPC.iceConnectionState === 'disconnected' || newPC.iceConnectionState === 'failed') {
                setViewState(prev => ({...prev, status: 'reconnecting'}));
+               // Optional: Cleanup after timeout
           } else if (newPC.iceConnectionState === 'connected') {
                setViewState(prev => ({...prev, status: 'connected'}));
           }
@@ -254,7 +256,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       return newPC;
   };
 
-  // --- CORE: Get User Media ---
   const getMedia = async (videoMode: boolean) => {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -270,19 +271,21 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
-  // --- ACTION: Start Call ---
+  // --- ACTIONS ---
+
   const startCall = async (targetUid: string, targetName: string, targetAvatar: string, type: 'audio' | 'video') => {
       onCloseParticipants();
       candidateQueue.current = [];
+      remoteUidRef.current = targetUid;
       
       try {
-          // 1. Get Local Stream FIRST
+          // 1. Get Media
           const stream = await getMedia(type === 'video');
           
           // 2. Create PC
           const connection = createPC(targetUid);
           
-          // 3. Add Tracks to PC (Crucial step!)
+          // 3. Add Tracks (MUST be done before creating offer)
           stream.getTracks().forEach(track => connection.addTrack(track, stream));
 
           // 4. Create Offer
@@ -302,7 +305,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               type
           });
 
-          // 6. Broadcast Offer
+          // 6. Send Offer
           await sendSignal({
               type: 'offer',
               payload: offer,
@@ -319,15 +322,15 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
-  // --- ACTION: Answer Call ---
   const answerCall = async () => {
       if (!incomingCall) return;
       stopRingtone();
       
       const remoteUid = incomingCall.fromUid;
+      remoteUidRef.current = remoteUid;
       
       try {
-          // 1. Get Local Stream
+          // 1. Get Media
           const stream = await getMedia(incomingCall.callType === 'video');
           
           // 2. Create PC
@@ -336,11 +339,10 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           // 3. Add Tracks
           stream.getTracks().forEach(track => connection.addTrack(track, stream));
           
-          // 4. Set Remote Description (The Offer)
-          const remoteDesc = new RTCSessionDescription(incomingCall.payload);
-          await connection.setRemoteDescription(remoteDesc);
+          // 4. Set Remote Desc
+          await connection.setRemoteDescription(new RTCSessionDescription(incomingCall.payload));
           
-          // 5. Process any queued candidates now that we have a description
+          // 5. Process Buffered Candidates
           await processCandidateQueue();
 
           // 6. Create Answer
@@ -357,7 +359,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               type: incomingCall.callType || 'audio'
           });
 
-          // 8. Broadcast Answer
+          // 8. Send Answer
           await sendSignal({
               type: 'answer',
               payload: answer,
@@ -375,31 +377,16 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
-  // --- ACTION: Cleanup ---
-  const cleanup = () => {
-      if (localStream.current) {
-          localStream.current.getTracks().forEach(t => t.stop());
-          localStream.current = null;
-      }
-      if (pc.current) {
-          pc.current.close();
-          pc.current = null;
-      }
-      remoteStream.current = null;
-      
-      stopRingtone();
-      setViewState({ status: 'idle', callId: null, isCaller: false, remoteName: '', remoteAvatar: '', type: 'video' });
-      setIncomingCall(null);
-      candidateQueue.current = [];
-  };
-
   const handleHangup = async () => {
+      // Send Bye signal BEFORE cleaning up
       await sendSignal({
           type: 'bye',
           payload: null,
           fromUid: user.uid,
           fromName: config.username,
-          fromAvatar: config.avatarURL
+          fromAvatar: config.avatarURL,
+          // If we are connected, send to remoteUid. If calling, send to the person we are calling.
+          toUid: remoteUidRef.current || undefined 
       });
       cleanup();
   };
@@ -418,6 +405,26 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       setIncomingCall(null);
       stopRingtone();
   };
+
+  const cleanup = () => {
+      if (localStream.current) {
+          localStream.current.getTracks().forEach(t => t.stop());
+          localStream.current = null;
+      }
+      if (pc.current) {
+          pc.current.close();
+          pc.current = null;
+      }
+      remoteStream.current = null;
+      
+      stopRingtone();
+      setViewState({ status: 'idle', callId: null, isCaller: false, remoteName: '', remoteAvatar: '', type: 'video' });
+      setIncomingCall(null);
+      candidateQueue.current = [];
+      remoteUidRef.current = null;
+      setIsMuted(false);
+      setIsVideoOff(false);
+  };
   
   const toggleMute = () => {
       if (localStream.current) {
@@ -435,38 +442,32 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
 
   const switchCamera = async () => {
       if (!localStream.current || viewState.type !== 'video') return;
-      
       const newMode = facingMode === 'user' ? 'environment' : 'user';
       
-      // Stop video tracks
       localStream.current.getVideoTracks().forEach(t => t.stop());
       
       try {
           const newStream = await navigator.mediaDevices.getUserMedia({
-              audio: true, // Keep audio request to verify permissions
+              audio: true,
               video: { facingMode: newMode }
           });
           
           const newVideoTrack = newStream.getVideoTracks()[0];
           
-          // Replace track in PeerConnection
           if (pc.current) {
               const sender = pc.current.getSenders().find(s => s.track?.kind === 'video');
-              if (sender) {
-                  sender.replaceTrack(newVideoTrack);
-              }
+              if (sender) sender.replaceTrack(newVideoTrack);
           }
           
-          // Update local stream reference (keep audio tracks from before if needed, or just use new stream)
-          // Ideally we replace the track in the current stream to not break refs
-          localStream.current.removeTrack(localStream.current.getVideoTracks()[0]);
-          localStream.current.addTrack(newVideoTrack);
+          // Re-assemble local stream
+          const audioTrack = localStream.current.getAudioTracks()[0];
+          const combinedStream = new MediaStream([audioTrack, newVideoTrack]);
           
+          localStream.current = combinedStream;
           setFacingMode(newMode);
           
-          // Update local video element
           if (localVideoRef.current) {
-              localVideoRef.current.srcObject = localStream.current;
+              localVideoRef.current.srcObject = combinedStream;
           }
           
       } catch (e) {
@@ -474,7 +475,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
   
-  // --- RENDERERS ---
+  // --- RENDERS ---
 
   if (incomingCall) {
       return (
@@ -522,7 +523,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
        return (
           <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col">
               <div className="flex-1 relative overflow-hidden bg-black flex items-center justify-center">
-                  {/* Remote Video */}
                   <video 
                       ref={remoteVideoRef} 
                       autoPlay 
@@ -530,7 +530,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       className={`w-full h-full object-contain ${viewState.type === 'video' ? '' : 'hidden'}`} 
                   />
                   
-                  {/* Audio Call UI / Loading State */}
                   {(viewState.type === 'audio' || viewState.status !== 'connected') && (
                       <div className="flex flex-col items-center z-10 p-6 text-center">
                            <img src={viewState.remoteAvatar} className="w-32 h-32 rounded-full border-4 border-white/10 shadow-2xl bg-slate-800 object-cover mb-6" />
@@ -541,21 +540,13 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       </div>
                   )}
 
-                  {/* Local Video Picture-in-Picture */}
                   {viewState.type === 'video' && (
                       <div className="absolute top-4 right-4 w-28 sm:w-36 aspect-[3/4] bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-white/20 z-20">
-                          <video 
-                            ref={localVideoRef} 
-                            autoPlay 
-                            playsInline 
-                            muted 
-                            className="w-full h-full object-cover transform scale-x-[-1]" 
-                          />
+                          <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
                       </div>
                   )}
               </div>
 
-              {/* Controls */}
               <div className="bg-slate-900/90 backdrop-blur-lg p-6 pb-10 flex items-center justify-center gap-8 z-30 border-t border-white/10">
                   <button 
                       onClick={toggleMute} 
