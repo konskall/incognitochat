@@ -1,10 +1,11 @@
+
 export interface User {
   uid: string;
   isAnonymous: boolean;
 }
 
 export interface Attachment {
-  url: string; // Base64 string
+  url: string; 
   name: string;
   type: string;
   size: number;
@@ -23,7 +24,8 @@ export interface Message {
   uid: string;
   username: string;
   avatarURL: string;
-  createdAt: any; // Firebase Timestamp
+  // Supabase returns ISO strings for dates
+  createdAt: string; 
   attachment?: Attachment;
   location?: {
     lat: number;
@@ -32,7 +34,7 @@ export interface Message {
   isEdited?: boolean;
   reactions?: { [emoji: string]: string[] }; // Key: emoji char, Value: array of uids
   replyTo?: ReplyInfo | null;
-  type?: 'text' | 'system'; // Added system type
+  type?: 'text' | 'system';
 }
 
 export interface ChatConfig {
@@ -40,7 +42,7 @@ export interface ChatConfig {
   avatarURL: string;
   roomName: string;
   pin: string;
-  roomKey: string; // generated from roomName + pin
+  roomKey: string; 
 }
 
 export interface Presence {
@@ -48,27 +50,26 @@ export interface Presence {
   username: string;
   avatar: string;
   status: 'active' | 'inactive';
-  lastSeen: any;
+  lastSeen: string;
   isTyping?: boolean;
+  onlineAt?: string; // Supabase presence timestamp
 }
 
-export interface CallData {
-  id: string;
-  callerId: string;
-  callerName: string;
-  callerAvatar: string;
-  calleeId: string;
-  type: 'audio' | 'video';
-  status: 'offering' | 'answered' | 'ended' | 'declined';
-  offer?: any;
-  answer?: any;
-  renegotiating?: any;
-  createdAt: any;
+// Webrtc Signaling Data
+export interface SignalData {
+  type: 'offer' | 'answer' | 'candidate' | 'bye' | 'reject';
+  payload: any;
+  fromUid: string;
+  fromName: string;
+  fromAvatar: string;
+  toUid?: string; // If specific target
+  callId?: string;
+  callType?: 'audio' | 'video';
 }
 
 export interface Subscriber {
     uid: string;
     email: string;
     username: string;
-    createdAt: any;
+    createdAt: string;
 }
