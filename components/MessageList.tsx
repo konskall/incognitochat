@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
@@ -43,33 +42,36 @@ const ImagePreviewModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm animate-in fade-in duration-200">
-            {/* Toolbar */}
-            <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-50 bg-black/40">
+        <div className="fixed inset-0 z-[100] flex flex-col bg-black/95 backdrop-blur-sm animate-in fade-in duration-200">
+            {/* Close Button - Top Right (Safe Area Respected) */}
+            <div className="absolute top-0 right-0 z-50 p-4 pt-[max(1rem,env(safe-area-inset-top))]">
                  <button 
                     onClick={onClose} 
-                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition"
+                    className="p-3 text-white/90 hover:text-white bg-black/40 hover:bg-white/10 rounded-full transition backdrop-blur-md shadow-lg"
                  >
-                    <X size={24} />
-                 </button>
-                 
-                 <button 
-                    onClick={handleDownload}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full text-sm font-semibold transition shadow-lg"
-                 >
-                    <Download size={18} />
-                    Download
+                    <X size={28} />
                  </button>
             </div>
-
+                 
             {/* Image Container */}
-            <div className="w-full h-full p-4 flex items-center justify-center overflow-hidden" onClick={onClose}>
+            <div className="flex-1 w-full h-full flex items-center justify-center p-4 overflow-hidden" onClick={onClose}>
                 <img 
                     src={src} 
                     alt={alt} 
-                    className="max-w-full max-h-full object-contain shadow-2xl rounded-md cursor-zoom-out"
+                    className="max-w-full max-h-[80vh] object-contain shadow-2xl rounded-md cursor-zoom-out"
                     onClick={(e) => e.stopPropagation()} // Prevent closing when clicking image
                 />
+            </div>
+
+            {/* Download Button - Bottom Center (Safe Area Respected) */}
+            <div className="absolute bottom-0 left-0 right-0 flex justify-center z-50 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pointer-events-none">
+                 <button 
+                    onClick={handleDownload}
+                    className="pointer-events-auto flex items-center gap-3 px-6 py-3.5 bg-white/10 hover:bg-white/20 text-white rounded-full text-base font-semibold transition shadow-xl backdrop-blur-md border border-white/10 active:scale-95"
+                 >
+                    <Download size={22} />
+                    <span>Download</span>
+                 </button>
             </div>
         </div>
     );
