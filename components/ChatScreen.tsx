@@ -672,6 +672,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       setSelectedFile(null);
       textareaRef.current?.focus();
   }, []);
+
+  const handleDeleteMessage = useCallback(async (msgId: string) => {
+      try {
+          const { error } = await supabase.from('messages').delete().eq('id', msgId);
+          if (error) {
+              console.error("Error deleting message:", error);
+              alert("Failed to delete message.");
+          }
+      } catch (e) {
+          console.error("Exception deleting message:", e);
+      }
+  }, []);
   
   const handleReply = useCallback((msg: Message) => {
       setReplyingTo(msg);
@@ -960,6 +972,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             messages={messages} 
             currentUserUid={user?.uid || ''} 
             onEdit={handleEditMessage}
+            onDelete={handleDeleteMessage}
             onReply={handleReply}
             onReact={handleReaction}
         />
