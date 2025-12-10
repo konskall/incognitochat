@@ -66,8 +66,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const [incomingCall, setIncomingCall] = useState<SignalData | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
 
-  // --- REFS (For State Access inside Callbacks) ---
-  // We use refs to avoid stale closures in the Supabase subscription callback
+  // Refs
   const viewStateRef = useRef(viewState);
   const incomingCallRef = useRef(incomingCall);
   const isCallerRef = useRef(false);
@@ -146,7 +145,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   };
 
   const handleSignalMessage = async (data: SignalData) => {
-      // USE REFS HERE TO GET FRESH STATE
       const currentStatus = viewStateRef.current.status;
       const currentIncoming = incomingCallRef.current;
 
@@ -454,6 +452,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           if (localVideoRef.current) {
               localVideoRef.current.srcObject = combinedStream;
           }
+          
       } catch (e) {
           console.error("Camera switch failed", e);
       }
@@ -504,19 +503,32 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   }
 
   if (viewState.status !== 'idle') {
+       const showRemoteVideo = viewState.type === 'video' && (viewState.status === 'connected' || viewState.status === 'reconnecting');
+       
        return (
           <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col">
-              <div className="flex-1 relative overflow-hidden bg-black flex items-center justify-center">
+              <div className="flex-1 relative overflow-hidden bg-black">
+                  
+                  {/* Remote Video - Always rendered but potentially hidden or covered */}
                   <video 
                       ref={remoteVideoRef} 
                       autoPlay 
                       playsInline 
-                      className={`w-full h-full object-contain ${viewState.type === 'video' ? '' : 'hidden'}`} 
+                      className={`w-full h-full object-contain bg-black ${showRemoteVideo ? '' : 'hidden'}`} 
                   />
                   
-                  {(viewState.type === 'audio' || viewState.status !== 'connected') && (
-                      <div className="flex flex-col items-center z-10 p-6 text-center">
-                           <img src={viewState.remoteAvatar} className="w-32 h-32 rounded-full border-4 border-white/10 shadow-2xl bg-slate-800 object-cover mb-6" />
+                  {/* Avatar Overlay - Centered Absolutely to fix alignment issues */}
+                  {(!showRemoteVideo) && (
+                      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center pointer-events-none">
+                           <div className="relative mb-6">
+                                <img 
+                                    src={viewState.remoteAvatar} 
+                                    className="w-32 h-32 rounded-full border-4 border-white/10 shadow-2xl bg-slate-800 object-cover mb-6" 
+                                />
+                                {(viewState.status === 'calling' || viewState.status === 'reconnecting') && (
+                                    <div className="absolute inset-0 rounded-full border-4 border-white/20 animate-ping opacity-30"></div>
+                                )}
+                           </div>
                            <h3 className="text-3xl font-bold text-white mb-2">{viewState.remoteName}</h3>
                            <p className="text-white/60 text-lg font-medium animate-pulse">
                                {viewState.status === 'calling' ? 'Calling...' : viewState.status === 'reconnecting' ? 'Reconnecting...' : 'Connected'}
@@ -524,8 +536,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       </div>
                   )}
 
+                  {/* Local Video Picture-in-Picture - Fixed to Top Right */}
                   {viewState.type === 'video' && (
-                      <div className="absolute top-4 right-4 w-28 sm:w-36 aspect-[3/4] bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-white/20 z-20">
+                      <div className="absolute top-4 right-4 w-28 sm:w-36 aspect-[3/4] bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-white/20 z-20 transition-all hover:scale-105 cursor-pointer">
                           <video 
                             ref={localVideoRef} 
                             autoPlay 
@@ -537,7 +550,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   )}
               </div>
 
-              <div className="bg-slate-900/90 backdrop-blur-lg p-6 pb-10 flex items-center justify-center gap-8 z-30 border-t border-white/10">
+              {/* Controls Bar */}
+              <div className="bg-slate-900/90 backdrop-blur-lg p-6 pb-10 flex items-center justify-center gap-6 z-30 border-t border-white/10">
                   <button 
                       onClick={toggleMute} 
                       className={`p-4 rounded-full transition-all ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
