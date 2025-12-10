@@ -138,7 +138,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   }, [config.roomKey, user]);
 
-  const notifySubscribers = async (action: 'message' | 'deleted', details: string) => {
+  const notifySubscribers = async (action: 'message' | 'deleted' | 'joined', details: string) => {
       if (!config.roomKey || !user) return;
       
       console.log(`[EmailJS] Attempting to notify subscribers. Action: ${action}`);
@@ -172,12 +172,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
           if (recipients.length > 0) {
               const toEmailString = recipients.join(',');
-              console.log(`[EmailJS] Sending to: ${toEmailString}`);
+              
+              // Map internal action to display label
+              let actionLabel = 'New Message';
+              if (action === 'deleted') actionLabel = 'Room Deleted';
+              if (action === 'joined') actionLabel = 'New Participant';
+
+              console.log(`[EmailJS] Sending '${actionLabel}' to: ${toEmailString}`);
               
               const emailParams = {
                   to_email: toEmailString, // Ensure your EmailJS template uses {{to_email}} in the "To" field
                   room_name: config.roomName,
-                  action_type: action === 'message' ? 'New Message' : 'Room Deleted',
+                  action_type: actionLabel,
                   message_body: details,
                   link: window.location.href
               };
@@ -296,12 +302,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
   }, [isRoomReady, user, config.roomKey]);
 
-  // Join Message
+  // Join Message & Notification
   useEffect(() => {
       if (isRoomReady && user && config.roomKey) {
           const sessionKey = `joined_${config.roomKey}`;
           if (!sessionStorage.getItem(sessionKey)) {
+              // Send system message to chat
               sendSystemMessage(`${config.username} joined the room`);
+              
+              // Send email notification to subscribers
+              notifySubscribers('joined', `${config.username} has entered the room.`);
+              
               sessionStorage.setItem(sessionKey, 'true');
           }
       }
@@ -876,7 +887,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       if (!config.roomKey) return;
       setIsDeleting(true);
       try {
-           notifySubscribers('deleted', 'Room was deleted');
+           // Notify users BEFORE deleting the room so subscribers table is still intact
+           await notifySubscribers('deleted', 'Room was deleted by host');
 
            const { data: files } = await supabase.storage.from('attachments').list(config.roomKey);
            if (files && files.length > 0) {
