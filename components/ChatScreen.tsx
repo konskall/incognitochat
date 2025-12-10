@@ -141,6 +141,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const notifySubscribers = async (action: 'message' | 'deleted', details: string) => {
       if (!config.roomKey || !user) return;
       
+      console.log(`[EmailJS] Attempting to notify subscribers. Action: ${action}`);
+
       try {
           // Fetch subscribers (explicitly typed)
           const { data, error } = await supabase
@@ -149,42 +151,50 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             .eq('room_key', config.roomKey);
           
           if (error) {
-              console.error("Error fetching subscribers:", error);
+              console.error("[EmailJS] Error fetching subscribers:", error);
               return;
           }
 
           const subscribers = data as Subscriber[];
 
-          if (!subscribers || subscribers.length === 0) return;
+          if (!subscribers || subscribers.length === 0) {
+            console.log("[EmailJS] No subscribers found for this room.");
+            return;
+          }
 
           const recipients: string[] = [];
           subscribers.forEach(sub => {
-              // Don't notify self
+              // Standard logic: Don't notify self. 
+              // IMPORTANT: You must test with TWO different users/browsers to receive an email.
               if (sub.uid !== user.uid && sub.email) {
                   recipients.push(sub.email);
               }
           });
 
           if (recipients.length > 0) {
-              console.log(`Sending email notification to ${recipients.length} recipients...`);
+              const toEmailString = recipients.join(',');
+              console.log(`[EmailJS] Sending to: ${toEmailString}`);
+              
               const emailParams = {
-                  to_email: recipients.join(','),
+                  to_email: toEmailString, // Ensure your EmailJS template uses {{to_email}} in the "To" field
                   room_name: config.roomName,
                   action_type: action === 'message' ? 'New Message' : 'Room Deleted',
                   message_body: details,
                   link: window.location.href
               };
               
-              await emailjs.send(
+              const response = await emailjs.send(
                   EMAILJS_SERVICE_ID,
                   EMAILJS_TEMPLATE_ID,
                   emailParams,
                   EMAILJS_PUBLIC_KEY
               );
-              console.log("Email notification sent successfully.");
+              console.log("[EmailJS] SUCCESS!", response.status, response.text);
+          } else {
+              console.log("[EmailJS] No other recipients to notify (you are the only subscriber or filtering self).");
           }
       } catch (e) {
-          console.error("Failed to notify subscribers", e);
+          console.error("[EmailJS] FAILED...", e);
       }
   };
 
@@ -755,6 +765,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                    attachment: attachment,
                    reactions: {}
                });
+               // Notify subscribers with robust logging
                notifySubscribers('message', 'Sent a voice message');
            }
       } catch(e) {
@@ -833,7 +844,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                    } : null
                });
 
+               // Notify subscribers with robust logging
                notifySubscribers('message', textToSend || 'Sent a file');
+               
                setReplyingTo(null);
                setSelectedFile(null);
                if(fileInputRef.current) fileInputRef.current.value = '';
