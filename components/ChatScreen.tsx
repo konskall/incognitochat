@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { ChatConfig, Message, User, Attachment, Presence, Subscriber } from '../types';
@@ -164,8 +165,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
           const recipients: string[] = [];
           subscribers.forEach(sub => {
-              // Standard logic: Don't notify self. 
-              // IMPORTANT: You must test with TWO different users/browsers to receive an email.
+              // Don't notify self
               if (sub.uid !== user.uid && sub.email) {
                   recipients.push(sub.email);
               }
@@ -275,12 +275,20 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   useEffect(() => {
       if (isRoomReady && user && config.roomKey) {
           const checkSubscription = async () => {
-              const { data } = await supabase
+              const { data, error } = await supabase
                 .from('subscribers')
                 .select('email')
                 .eq('room_key', config.roomKey)
                 .eq('uid', user.uid)
                 .single();
+
+              if (error && error.code !== 'PGRST116') { // PGRST116 is "Row not found", which is expected
+                  console.error("Subscription Check Error:", error);
+                  // Alert the user if it's a configuration error (like invalid API key)
+                  if (error.message && (error.message.includes('API key') || error.message.includes('JWT'))) {
+                      alert("Database Connection Error: Invalid API Key. Please update services/supabase.ts with the correct Anon Key.");
+                  }
+              }
 
               if (data) {
                   setEmailAlertsEnabled(true);
@@ -597,7 +605,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           alert("Successfully subscribed to email alerts for this room.");
       } catch (e: any) {
           console.error("Error saving email:", e);
-          alert("Failed to subscribe to alerts. The database table might be missing or permissions incorrect.");
+          alert("Failed to subscribe to alerts. The API key might be invalid or table missing.");
       } finally {
           setIsSavingEmail(false);
       }
