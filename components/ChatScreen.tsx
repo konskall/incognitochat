@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { ChatConfig, Message, User, Attachment, Presence, Subscriber } from '../types';
@@ -238,11 +237,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       if (!user || !config.roomKey) return;
       
       try {
+        // Use maybeSingle() instead of single() to avoid 406 errors if row doesn't exist
         const { data: room } = await supabase
             .from('rooms')
             .select('*')
             .eq('room_key', config.roomKey)
-            .single();
+            .maybeSingle();
 
         if (room) {
              setRoomCreatorId(room.created_by);
@@ -275,19 +275,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   useEffect(() => {
       if (isRoomReady && user && config.roomKey) {
           const checkSubscription = async () => {
+              // Use maybeSingle() to return null instead of error if not found
               const { data, error } = await supabase
                 .from('subscribers')
                 .select('email')
                 .eq('room_key', config.roomKey)
                 .eq('uid', user.uid)
-                .single();
+                .maybeSingle();
 
-              if (error && error.code !== 'PGRST116') { // PGRST116 is "Row not found", which is expected
+              if (error) {
                   console.error("Subscription Check Error:", error);
-                  // Alert the user if it's a configuration error (like invalid API key)
-                  if (error.message && (error.message.includes('API key') || error.message.includes('JWT'))) {
-                      alert("Database Connection Error: Invalid API Key. Please update services/supabase.ts with the correct Anon Key.");
-                  }
               }
 
               if (data) {
@@ -605,7 +602,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           alert("Successfully subscribed to email alerts for this room.");
       } catch (e: any) {
           console.error("Error saving email:", e);
-          alert("Failed to subscribe to alerts. The API key might be invalid or table missing.");
+          alert("Failed to subscribe to alerts. The database table might be missing or permissions incorrect.");
       } finally {
           setIsSavingEmail(false);
       }
@@ -773,7 +770,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                    attachment: attachment,
                    reactions: {}
                });
-               // Notify subscribers with robust logging
                notifySubscribers('message', 'Sent a voice message');
            }
       } catch(e) {
@@ -852,9 +848,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                    } : null
                });
 
-               // Notify subscribers with robust logging
                notifySubscribers('message', textToSend || 'Sent a file');
-               
                setReplyingTo(null);
                setSelectedFile(null);
                if(fileInputRef.current) fileInputRef.current.value = '';
