@@ -1,7 +1,6 @@
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
-import { ChatConfig, Message, User, Attachment, Presence } from '../types';
+import { ChatConfig, Message, User, Attachment, Presence, Subscriber } from '../types';
 import { decodeMessage, encodeMessage } from '../utils/helpers';
 import MessageList from './MessageList';
 import CallManager from './CallManager';
@@ -72,7 +71,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const recordingMimeTypeRef = useRef<string>(''); // Store the MIME type used for recording
+  const recordingMimeTypeRef = useRef<string>(''); 
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -143,21 +142,31 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       if (!config.roomKey || !user) return;
       
       try {
-          const { data: subscribers, error } = await supabase
+          // Fetch subscribers (explicitly typed)
+          const { data, error } = await supabase
             .from('subscribers')
             .select('*')
             .eq('room_key', config.roomKey);
           
-          if (error || !subscribers || subscribers.length === 0) return;
+          if (error) {
+              console.error("Error fetching subscribers:", error);
+              return;
+          }
+
+          const subscribers = data as Subscriber[];
+
+          if (!subscribers || subscribers.length === 0) return;
 
           const recipients: string[] = [];
           subscribers.forEach(sub => {
+              // Don't notify self
               if (sub.uid !== user.uid && sub.email) {
                   recipients.push(sub.email);
               }
           });
 
           if (recipients.length > 0) {
+              console.log(`Sending email notification to ${recipients.length} recipients...`);
               const emailParams = {
                   to_email: recipients.join(','),
                   room_name: config.roomName,
@@ -172,6 +181,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                   emailParams,
                   EMAILJS_PUBLIC_KEY
               );
+              console.log("Email notification sent successfully.");
           }
       } catch (e) {
           console.error("Failed to notify subscribers", e);
@@ -185,7 +195,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         if (session?.user) {
              setUser({ uid: session.user.id, isAnonymous: true });
         } else {
-             // Should have been logged in by LoginScreen, but handle refresh
              const { data: anonData } = await supabase.auth.signInAnonymously();
              if (anonData.user) {
                  setUser({ uid: anonData.user.id, isAnonymous: true });
@@ -219,7 +228,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       if (!user || !config.roomKey) return;
       
       try {
-        // Check if room exists
         const { data: room } = await supabase
             .from('rooms')
             .select('*')
@@ -229,7 +237,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         if (room) {
              setRoomCreatorId(room.created_by);
         } else {
-             // Create room
              const { error: insertError } = await supabase
                 .from('rooms')
                 .insert({
@@ -247,7 +254,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         setIsRoomReady(true);
       } catch (error) {
         console.error("Error initializing room:", error);
-        setIsRoomReady(true); // Proceed anyway to try
+        setIsRoomReady(true); 
       }
     };
     
@@ -290,7 +297,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           await sendSystemMessage(`${config.username} left the room`);
           sessionStorage.removeItem(`joined_${config.roomKey}`);
           
-          // Cleanup channels on exit
           if (roomChannelRef.current) {
               await roomChannelRef.current.unsubscribe();
           }
@@ -309,7 +315,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   useEffect(() => {
     if (!user || !config.roomKey || !isRoomReady) return;
 
-    // Use a unique channel name for Presence to prevent conflict with CallManager
     const channel = supabase.channel(`presence:${config.roomKey}`, {
       config: {
         presence: {
@@ -326,11 +331,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         const activeUsers: Presence[] = [];
         const typers: string[] = [];
         
-        // Transform the presence state object into an array
         for (const key in newState) {
             const userPresences = newState[key] as unknown as Presence[];
             if (userPresences && userPresences.length > 0) {
-                // Get the latest presence object for this user
                 const p = userPresences[0]; 
                 activeUsers.push(p);
                 
@@ -344,7 +347,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          // Initial track
           await channel.track({
             uid: user.uid,
             username: config.username,
@@ -362,7 +364,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     };
   }, [user, config.roomKey, isRoomReady, config.username, config.avatarURL]);
 
-  // Helper to update presence state without re-subscribing
   const updatePresenceState = async (overrides: Partial<Presence>) => {
       if (!roomChannelRef.current || !user) return;
       
@@ -383,7 +384,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   useEffect(() => {
     if (!config.roomKey || !user || !isRoomReady) return;
 
-    // Load initial messages
     const fetchMessages = async () => {
         const { data } = await supabase
             .from('messages')
@@ -412,7 +412,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
     fetchMessages();
 
-    // Subscribe to new messages on a separate channel
     const dbChannel = supabase.channel(`messages:${config.roomKey}`)
         .on('postgres_changes', { 
             event: '*', 
@@ -437,7 +436,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                  };
                  setMessages(prev => [...prev, newMsg]);
 
-                 // Sound & Notifications
                  if (d.uid !== user.uid && d.type !== 'system') {
                       if (soundEnabled) {
                           initAudio();
@@ -486,7 +484,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   useEffect(() => {
     if (!config.roomKey || !isRoomReady) return;
 
-    // Listen for room deletion event on the rooms table
     const roomStatusChannel = supabase.channel(`room_status:${config.roomKey}`)
       .on('postgres_changes', {
         event: 'DELETE',
@@ -494,7 +491,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         table: 'rooms',
         filter: `room_key=eq.${config.roomKey}`
       }, () => {
-        // Alert and exit when room is deleted
         alert("This room has been deleted by the host.");
         onExit();
       })
@@ -506,7 +502,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, [config.roomKey, isRoomReady, onExit]);
 
 
-  // Scroll to bottom
   useEffect(() => {
     if (!messagesEndRef.current) return;
     if (isFirstLoad.current && messages.length > 0) {
@@ -519,7 +514,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, [messages]);
 
 
-  // ... (Input Resize Logic kept same) ...
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -533,7 +527,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   }, [inputText]);
 
-  // Notifications toggle logic same...
   const toggleNotifications = async () => {
       if (notificationsEnabled) {
           setNotificationsEnabled(false);
@@ -552,10 +545,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const handleEmailToggle = async () => {
       if (!user || !config.roomKey) return;
       if (emailAlertsEnabled) {
-          await supabase.from('subscribers')
+          const { error } = await supabase.from('subscribers')
             .delete()
             .eq('room_key', config.roomKey)
             .eq('uid', user.uid);
+            
+          if (error) {
+              console.error("Error disabling alerts:", error);
+              return;
+          }
           setEmailAlertsEnabled(false);
           setEmailAddress('');
           setShowEmailModal(false);
@@ -571,17 +569,25 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
       setIsSavingEmail(true);
       try {
-          await supabase.from('subscribers').insert({
+          const { error } = await supabase.from('subscribers').insert({
               room_key: config.roomKey,
               uid: user.uid,
               username: config.username,
               email: emailAddress
           });
+          
+          if (error) {
+              console.error("Supabase insert error:", error);
+              throw error;
+          }
+
           setEmailAlertsEnabled(true);
           setShowEmailModal(false);
           setShowSettingsMenu(false);
-      } catch (e) {
-          console.error("Error saving email", e);
+          alert("Successfully subscribed to email alerts for this room.");
+      } catch (e: any) {
+          console.error("Error saving email:", e);
+          alert("Failed to subscribe to alerts. The database table might be missing or permissions incorrect.");
       } finally {
           setIsSavingEmail(false);
       }
@@ -589,7 +595,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   const uploadFile = async (file: File): Promise<Attachment | null> => {
       if (!user) return null;
-      // Upload to Supabase Storage
       const fileExt = file.name.split('.').pop();
       const fileName = `${Math.random()}.${fileExt}`;
       const filePath = `${config.roomKey}/${fileName}`;
@@ -603,7 +608,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           throw error;
       }
 
-      // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('attachments')
         .getPublicUrl(filePath);
@@ -620,20 +624,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       setInputText(e.target.value);
       if (!user) return;
       
-      // Only trigger if we aren't already typing to reduce writes
       if (!isTypingRef.current) {
           isTypingRef.current = true;
           updatePresenceState({ isTyping: true });
       }
       
-      // Debounce the stop typing
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       
       typingTimeoutRef.current = setTimeout(() => {
           isTypingRef.current = false;
           updatePresenceState({ isTyping: false });
           typingTimeoutRef.current = null;
-      }, 2000); // 2 seconds delay
+      }, 2000); 
   };
 
   const handleEditMessage = useCallback((msg: Message) => {
@@ -653,7 +655,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const handleReaction = useCallback(async (msg: Message, emoji: string) => {
       if (!user || !config.roomKey) return;
       
-      // Get current reactions
       const currentReactions = msg.reactions || {};
       const userList = currentReactions[emoji] || [];
       let newList: string[];
@@ -685,7 +686,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         
-        // Detect supported MIME type (prefer MP4 for iOS/Safari, then WEBM)
         const types = [
           'audio/mp4',
           'audio/aac',
@@ -705,7 +705,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         };
 
         mediaRecorder.onstop = async () => {
-             // Create blob using the correct mime type determined at start
              const audioBlob = new Blob(audioChunksRef.current, { type: recordingMimeTypeRef.current });
              await sendVoiceMessage(audioBlob);
              stream.getTracks().forEach(track => track.stop());
@@ -741,7 +740,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const sendVoiceMessage = async (audioBlob: Blob) => {
       setIsUploading(true);
       try {
-           // Determine extension based on mime type
            const ext = recordingMimeTypeRef.current.includes('mp4') || recordingMimeTypeRef.current.includes('aac') ? 'mp4' : 'webm';
            const file = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: recordingMimeTypeRef.current });
            const attachment = await uploadFile(file);
@@ -795,7 +793,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       setInputText('');
       setIsUploading(true);
       
-      // Stop typing immediately
       if (isTypingRef.current) {
           isTypingRef.current = false;
           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -864,22 +861,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       if (!config.roomKey) return;
       setIsDeleting(true);
       try {
-           // 1. Notify Subscribers first
            notifySubscribers('deleted', 'Room was deleted');
 
-           // 2. Delete all files in the storage bucket for this room
-           // Storage does not cascade delete automatically based on DB rows.
            const { data: files } = await supabase.storage.from('attachments').list(config.roomKey);
            if (files && files.length > 0) {
                const filesToRemove = files.map(x => `${config.roomKey}/${x.name}`);
                await supabase.storage.from('attachments').remove(filesToRemove);
            }
            
-           // 3. Delete the room from the database
-           // This will cascade delete messages because of foreign key constraint
            await supabase.from('rooms').delete().eq('room_key', config.roomKey);
            
-           // 4. Exit the chat locally
            onExit();
       } catch(e) {
           console.error("Delete failed", e);
