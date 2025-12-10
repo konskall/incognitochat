@@ -674,11 +674,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, []);
 
   const handleDeleteMessage = useCallback(async (msgId: string) => {
+      // Optimistic UI update: Remove the message from the list immediately
+      setMessages(prev => prev.filter(m => m.id !== msgId));
+
       try {
           const { error } = await supabase.from('messages').delete().eq('id', msgId);
           if (error) {
               console.error("Error deleting message:", error);
-              alert("Failed to delete message.");
+              // Optionally revert the state here if we want to be strict, but alert is usually enough for quick apps
+              alert("Failed to delete message. Please refresh.");
           }
       } catch (e) {
           console.error("Exception deleting message:", e);
