@@ -3,18 +3,20 @@ import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
   FileText, Download, Edit2, 
-  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, ZoomIn
+  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, ZoomIn, Trash2
 } from 'lucide-react';
 
 interface MessageListProps {
   messages: Message[];
   currentUserUid: string;
   onEdit: (msg: Message) => void;
+  onDelete: (msgId: string) => void; // New prop for deletion
   onReact: (msg: Message, emoji: string) => void;
   onReply: (msg: Message) => void;
 }
 
-// -- Image Preview Modal Component (iOS Fixed) --
+// ... (ImagePreviewModal and LinkPreview components remain unchanged) ...
+// -- Image Preview Modal Component (Mobile Optimized: Floating Buttons) --
 const ImagePreviewModal: React.FC<{ 
     src: string; 
     alt: string; 
@@ -29,65 +31,60 @@ const ImagePreviewModal: React.FC<{
         };
     }, []);
 
-    const handleDownload = async (e: React.MouseEvent) => {
-        e.stopPropagation(); // Prevent closing
+    const handleDownload = async () => {
         try {
-            // Attempt standard download
             const response = await fetch(src);
             const blob = await response.blob();
             const blobUrl = window.URL.createObjectURL(blob);
             
             const link = document.createElement('a');
             link.href = blobUrl;
-            link.download = alt || `image-${Date.now()}.jpg`;
+            link.download = alt || 'image';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
             window.URL.revokeObjectURL(blobUrl);
-        } catch (err) {
-            console.error("Download failed, falling back to open", err);
-            // Fallback for iOS/Safari where programmatic click might fail
+        } catch (e) {
+            console.error("Download failed", e);
+            // Fallback
             window.open(src, '_blank');
         }
     };
 
     return (
-        <div 
-            className="fixed inset-0 z-[9999] bg-black flex flex-col"
-            onClick={onClose}
-        >
-            {/* Top Bar - Close Button */}
-            {/* Using padding-top with safe-area env for notches */}
-            <div className="absolute top-0 right-0 z-[10000] p-4 pt-[calc(1.5rem+env(safe-area-inset-top))]">
+        <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center animate-in fade-in duration-200">
+            
+            {/* Controls Layer - Floating Buttons at Top Corners */}
+            {/* pointer-events-none ensures clicks between buttons go to the background/close action */}
+            <div className="absolute top-0 left-0 right-0 z-[210] flex justify-between items-start p-4 pt-[calc(1rem+env(safe-area-inset-top))] pointer-events-none">
+                 
+                 {/* Download Button - Top Left */}
                  <button 
-                    onClick={(e) => { e.stopPropagation(); onClose(); }}
-                    className="p-3 bg-white/10 text-white rounded-full hover:bg-white/20 backdrop-blur-md border border-white/10 active:scale-95 transition-all shadow-lg"
-                    aria-label="Close"
+                    onClick={handleDownload}
+                    className="pointer-events-auto p-3.5 bg-black/40 text-white/90 rounded-full backdrop-blur-xl border border-white/10 shadow-lg active:scale-90 transition hover:bg-black/60"
+                    aria-label="Download Image"
+                 >
+                    <Download size={24} />
+                 </button>
+
+                 {/* Close Button - Top Right */}
+                 <button 
+                    onClick={onClose} 
+                    className="pointer-events-auto p-3.5 bg-black/40 text-white/90 rounded-full backdrop-blur-xl border border-white/10 shadow-lg active:scale-90 transition hover:bg-black/60"
+                    aria-label="Close Preview"
                  >
                     <X size={24} />
                  </button>
             </div>
                  
             {/* Image Area */}
-            <div className="flex-1 flex items-center justify-center p-2 w-full h-full overflow-hidden">
+            <div className="w-full h-full flex items-center justify-center overflow-hidden" onClick={onClose}>
                 <img 
                     src={src} 
                     alt={alt} 
                     className="max-w-full max-h-full object-contain"
                     onClick={(e) => e.stopPropagation()} 
                 />
-            </div>
-
-            {/* Bottom Bar - Download Button */}
-            {/* Using padding-bottom with safe-area env for home bars */}
-            <div className="absolute bottom-0 left-0 right-0 z-[10000] flex justify-center p-6 pb-[calc(2rem+env(safe-area-inset-bottom))] bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
-                 <button 
-                    onClick={handleDownload}
-                    className="pointer-events-auto flex items-center gap-2 px-6 py-3 bg-white text-black rounded-full font-bold text-sm shadow-xl active:scale-95 transition hover:bg-slate-200"
-                 >
-                    <Download size={18} />
-                    <span>Save Image</span>
-                 </button>
             </div>
         </div>
     );
@@ -176,11 +173,12 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
 };
 
 // Memoized Message Item to prevent re-renders of the whole list
-const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onReply, onImagePreview }: { 
+const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onReact, onReply, onImagePreview }: { 
     msg: Message; 
     isMe: boolean; 
     currentUid: string; 
     onEdit: (msg: Message) => void; 
+    onDelete: (msgId: string) => void;
     onReact: (msg: Message, emoji: string) => void; 
     onReply: (msg: Message) => void;
     onImagePreview: (url: string, name: string) => void;
@@ -441,7 +439,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
             className="w-8 h-8 rounded-full shadow-sm object-cover border-2 border-white dark:border-slate-700 select-none bg-slate-200 dark:bg-slate-700"
         />
 
-        {/* Vertical Actions Stack (Reply, React, Edit) */}
+        {/* Vertical Actions Stack (Reply, React, Edit, Delete) */}
         <div className={`flex flex-col gap-1 items-center self-end mb-1 ${isMe ? 'mr-0.5' : 'ml-0.5'}`}>
              
              {/* Reply Button - Always visible on mobile, hover only on desktop */}
@@ -484,7 +482,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
                  )}
              </div>
 
-             {/* Edit Button (Directly exposed for 'Me') - Always visible on mobile, hover only on desktop */}
+             {/* Edit Button (Directly exposed for 'Me') */}
              {isMe && (
                 <button 
                     onClick={() => onEdit(msg)}
@@ -492,6 +490,21 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
                     title="Edit"
                 >
                     <Edit2 size={16} />
+                </button>
+             )}
+
+             {/* Delete Button (Directly exposed for 'Me') */}
+             {isMe && (
+                <button 
+                    onClick={() => {
+                        if (window.confirm('Delete this message?')) {
+                            onDelete(msg.id);
+                        }
+                    }}
+                    className={`p-1 text-slate-400 hover:text-red-500 rounded-full transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100`}
+                    title="Delete"
+                >
+                    <Trash2 size={16} />
                 </button>
              )}
         </div>
@@ -623,7 +636,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onReact, onRepl
     return true;
 });
 
-const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onReact, onReply }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply }) => {
   const [previewImage, setPreviewImage] = useState<{url: string; name: string} | null>(null);
 
   const handleImagePreview = useCallback((url: string, name: string) => {
@@ -655,6 +668,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
                 isMe={msg.uid === currentUserUid}
                 currentUid={currentUserUid}
                 onEdit={onEdit}
+                onDelete={onDelete}
                 onReact={onReact}
                 onReply={onReply}
                 onImagePreview={handleImagePreview}
