@@ -184,6 +184,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                   to_email: toEmailString, // Ensure your EmailJS template uses {{to_email}} in the "To" field
                   room_name: config.roomName,
                   action_type: actionLabel,
+                  sender_name: config.username, // Pass the current user's name
                   message_body: details,
                   link: window.location.href
               };
