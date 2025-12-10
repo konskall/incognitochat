@@ -1,4 +1,3 @@
-
 export interface User {
   uid: string;
   isAnonymous: boolean;
@@ -65,9 +64,12 @@ export interface SignalData {
   callType?: 'audio' | 'video';
 }
 
+// Updated Subscriber interface to match Supabase table structure
 export interface Subscriber {
+    id?: string;
+    room_key: string;
     uid: string;
-    email: string;
     username: string;
-    createdAt: string;
+    email: string;
+    created_at?: string;
 }
