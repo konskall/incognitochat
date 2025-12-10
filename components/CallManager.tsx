@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw } from 'lucide-react';
+
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
@@ -65,6 +66,10 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const [isVideoOff, setIsVideoOff] = useState<boolean>(false);
   const [incomingCall, setIncomingCall] = useState<SignalData | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  
+  // Stats & Timer
+  const [networkQuality, setNetworkQuality] = useState<'good' | 'poor' | 'bad'>('good');
+  const [callDuration, setCallDuration] = useState(0);
 
   // Refs
   const viewStateRef = useRef(viewState);
@@ -81,6 +86,10 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   // DOM Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  
+  // Timer Refs
+  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const statsIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- SYNC STATE TO REFS ---
   useEffect(() => {
@@ -95,13 +104,13 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   // --- STREAM MANAGEMENT ---
   useEffect(() => {
     if (viewState.status === 'connected' || viewState.status === 'reconnecting') {
+        
         if (remoteVideoRef.current && remoteStream.current) {
-            console.log("[WebRTC] Attaching REMOTE stream");
             remoteVideoRef.current.srcObject = remoteStream.current;
             remoteVideoRef.current.play().catch(e => console.warn("Remote autoplay failed", e));
         }
+
         if (localVideoRef.current && localStream.current) {
-             console.log("[WebRTC] Attaching LOCAL stream");
              localVideoRef.current.srcObject = localStream.current;
              localVideoRef.current.muted = true;
              localVideoRef.current.play().catch(e => console.warn("Local autoplay failed", e));
@@ -109,11 +118,36 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     }
   }, [viewState.status, viewState.type]);
 
+  // --- CALL DURATION TIMER ---
+  useEffect(() => {
+    if (viewState.status === 'connected') {
+      if (!durationIntervalRef.current) {
+        setCallDuration(0);
+        durationIntervalRef.current = setInterval(() => {
+          setCallDuration(prev => prev + 1);
+        }, 1000);
+      }
+      
+      // Start stats monitoring
+      if (!statsIntervalRef.current) {
+        statsIntervalRef.current = setInterval(checkConnectionStats, 2000);
+      }
+    } else {
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+        durationIntervalRef.current = null;
+      }
+      if (statsIntervalRef.current) {
+        clearInterval(statsIntervalRef.current);
+        statsIntervalRef.current = null;
+      }
+    }
+  }, [viewState.status]);
+
   // --- SIGNALING ---
   useEffect(() => {
      if (!config.roomKey) return;
      
-     console.log("[CallManager] Subscribing to channel:", `calls:${config.roomKey}`);
      const channel = supabase.channel(`calls:${config.roomKey}`);
      
      channel.on('broadcast', { event: 'signal' }, ({ payload }: { payload: SignalData }) => {
@@ -123,9 +157,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
          handleSignalMessage(payload);
      });
 
-     channel.subscribe((status) => {
-         if (status === 'SUBSCRIBED') console.log("[WebRTC] Signaling Connected");
-     });
+     channel.subscribe();
      channelRef.current = channel;
 
      return () => {
@@ -152,6 +184,26 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
 
       switch (data.type) {
           case 'offer':
+              // If we are already connected, treat this as a renegotiation (ICE Restart)
+              if (currentStatus === 'connected' || currentStatus === 'reconnecting') {
+                 console.log("[WebRTC] Received renegotiation offer");
+                 if (pc.current) {
+                     await pc.current.setRemoteDescription(new RTCSessionDescription(data.payload));
+                     const answer = await pc.current.createAnswer();
+                     await pc.current.setLocalDescription(answer);
+                     sendSignal({
+                        type: 'answer',
+                        payload: answer,
+                        fromUid: user.uid,
+                        fromName: config.username,
+                        fromAvatar: config.avatarURL,
+                        toUid: data.fromUid
+                     });
+                     setViewState(prev => ({ ...prev, status: 'connected' }));
+                 }
+                 return;
+              }
+
               if (currentStatus !== 'idle' && currentStatus !== 'incoming') {
                   console.log("[WebRTC] Busy, ignoring offer");
                   return;
@@ -164,7 +216,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               break;
 
           case 'answer':
-               if (currentStatus === 'calling' && pc.current) {
+               if ((currentStatus === 'calling' || currentStatus === 'reconnecting') && pc.current) {
                    try {
                        const remoteDesc = new RTCSessionDescription(data.payload);
                        await pc.current.setRemoteDescription(remoteDesc);
@@ -181,7 +233,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                if (pc.current && pc.current.remoteDescription) {
                    pc.current.addIceCandidate(candidate).catch(e => console.error("AddCandidate Error", e));
                } else {
-                   console.log("Buffering ICE candidate...");
                    candidateQueue.current.push(data.payload);
                }
                break;
@@ -200,7 +251,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
 
   const processCandidateQueue = async () => {
       if (!pc.current) return;
-      console.log(`Processing ${candidateQueue.current.length} buffered candidates`);
       while (candidateQueue.current.length > 0) {
           const candidateData = candidateQueue.current.shift();
           if (candidateData) {
@@ -219,19 +269,19 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       
       newPC.onicecandidate = (event) => {
           if (event.candidate) {
+              const destUid = isCallerRef.current ? targetUid : remoteUidRef.current;
               sendSignal({
                   type: 'candidate',
                   payload: event.candidate.toJSON(),
                   fromUid: user.uid,
                   fromName: config.username,
                   fromAvatar: config.avatarURL,
-                  toUid: targetUid,
+                  toUid: destUid || undefined, 
               });
           }
       };
 
       newPC.ontrack = (event) => {
-          console.log(`Track received: ${event.track.kind}`);
           if (!remoteStream.current) {
               remoteStream.current = new MediaStream();
           }
@@ -247,6 +297,10 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           console.log(`ICE State: ${newPC.iceConnectionState}`);
           if (newPC.iceConnectionState === 'disconnected' || newPC.iceConnectionState === 'failed') {
                setViewState(prev => ({...prev, status: 'reconnecting'}));
+               // Trigger ICE restart for reconnection
+               if (isCallerRef.current) {
+                   restartIce();
+               }
           } else if (newPC.iceConnectionState === 'connected') {
                setViewState(prev => ({...prev, status: 'connected'}));
           }
@@ -254,6 +308,50 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
 
       pc.current = newPC;
       return newPC;
+  };
+
+  const restartIce = async () => {
+      if (!pc.current || !remoteUidRef.current) return;
+      console.log("[WebRTC] Restarting ICE...");
+      try {
+          const offer = await pc.current.createOffer({ iceRestart: true });
+          await pc.current.setLocalDescription(offer);
+          sendSignal({
+              type: 'offer',
+              payload: offer,
+              fromUid: user.uid,
+              fromName: config.username,
+              fromAvatar: config.avatarURL,
+              toUid: remoteUidRef.current
+          });
+      } catch (e) {
+          console.error("ICE Restart failed", e);
+      }
+  };
+
+  const checkConnectionStats = async () => {
+    if (!pc.current) return;
+    try {
+        const stats = await pc.current.getStats(null);
+        let rtt = 0;
+        let packetLoss = 0;
+
+        stats.forEach(report => {
+            if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                rtt = report.currentRoundTripTime || 0;
+            }
+            if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                packetLoss = report.packetsLost / (report.packetsReceived + report.packetsLost) || 0;
+            }
+        });
+
+        if (rtt > 0.3 || packetLoss > 0.05) setNetworkQuality('bad');
+        else if (rtt > 0.15 || packetLoss > 0.02) setNetworkQuality('poor');
+        else setNetworkQuality('good');
+
+    } catch (e) {
+        // ignore stats errors
+    }
   };
 
   const getMedia = async (videoMode: boolean) => {
@@ -269,6 +367,12 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           alert("Could not access camera/microphone. Check permissions.");
           throw e;
       }
+  };
+
+  const formatTime = (secs: number) => {
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
   // --- ACTIONS ---
@@ -400,6 +504,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
       remoteStream.current = null;
       
+      if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
+      if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
+      
       stopRingtone();
       setViewState({ status: 'idle', callId: null, isCaller: false, remoteName: '', remoteAvatar: '', type: 'video' });
       setIncomingCall(null);
@@ -408,6 +515,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       isCallerRef.current = false;
       setIsMuted(false);
       setIsVideoOff(false);
+      setCallDuration(0);
+      setNetworkQuality('good');
   };
   
   const toggleMute = () => {
@@ -509,15 +618,35 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col">
               <div className="flex-1 relative overflow-hidden bg-black">
                   
-                  {/* Remote Video - Always rendered but potentially hidden or covered */}
+                  {/* Remote Video */}
                   <video 
                       ref={remoteVideoRef} 
                       autoPlay 
                       playsInline 
                       className={`w-full h-full object-contain bg-black ${showRemoteVideo ? '' : 'hidden'}`} 
                   />
+
+                  {/* Top Bar (Quality & Timer) */}
+                  <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-30 pointer-events-none">
+                       {/* Connection Quality */}
+                       <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
+                           <Signal size={16} className={
+                               networkQuality === 'good' ? 'text-green-500' : 
+                               networkQuality === 'poor' ? 'text-yellow-500' : 'text-red-500'
+                           } />
+                           <span className="text-xs text-white/90 font-medium capitalize">{networkQuality}</span>
+                       </div>
+
+                       {/* Timer (only when connected) */}
+                       {viewState.status === 'connected' && (
+                           <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
+                               <Clock size={16} className="text-white/80" />
+                               <span className="text-xs text-white font-mono">{formatTime(callDuration)}</span>
+                           </div>
+                       )}
+                  </div>
                   
-                  {/* Avatar Overlay - Centered Absolutely to fix alignment issues */}
+                  {/* Avatar Overlay - Centered Absolutely */}
                   {(!showRemoteVideo) && (
                       <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center pointer-events-none">
                            <div className="relative mb-6">
@@ -536,9 +665,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       </div>
                   )}
 
-                  {/* Local Video Picture-in-Picture - Fixed to Top Right */}
+                  {/* Local Video PiP */}
                   {viewState.type === 'video' && (
-                      <div className="absolute top-4 right-4 w-28 sm:w-36 aspect-[3/4] bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-white/20 z-20 transition-all hover:scale-105 cursor-pointer">
+                      <div className="absolute top-16 right-4 w-28 sm:w-36 aspect-[3/4] bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-white/20 z-20 transition-all hover:scale-105 cursor-pointer">
                           <video 
                             ref={localVideoRef} 
                             autoPlay 
