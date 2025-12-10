@@ -1,5 +1,5 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Send, Paperclip, MapPin, Smile, Mic, Trash2, X, Image as ImageIcon, FileText, Edit2 } from 'lucide-react';
 import EmojiPicker from './EmojiPicker';
 import { compressImage } from '../utils/helpers';
@@ -123,12 +123,30 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Focus textarea when needed
-  React.useEffect(() => {
+  // Focus textarea when editing/replying
+  useEffect(() => {
      if (textareaRef.current && (editingMessageId || replyingTo)) {
          textareaRef.current.focus();
      }
   }, [editingMessageId, replyingTo]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      // We reset the height to 'auto' to correctly calculate the new scrollHeight
+      // This allows the textarea to shrink when text is deleted
+      textarea.style.height = 'auto'; 
+      
+      const maxHeight = 300; // Allow up to 300px height (approx 15 lines) before scrolling
+      const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+      
+      textarea.style.height = `${newHeight}px`;
+      
+      // Show scrollbar only if we hit the max height
+      textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    }
+  }, [inputText]);
 
   return (
       <footer className="bg-white dark:bg-slate-900 p-1.5 border-t border-slate-200 dark:border-slate-800 shadow-lg z-20 relative pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex flex-col items-center justify-center transition-colors">
@@ -260,7 +278,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
                             onKeyDown={handleKeyDown}
                             rows={1}
                             placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
-                            className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none max-h-[120px] overflow-y-auto leading-6 text-base h-[40px] block"
+                            className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none leading-6 text-base block"
+                            style={{ minHeight: '44px' }}
                          />
                      </div>
                      
