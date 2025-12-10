@@ -1,6 +1,5 @@
-
 import React, { useEffect, useRef, useState } from 'react';
-import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
@@ -63,6 +62,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   });
   
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isSpeakerMuted, setIsSpeakerMuted] = useState<boolean>(false); // New state for speaker mute
   const [isVideoOff, setIsVideoOff] = useState<boolean>(false);
   const [incomingCall, setIncomingCall] = useState<SignalData | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
@@ -107,6 +107,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
         
         if (remoteVideoRef.current && remoteStream.current) {
             remoteVideoRef.current.srcObject = remoteStream.current;
+            remoteVideoRef.current.muted = isSpeakerMuted; // Apply mute state
             remoteVideoRef.current.play().catch(e => console.warn("Remote autoplay failed", e));
         }
 
@@ -117,6 +118,13 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
         }
     }
   }, [viewState.status, viewState.type]);
+
+  // Handle speaker mute toggle syncing with video element
+  useEffect(() => {
+    if (remoteVideoRef.current) {
+        remoteVideoRef.current.muted = isSpeakerMuted;
+    }
+  }, [isSpeakerMuted]);
 
   // --- CALL DURATION TIMER ---
   useEffect(() => {
@@ -514,6 +522,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       remoteUidRef.current = null;
       isCallerRef.current = false;
       setIsMuted(false);
+      setIsSpeakerMuted(false);
       setIsVideoOff(false);
       setCallDuration(0);
       setNetworkQuality('good');
@@ -687,6 +696,13 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   >
                       {isMuted ? <MicOff size={28} /> : <Mic size={28} />}
                   </button>
+
+                  <button 
+                      onClick={() => setIsSpeakerMuted(!isSpeakerMuted)}
+                      className={`p-4 rounded-full transition-all ${isSpeakerMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
+                  >
+                      {isSpeakerMuted ? <VolumeX size={28} /> : <Volume2 size={28} />}
+                  </button>
                   
                   <button 
                       onClick={handleHangup} 
@@ -780,4 +796,3 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
 };
 
 export default CallManager;
-  
