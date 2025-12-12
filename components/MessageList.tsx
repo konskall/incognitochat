@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
   FileText, Download, Edit2, 
-  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, ZoomIn, Trash2
+  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, ZoomIn, Trash2, Eye
 } from 'lucide-react';
 
 interface MessageListProps {
@@ -15,8 +16,7 @@ interface MessageListProps {
   onReply: (msg: Message) => void;
 }
 
-// ... (ImagePreviewModal and LinkPreview components remain unchanged) ...
-// -- Image Preview Modal Component (Mobile Optimized: Floating Buttons) --
+// -- Image Preview Modal Component --
 const ImagePreviewModal: React.FC<{ 
     src: string; 
     alt: string; 
@@ -31,7 +31,8 @@ const ImagePreviewModal: React.FC<{
         };
     }, []);
 
-    const handleDownload = async () => {
+    const handleDownload = async (e: React.MouseEvent) => {
+        e.stopPropagation();
         try {
             const response = await fetch(src);
             const blob = await response.blob();
@@ -52,37 +53,38 @@ const ImagePreviewModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center animate-in fade-in duration-200 backdrop-blur-sm" onClick={onClose}>
             
-            {/* Controls Layer - Floating Buttons at Top Corners */}
-            {/* pointer-events-none ensures clicks between buttons go to the background/close action */}
-            <div className="absolute top-0 left-0 right-0 z-[210] flex justify-between items-start p-4 pt-[calc(1rem+env(safe-area-inset-top))] pointer-events-none">
+            {/* Controls Layer - Fixed Top Bar */}
+            <div className="absolute top-0 left-0 right-0 z-[210] flex justify-between items-center p-4 pt-[max(1rem,env(safe-area-inset-top))] bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
                  
-                 {/* Download Button - Top Left */}
+                 {/* Download Button */}
                  <button 
                     onClick={handleDownload}
-                    className="pointer-events-auto p-3.5 bg-black/40 text-white/90 rounded-full backdrop-blur-xl border border-white/10 shadow-lg active:scale-90 transition hover:bg-black/60"
+                    className="pointer-events-auto p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"
                     aria-label="Download Image"
+                    title="Download Original"
                  >
                     <Download size={24} />
                  </button>
 
-                 {/* Close Button - Top Right */}
+                 {/* Close Button */}
                  <button 
                     onClick={onClose} 
-                    className="pointer-events-auto p-3.5 bg-black/40 text-white/90 rounded-full backdrop-blur-xl border border-white/10 shadow-lg active:scale-90 transition hover:bg-black/60"
+                    className="pointer-events-auto p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"
                     aria-label="Close Preview"
+                    title="Close"
                  >
                     <X size={24} />
                  </button>
             </div>
                  
             {/* Image Area */}
-            <div className="w-full h-full flex items-center justify-center overflow-hidden" onClick={onClose}>
+            <div className="w-full h-full flex items-center justify-center p-4 overflow-hidden">
                 <img 
                     src={src} 
                     alt={alt} 
-                    className="max-w-full max-h-full object-contain"
+                    className="max-w-full max-h-full object-contain shadow-2xl rounded-lg"
                     onClick={(e) => e.stopPropagation()} 
                 />
             </div>
@@ -233,6 +235,27 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
       }
   };
 
+  const handleFileDownload = async (e: React.MouseEvent, url: string, filename: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+        console.error('Download failed', error);
+        window.open(url, '_blank');
+    }
+  };
+
   const renderContent = (text: string) => {
     if (!text) return null;
 
@@ -311,22 +334,44 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
     // 1. Image Handler
     if (type.startsWith('image/')) {
         return (
-            <div className="mt-2 mb-1 group/image relative">
-                <button 
-                    onClick={() => onImagePreview(url, name)} 
-                    title="Tap to preview" 
-                    className="block relative overflow-hidden rounded-lg cursor-zoom-in active:opacity-90 transition-opacity"
+            <div className="mt-2 mb-1 group/image relative inline-block">
+                <div 
+                    className="relative overflow-hidden rounded-xl border border-white/10 bg-black/5 dark:bg-white/5 cursor-pointer"
+                    onClick={() => onImagePreview(url, name)}
                 >
-                    <div className="absolute inset-0 bg-black/0 group-hover/image:bg-black/10 transition-colors z-10 flex items-center justify-center pointer-events-none">
-                        <ZoomIn className="text-white opacity-0 group-hover/image:opacity-100 transition-opacity" size={24} />
-                    </div>
                     <img 
                         src={url} 
                         alt={name} 
                         loading="lazy"
-                        className="max-w-full rounded-lg shadow-sm border border-white/10 max-h-[300px] w-auto object-contain bg-black/5 dark:bg-white/5" 
+                        className="max-w-full max-h-[300px] w-auto object-contain block" 
                     />
-                </button>
+                    
+                    {/* Centered Glassmorphism Control Pill - Always Visible on Mobile, Hover on Desktop */}
+                    <div className="absolute inset-0 flex items-center justify-center transition-opacity opacity-100 md:opacity-0 md:group-hover/image:opacity-100 bg-black/10">
+                        <div 
+                            className="flex items-center gap-1 p-1.5 bg-black/60 backdrop-blur-md rounded-full shadow-xl border border-white/20 transform scale-100 hover:scale-105 transition-transform"
+                            onClick={(e) => e.stopPropagation()} // Prevent triggering preview when clicking controls area
+                        >
+                            <button 
+                                onClick={() => onImagePreview(url, name)}
+                                className="p-2 text-white hover:bg-white/20 rounded-full transition-colors active:scale-95"
+                                title="Preview"
+                            >
+                                <Eye size={20} />
+                            </button>
+                            
+                            <div className="w-px h-5 bg-white/30 mx-0.5"></div>
+
+                            <button 
+                                onClick={(e) => handleFileDownload(e, url, name)}
+                                className="p-2 text-white hover:bg-white/20 rounded-full transition-colors active:scale-95"
+                                title="Download"
+                            >
+                                <Download size={20} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         );
     }
