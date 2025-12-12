@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
@@ -51,11 +52,11 @@ const ImagePreviewModal: React.FC<{
         }
     };
 
-    return (
-        <div className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center animate-in fade-in duration-200 backdrop-blur-sm" onClick={onClose}>
+    const modalContent = (
+        <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-in fade-in duration-200 backdrop-blur-sm" onClick={onClose}>
             
             {/* Controls Layer - Fixed Top Bar */}
-            <div className="absolute top-0 left-0 right-0 z-[210] flex justify-between items-center p-4 pt-[max(1rem,env(safe-area-inset-top))] bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
+            <div className="absolute top-0 left-0 right-0 z-[10000] flex justify-between items-center p-4 pt-[max(1rem,env(safe-area-inset-top))] bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
                  
                  {/* Download Button */}
                  <button 
@@ -89,6 +90,8 @@ const ImagePreviewModal: React.FC<{
             </div>
         </div>
     );
+
+    return createPortal(modalContent, document.body);
 };
 
 // -- Link Preview Component --
