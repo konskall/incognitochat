@@ -317,8 +317,11 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
                     title="Tap to preview" 
                     className="block relative overflow-hidden rounded-lg cursor-zoom-in active:opacity-90 transition-opacity"
                 >
-                    <div className="absolute inset-0 bg-black/0 group-hover/image:bg-black/10 transition-colors z-10 flex items-center justify-center pointer-events-none">
-                        <ZoomIn className="text-white opacity-0 group-hover/image:opacity-100 transition-opacity" size={24} />
+                    {/* Zoom Icon: Always visible on mobile, hover on desktop */}
+                    <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                        <div className="bg-black/30 backdrop-blur-sm p-2 rounded-full opacity-100 md:opacity-0 md:group-hover/image:opacity-100 transition-opacity">
+                            <ZoomIn className="text-white" size={24} />
+                        </div>
                     </div>
                     <img 
                         src={url} 
