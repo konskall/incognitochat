@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Monitor, MonitorOff, Wand2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
@@ -33,6 +33,8 @@ const ICE_SERVERS: RTCConfiguration = {
   iceCandidatePoolSize: 10,
 };
 
+type VoiceFilterType = 'normal' | 'deep' | 'robot';
+
 interface CallManagerProps {
   user: User;
   config: ChatConfig;
@@ -62,8 +64,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   });
   
   const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [isSpeakerMuted, setIsSpeakerMuted] = useState<boolean>(false); // New state for speaker mute
+  const [isSpeakerMuted, setIsSpeakerMuted] = useState<boolean>(false); 
   const [isVideoOff, setIsVideoOff] = useState<boolean>(false);
+  const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
+  const [voiceFilter, setVoiceFilter] = useState<VoiceFilterType>('normal');
+
   const [incomingCall, setIncomingCall] = useState<SignalData | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   
@@ -82,6 +87,12 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const remoteStream = useRef<MediaStream | null>(null);
   const channelRef = useRef<any>(null);
   const candidateQueue = useRef<RTCIceCandidateInit[]>([]);
+  
+  // Web Audio Context for Voice Filters
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const audioDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const processedStreamRef = useRef<MediaStream | null>(null);
   
   // DOM Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -271,6 +282,120 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
+  // --- AUDIO PROCESSING & FILTERS ---
+  const cleanupAudioProcessing = () => {
+      if (audioSourceRef.current) {
+          audioSourceRef.current.disconnect();
+          audioSourceRef.current = null;
+      }
+      if (audioDestRef.current) {
+          audioDestRef.current.disconnect();
+          audioDestRef.current = null;
+      }
+      if (audioCtxRef.current) {
+          audioCtxRef.current.close();
+          audioCtxRef.current = null;
+      }
+      processedStreamRef.current = null;
+  };
+
+  const setupAudioProcessing = (stream: MediaStream, type: VoiceFilterType): MediaStream => {
+      if (type === 'normal') {
+          cleanupAudioProcessing();
+          return stream;
+      }
+
+      cleanupAudioProcessing(); // Clear previous
+
+      try {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          const ctx = new AudioContextClass();
+          audioCtxRef.current = ctx;
+
+          const source = ctx.createMediaStreamSource(stream);
+          audioSourceRef.current = source;
+          
+          const destination = ctx.createMediaStreamDestination();
+          audioDestRef.current = destination;
+
+          if (type === 'deep') {
+              // Deep voice: Lowpass filter + slight distortion
+              const filter = ctx.createBiquadFilter();
+              filter.type = 'lowpass';
+              filter.frequency.value = 400; // Muffle high frequencies
+              
+              const gain = ctx.createGain();
+              gain.gain.value = 1.5; // Boost volume slightly to compensate
+              
+              source.connect(filter);
+              filter.connect(gain);
+              gain.connect(destination);
+          } 
+          else if (type === 'robot') {
+               // Robot voice: Ring Modulator (Oscillator modulation)
+               const oscillator = ctx.createOscillator();
+               oscillator.type = 'square';
+               oscillator.frequency.value = 50; 
+               oscillator.start();
+
+               const gain = ctx.createGain();
+               gain.gain.value = 0.0; // Carrier signal not heard directly
+
+               const ringMod = ctx.createGain();
+               ringMod.gain.value = 1.0; 
+
+               // Modulate input with oscillator
+               source.connect(ringMod);
+               oscillator.connect(ringMod.gain);
+               ringMod.connect(destination);
+               
+               // Blend dry signal a bit for intelligibility
+               const dryGain = ctx.createGain();
+               dryGain.gain.value = 0.4;
+               source.connect(dryGain);
+               dryGain.connect(destination);
+          }
+
+          const processedStream = destination.stream;
+          // IMPORTANT: Add the video track back if it exists in original stream
+          const videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack) {
+              processedStream.addTrack(videoTrack);
+          }
+          
+          processedStreamRef.current = processedStream;
+          return processedStream;
+      } catch (e) {
+          console.error("Audio Context Error", e);
+          return stream; // Fallback
+      }
+  };
+
+  const applyVoiceFilter = async (newFilter: VoiceFilterType) => {
+      if (!localStream.current) return;
+      
+      const audioTrack = localStream.current.getAudioTracks()[0];
+      if (!audioTrack) return;
+      
+      // Stop current processing to switch
+      const newStream = setupAudioProcessing(localStream.current, newFilter);
+      const newAudioTrack = newStream.getAudioTracks()[0];
+
+      if (pc.current && newAudioTrack) {
+          const sender = pc.current.getSenders().find(s => s.track?.kind === 'audio');
+          if (sender) {
+              await sender.replaceTrack(newAudioTrack);
+          }
+      }
+      setVoiceFilter(newFilter);
+  };
+
+  const cycleVoiceFilter = () => {
+      const next: VoiceFilterType = voiceFilter === 'normal' ? 'deep' : voiceFilter === 'deep' ? 'robot' : 'normal';
+      applyVoiceFilter(next);
+  };
+
+
   // --- WEBRTC CORE ---
   const createPC = (targetUid: string) => {
       const newPC = new RTCPeerConnection(ICE_SERVERS);
@@ -368,6 +493,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               audio: { echoCancellation: true, noiseSuppression: true }, 
               video: videoMode ? { facingMode: facingMode } : false 
           });
+          
           localStream.current = stream;
           return stream;
       } catch (e) {
@@ -474,6 +600,61 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
+  const toggleScreenShare = async () => {
+      if (!pc.current) return;
+      
+      try {
+          if (!isScreenSharing) {
+              // Start Sharing
+              const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+              const screenTrack = screenStream.getVideoTracks()[0];
+              
+              if (pc.current) {
+                  const sender = pc.current.getSenders().find(s => s.track?.kind === 'video');
+                  if (sender) {
+                      await sender.replaceTrack(screenTrack);
+                  }
+              }
+              
+              // Handle stop sharing from browser UI
+              screenTrack.onended = () => {
+                  stopScreenShare();
+              };
+
+              if (localVideoRef.current) {
+                  localVideoRef.current.srcObject = screenStream;
+              }
+              setIsScreenSharing(true);
+          } else {
+             await stopScreenShare();
+          }
+      } catch (e) {
+          console.error("Screen share error", e);
+          setIsScreenSharing(false);
+      }
+  };
+
+  const stopScreenShare = async () => {
+      if (!localStream.current) return;
+      
+      try {
+         // Revert to camera
+         const videoTrack = localStream.current.getVideoTracks()[0];
+         if (pc.current && videoTrack) {
+             const sender = pc.current.getSenders().find(s => s.track?.kind === 'video');
+             if (sender) {
+                 await sender.replaceTrack(videoTrack);
+             }
+         }
+         if (localVideoRef.current) {
+             localVideoRef.current.srcObject = localStream.current;
+         }
+         setIsScreenSharing(false);
+      } catch (e) {
+          console.error("Stop screen share error", e);
+      }
+  };
+
   const handleHangup = async () => {
       await sendSignal({
           type: 'bye',
@@ -510,6 +691,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           pc.current.close();
           pc.current = null;
       }
+      cleanupAudioProcessing();
       remoteStream.current = null;
       
       if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
@@ -524,6 +706,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       setIsMuted(false);
       setIsSpeakerMuted(false);
       setIsVideoOff(false);
+      setIsScreenSharing(false);
+      setVoiceFilter('normal');
       setCallDuration(0);
       setNetworkQuality('good');
   };
@@ -543,10 +727,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   };
 
   const switchCamera = async () => {
-      if (!localStream.current || viewState.type !== 'video') return;
+      if (!localStream.current || viewState.type !== 'video' || isScreenSharing) return;
       const newMode = facingMode === 'user' ? 'environment' : 'user';
       
       try {
+          // Stop current video track
           localStream.current.getVideoTracks().forEach(t => t.stop());
           
           const newStream = await navigator.mediaDevices.getUserMedia({
@@ -561,6 +746,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               if (sender) sender.replaceTrack(newVideoTrack);
           }
           
+          // Reconstruct local stream
           const audioTrack = localStream.current.getAudioTracks()[0];
           const combinedStream = new MediaStream([audioTrack, newVideoTrack]);
           
@@ -653,6 +839,14 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                                <span className="text-xs text-white font-mono">{formatTime(callDuration)}</span>
                            </div>
                        )}
+
+                        {/* Active Voice Filter Badge */}
+                        {voiceFilter !== 'normal' && (
+                           <div className="mt-2 flex items-center gap-2 bg-purple-500/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 animate-in fade-in slide-in-from-top-2">
+                               <Wand2 size={14} className="text-white" />
+                               <span className="text-xs text-white font-medium capitalize">{voiceFilter} Voice</span>
+                           </div>
+                       )}
                   </div>
                   
                   {/* Avatar Overlay - Centered Absolutely */}
@@ -682,51 +876,68 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                             autoPlay 
                             playsInline 
                             muted 
-                            className="w-full h-full object-cover transform scale-x-[-1]" 
+                            className={`w-full h-full object-cover ${!isScreenSharing && 'transform scale-x-[-1]'}`} 
                           />
                       </div>
                   )}
               </div>
 
               {/* Controls Bar - Optimized for Mobile */}
-              <div className="bg-slate-900/90 backdrop-blur-lg p-4 pb-8 sm:p-6 sm:pb-10 flex items-center justify-center gap-3 sm:gap-6 z-30 border-t border-white/10">
+              <div className="bg-slate-900/90 backdrop-blur-lg p-4 pb-8 sm:p-6 sm:pb-10 grid grid-cols-5 gap-3 sm:gap-6 z-30 border-t border-white/10 place-items-center">
                   <button 
                       onClick={toggleMute} 
-                      className={`p-3 sm:p-4 rounded-full transition-all ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
+                      className={`p-3 sm:p-4 rounded-full transition-all w-fit ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
                   >
                       {isMuted ? <MicOff className="w-5 h-5 sm:w-7 sm:h-7" /> : <Mic className="w-5 h-5 sm:w-7 sm:h-7" />}
                   </button>
 
                   <button 
                       onClick={() => setIsSpeakerMuted(!isSpeakerMuted)}
-                      className={`p-3 sm:p-4 rounded-full transition-all ${isSpeakerMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
+                      className={`p-3 sm:p-4 rounded-full transition-all w-fit ${isSpeakerMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
                   >
                       {isSpeakerMuted ? <VolumeX className="w-5 h-5 sm:w-7 sm:h-7" /> : <Volume2 className="w-5 h-5 sm:w-7 sm:h-7" />}
                   </button>
                   
                   <button 
-                      onClick={handleHangup} 
-                      className="p-4 sm:p-5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all shadow-lg shadow-red-500/40 hover:scale-105"
+                      onClick={cycleVoiceFilter}
+                      className={`p-3 sm:p-4 rounded-full transition-all w-fit ${voiceFilter !== 'normal' ? 'bg-purple-500 text-white' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
+                      title="Voice Filters"
                   >
-                      <PhoneOff className="w-6 h-6 sm:w-9 sm:h-9" fill="currentColor" />
+                      <Wand2 className="w-5 h-5 sm:w-7 sm:h-7" />
                   </button>
                   
                   {viewState.type === 'video' && (
                      <>
                         <button 
                             onClick={toggleVideo} 
-                            className={`p-3 sm:p-4 rounded-full transition-all ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
+                            className={`p-3 sm:p-4 rounded-full transition-all w-fit ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
                         >
                             {isVideoOff ? <VideoOff className="w-5 h-5 sm:w-7 sm:h-7" /> : <Video className="w-5 h-5 sm:w-7 sm:h-7" />}
                         </button>
+                        
                         <button 
-                            onClick={switchCamera} 
-                            className="p-3 sm:p-4 rounded-full bg-slate-800 text-white border border-white/20 hover:bg-slate-700"
-                        >
-                            <RotateCcw className="w-5 h-5 sm:w-7 sm:h-7" />
-                        </button>
+                             onClick={toggleScreenShare}
+                             className={`hidden sm:block p-3 sm:p-4 rounded-full transition-all w-fit ${isScreenSharing ? 'bg-green-500 text-white' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
+                             title="Share Screen"
+                         >
+                             {isScreenSharing ? <MonitorOff className="w-5 h-5 sm:w-7 sm:h-7" /> : <Monitor className="w-5 h-5 sm:w-7 sm:h-7" />}
+                         </button>
+
+                         <button 
+                             onClick={switchCamera} 
+                             className="sm:hidden p-3 sm:p-4 rounded-full bg-slate-800 text-white border border-white/20 hover:bg-slate-700 w-fit"
+                         >
+                             <RotateCcw className="w-5 h-5 sm:w-7 sm:h-7" />
+                         </button>
                      </>
                   )}
+                  
+                  <button 
+                      onClick={handleHangup} 
+                      className="col-span-5 sm:col-auto mt-2 sm:mt-0 p-4 sm:p-5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all shadow-lg shadow-red-500/40 hover:scale-105 w-fit"
+                  >
+                      <PhoneOff className="w-6 h-6 sm:w-9 sm:h-9" fill="currentColor" />
+                  </button>
               </div>
           </div>
        );
