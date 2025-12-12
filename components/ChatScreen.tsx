@@ -339,6 +339,21 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   // ----------------------------------------------------------------------
   // SUPABASE REALTIME PRESENCE & SIGNALING CHANNEL
   // ----------------------------------------------------------------------
+  
+  const updatePresenceState = async (overrides: Partial<Presence>) => {
+      if (!roomChannelRef.current || !user) return;
+      
+      await roomChannelRef.current.track({
+            uid: user.uid,
+            username: config.username,
+            avatar: config.avatarURL,
+            isTyping: false,
+            onlineAt: new Date().toISOString(),
+            status: 'active',
+            ...overrides
+      });
+  };
+
   useEffect(() => {
     if (!user || !config.roomKey || !isRoomReady) return;
 
@@ -362,9 +377,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             const userPresences = newState[key] as unknown as Presence[];
             if (userPresences && userPresences.length > 0) {
                 const p = userPresences[0]; 
-                activeUsers.push(p);
+                // Only add if status is active (or undefined which defaults to active)
+                if (p.status !== 'inactive') {
+                    activeUsers.push(p);
+                }
                 
-                if (p.uid !== user.uid && p.isTyping) {
+                if (p.uid !== user.uid && p.isTyping && p.status !== 'inactive') {
                     typers.push(p.username);
                 }
             }
@@ -384,26 +402,39 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           });
         }
       });
+      
+    // --- PAGE VISIBILITY & UNLOAD HANDLERS ---
+    const handleVisibilityChange = async () => {
+        if (!roomChannelRef.current || !user) return;
+
+        if (document.hidden) {
+            // User minimized or switched tabs - Mark as inactive immediately
+            await updatePresenceState({ status: 'inactive', isTyping: false });
+        } else {
+            // User came back - Mark as active
+            await updatePresenceState({ status: 'active' });
+        }
+    };
+
+    const handleBeforeUnload = async () => {
+        if (roomChannelRef.current) {
+            // Try to gracefully untrack immediately
+            await roomChannelRef.current.untrack();
+        }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      
       channel.unsubscribe();
       roomChannelRef.current = null;
     };
   }, [user, config.roomKey, isRoomReady, config.username, config.avatarURL]);
 
-  const updatePresenceState = async (overrides: Partial<Presence>) => {
-      if (!roomChannelRef.current || !user) return;
-      
-      await roomChannelRef.current.track({
-            uid: user.uid,
-            username: config.username,
-            avatar: config.avatarURL,
-            isTyping: false,
-            onlineAt: new Date().toISOString(),
-            status: 'active',
-            ...overrides
-      });
-  };
 
   // ----------------------------------------------------------------------
   // SUPABASE REALTIME MESSAGES (DB CHANNEL)
