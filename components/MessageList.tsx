@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
   FileText, Download, Edit2, 
-  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, ZoomIn, Trash2, Eye
+  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, Trash2, Eye
 } from 'lucide-react';
 
 interface MessageListProps {
@@ -346,11 +345,11 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
                         className="max-w-full max-h-[300px] w-auto object-contain block" 
                     />
                     
-                    {/* Centered Glassmorphism Control Pill - Always Visible on Mobile, Hover on Desktop */}
-                    <div className="absolute inset-0 flex items-center justify-center transition-opacity opacity-100 md:opacity-0 md:group-hover/image:opacity-100 bg-black/10">
+                    {/* Centered Glassmorphism Control Pill */}
+                    <div className="absolute inset-0 flex items-center justify-center transition-all duration-200 opacity-100 md:opacity-0 md:group-hover/image:opacity-100 bg-black/0 md:group-hover/image:bg-black/10">
                         <div 
-                            className="flex items-center gap-1 p-1.5 bg-black/60 backdrop-blur-md rounded-full shadow-xl border border-white/20 transform scale-100 hover:scale-105 transition-transform"
-                            onClick={(e) => e.stopPropagation()} // Prevent triggering preview when clicking controls area
+                            className="flex items-center gap-2 p-2 bg-black/60 backdrop-blur-md rounded-full shadow-xl border border-white/20 transform scale-100 hover:scale-105 transition-transform"
+                            onClick={(e) => e.stopPropagation()} 
                         >
                             <button 
                                 onClick={() => onImagePreview(url, name)}
@@ -360,7 +359,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
                                 <Eye size={20} />
                             </button>
                             
-                            <div className="w-px h-5 bg-white/30 mx-0.5"></div>
+                            <div className="w-px h-5 bg-white/30"></div>
 
                             <button 
                                 onClick={(e) => handleFileDownload(e, url, name)}
