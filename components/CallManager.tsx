@@ -88,8 +88,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   
   // Timer Refs
-  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const statsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // --- SYNC STATE TO REFS ---
   useEffect(() => {
@@ -688,42 +688,42 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   )}
               </div>
 
-              {/* Controls Bar */}
-              <div className="bg-slate-900/90 backdrop-blur-lg p-6 pb-10 flex items-center justify-center gap-6 z-30 border-t border-white/10">
+              {/* Controls Bar - Optimized for Mobile */}
+              <div className="bg-slate-900/90 backdrop-blur-lg p-4 pb-8 sm:p-6 sm:pb-10 flex items-center justify-center gap-3 sm:gap-6 z-30 border-t border-white/10">
                   <button 
                       onClick={toggleMute} 
-                      className={`p-4 rounded-full transition-all ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
+                      className={`p-3 sm:p-4 rounded-full transition-all ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
                   >
-                      {isMuted ? <MicOff size={28} /> : <Mic size={28} />}
+                      {isMuted ? <MicOff className="w-5 h-5 sm:w-7 sm:h-7" /> : <Mic className="w-5 h-5 sm:w-7 sm:h-7" />}
                   </button>
 
                   <button 
                       onClick={() => setIsSpeakerMuted(!isSpeakerMuted)}
-                      className={`p-4 rounded-full transition-all ${isSpeakerMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
+                      className={`p-3 sm:p-4 rounded-full transition-all ${isSpeakerMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
                   >
-                      {isSpeakerMuted ? <VolumeX size={28} /> : <Volume2 size={28} />}
+                      {isSpeakerMuted ? <VolumeX className="w-5 h-5 sm:w-7 sm:h-7" /> : <Volume2 className="w-5 h-5 sm:w-7 sm:h-7" />}
                   </button>
                   
                   <button 
                       onClick={handleHangup} 
-                      className="p-5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all shadow-lg shadow-red-500/40 hover:scale-105"
+                      className="p-4 sm:p-5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all shadow-lg shadow-red-500/40 hover:scale-105"
                   >
-                      <PhoneOff size={36} fill="currentColor" />
+                      <PhoneOff className="w-6 h-6 sm:w-9 sm:h-9" fill="currentColor" />
                   </button>
                   
                   {viewState.type === 'video' && (
                      <>
                         <button 
                             onClick={toggleVideo} 
-                            className={`p-4 rounded-full transition-all ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
+                            className={`p-3 sm:p-4 rounded-full transition-all ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
                         >
-                            {isVideoOff ? <VideoOff size={28} /> : <Video size={28} />}
+                            {isVideoOff ? <VideoOff className="w-5 h-5 sm:w-7 sm:h-7" /> : <Video className="w-5 h-5 sm:w-7 sm:h-7" />}
                         </button>
                         <button 
                             onClick={switchCamera} 
-                            className="p-4 rounded-full bg-slate-800 text-white border border-white/20 hover:bg-slate-700"
+                            className="p-3 sm:p-4 rounded-full bg-slate-800 text-white border border-white/20 hover:bg-slate-700"
                         >
-                            <RotateCcw size={28} />
+                            <RotateCcw className="w-5 h-5 sm:w-7 sm:h-7" />
                         </button>
                      </>
                   )}
