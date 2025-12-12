@@ -98,12 +98,18 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
 
   return (
     <header className="glass-panel px-3 py-3 flex items-center justify-between z-10 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
-        <div className="flex items-center gap-3 overflow-hidden">
-             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
+        {/* Room Info Section - Clickable */}
+        <button 
+            onClick={() => setShowParticipantsList(true)}
+            className="flex items-center gap-3 overflow-hidden text-left hover:bg-slate-100/50 dark:hover:bg-slate-800/50 p-1.5 -ml-1.5 rounded-xl transition-colors cursor-pointer group"
+        >
+             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0 group-hover:scale-105 transition-transform">
                 {config.roomName.substring(0,2).toUpperCase()}
              </div>
              <div className="min-w-0 flex flex-col justify-center">
-                 <h2 className="font-bold text-slate-800 dark:text-slate-100 leading-tight truncate text-sm md:text-base">{config.roomName}</h2>
+                 <h2 className="font-bold text-slate-800 dark:text-slate-100 leading-tight truncate text-sm md:text-base flex items-center gap-1.5">
+                    {config.roomName}
+                 </h2>
                  <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
                      <div className="flex items-center gap-1.5">
                          <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
@@ -120,7 +126,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                      </span>
                  </div>
              </div>
-        </div>
+        </button>
+
         <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center relative">
             <button
                 onClick={handleShare}
@@ -261,7 +268,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                 <LogOut size={20} />
             </button>
         </div>
-      </header>
+    </header>
   );
 };
 
