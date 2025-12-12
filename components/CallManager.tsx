@@ -75,6 +75,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const [networkQuality, setNetworkQuality] = useState<'good' | 'poor' | 'bad'>('good');
   const [callDuration, setCallDuration] = useState(0);
 
+  // Draggable State
+  const [pipPosition, setPipPosition] = useState({ x: 0, y: 0 }); // Will default to top-right via CSS if 0,0
+  const isDragging = useRef(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+
   // Refs
   const viewStateRef = useRef(viewState);
   const incomingCallRef = useRef(incomingCall);
@@ -96,6 +101,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   // DOM Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const pipContainerRef = useRef<HTMLDivElement>(null);
   
   // Timer Refs
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -110,6 +116,14 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   useEffect(() => {
     incomingCallRef.current = incomingCall;
   }, [incomingCall]);
+
+  // Set initial PiP position on load (to prevent jumping)
+  useEffect(() => {
+    if (window.innerWidth) {
+        // Default to top right, slightly down
+        setPipPosition({ x: window.innerWidth - 120 - 16, y: 80 });
+    }
+  }, []);
 
   // --- STREAM MANAGEMENT ---
   useEffect(() => {
@@ -508,6 +522,45 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  // --- DRAG LOGIC ---
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+      if (!pipContainerRef.current) return;
+      
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+
+      const rect = pipContainerRef.current.getBoundingClientRect();
+      dragOffset.current = {
+          x: clientX - rect.left,
+          y: clientY - rect.top
+      };
+      isDragging.current = true;
+  };
+
+  const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
+      if (!isDragging.current) return;
+      e.preventDefault(); // Prevent scrolling while dragging
+      
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+
+      let newX = clientX - dragOffset.current.x;
+      let newY = clientY - dragOffset.current.y;
+      
+      // Boundaries
+      const maxX = window.innerWidth - (pipContainerRef.current?.offsetWidth || 100);
+      const maxY = window.innerHeight - (pipContainerRef.current?.offsetHeight || 150);
+      
+      newX = Math.max(0, Math.min(newX, maxX));
+      newY = Math.max(0, Math.min(newY, maxY));
+      
+      setPipPosition({ x: newX, y: newY });
+  };
+
+  const handleDragEnd = () => {
+      isDragging.current = false;
+  };
+
   // --- ACTIONS ---
 
   const startCall = async (targetUid: string, targetName: string, targetAvatar: string, type: 'audio' | 'video') => {
@@ -753,39 +806,58 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
        const showRemoteVideo = viewState.type === 'video' && (viewState.status === 'connected' || viewState.status === 'reconnecting');
        
        return (
-          <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col">
+          <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col"
+              onMouseMove={handleDragMove}
+              onMouseUp={handleDragEnd}
+              onTouchMove={handleDragMove}
+              onTouchEnd={handleDragEnd}
+          >
               <div className="flex-1 relative overflow-hidden bg-black">
                   
-                  {/* Remote Video */}
+                  {/* Remote Video - Full Coverage */}
                   <video 
                       ref={remoteVideoRef} 
                       autoPlay 
                       playsInline 
-                      className={`w-full h-full object-contain bg-black ${showRemoteVideo ? '' : 'hidden'}`} 
+                      className={`absolute inset-0 w-full h-full object-cover bg-black ${showRemoteVideo ? '' : 'hidden'}`} 
                   />
 
-                  {/* Top Bar (Quality & Timer) */}
-                  <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-30 pointer-events-none pt-[calc(1rem+env(safe-area-inset-top))]">
-                       {/* Connection Quality */}
-                       <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
-                           <Signal size={16} className={
-                               networkQuality === 'good' ? 'text-green-500' : 
-                               networkQuality === 'poor' ? 'text-yellow-500' : 'text-red-500'
-                           } />
-                           <span className="text-xs text-white/90 font-medium capitalize">{networkQuality}</span>
+                  {/* Top Bar Layout (Signal Left, Timer Center, Switch Cam Right) */}
+                  <div className="absolute top-0 left-0 right-0 p-4 pt-[calc(1rem+env(safe-area-inset-top))] pointer-events-none z-30">
+                       <div className="relative flex justify-between items-center w-full">
+                           {/* Left: Signal & Quality */}
+                           <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 shadow-lg">
+                               <Signal size={16} className={
+                                   networkQuality === 'good' ? 'text-green-500' : 
+                                   networkQuality === 'poor' ? 'text-yellow-500' : 'text-red-500'
+                               } />
+                               <span className="text-xs text-white/90 font-medium capitalize hidden sm:inline">{networkQuality}</span>
+                           </div>
+
+                           {/* Center: Timer (Absolute Center) */}
+                           {viewState.status === 'connected' && (
+                               <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-2 bg-black/40 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/10 shadow-lg min-w-[80px] justify-center">
+                                   <Clock size={16} className="text-white/80" />
+                                   <span className="text-sm text-white font-mono font-medium">{formatTime(callDuration)}</span>
+                               </div>
+                           )}
+                           
+                           {/* Right: Switch Cam (Mobile) */}
+                           {viewState.type === 'video' && (
+                               <div className="pointer-events-auto">
+                                   <button 
+                                       onClick={switchCamera} 
+                                       className="sm:hidden p-2.5 bg-black/40 backdrop-blur-md rounded-full text-white border border-white/20 hover:bg-black/60 shadow-lg active:scale-95 transition"
+                                   >
+                                       <RotateCcw size={20} />
+                                   </button>
+                               </div>
+                           )}
                        </div>
 
-                       {/* Timer (only when connected) */}
-                       {viewState.status === 'connected' && (
-                           <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
-                               <Clock size={16} className="text-white/80" />
-                               <span className="text-xs text-white font-mono">{formatTime(callDuration)}</span>
-                           </div>
-                       )}
-
-                        {/* Active Voice Filter Badge */}
+                        {/* Active Voice Filter Badge (Below Signal) */}
                         {voiceFilter !== 'normal' && (
-                           <div className="mt-2 flex items-center gap-2 bg-purple-500/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 animate-in fade-in slide-in-from-top-2">
+                           <div className="mt-2 flex items-center gap-2 bg-purple-500/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 animate-in fade-in slide-in-from-top-2 w-fit">
                                <Wand2 size={14} className="text-white" />
                                <span className="text-xs text-white font-medium capitalize">{voiceFilter} Voice</span>
                            </div>
@@ -811,35 +883,35 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       </div>
                   )}
 
-                  {/* Switch Camera Button (Mobile) - Positioned Top Right to save space below */}
-                   {viewState.type === 'video' && (
-                       <button 
-                           onClick={switchCamera} 
-                           className="sm:hidden absolute top-4 right-4 z-40 p-2.5 bg-black/40 backdrop-blur-md rounded-full text-white border border-white/20 hover:bg-black/60 pt-[calc(1rem+env(safe-area-inset-top))]"
-                       >
-                           <RotateCcw size={20} />
-                       </button>
-                  )}
-
-                  {/* Local Video PiP */}
+                  {/* Local Video PiP - Draggable */}
                   {viewState.type === 'video' && (
-                      <div className="absolute top-16 right-4 sm:top-4 sm:right-4 w-24 sm:w-36 aspect-[3/4] bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-white/20 z-20 transition-all hover:scale-105 cursor-pointer pt-[calc(1rem+env(safe-area-inset-top))]">
+                      <div 
+                        ref={pipContainerRef}
+                        onMouseDown={handleDragStart}
+                        onTouchStart={handleDragStart}
+                        className="absolute w-28 sm:w-40 aspect-[3/4] bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-white/20 z-40 transition-shadow hover:shadow-blue-500/20 cursor-move"
+                        style={{
+                            left: pipPosition.x,
+                            top: pipPosition.y,
+                            touchAction: 'none' // Important for touch dragging
+                        }}
+                      >
                           <video 
                             ref={localVideoRef} 
                             autoPlay 
                             playsInline 
                             muted 
-                            className={`w-full h-full object-cover transform scale-x-[-1]`} 
+                            className={`w-full h-full object-cover transform scale-x-[-1] pointer-events-none`} 
                           />
                       </div>
                   )}
               </div>
 
               {/* Controls Bar - Floating Overlay Style */}
-              <div className="absolute bottom-0 left-0 right-0 z-40 px-4 pb-8 pt-6 flex items-center justify-evenly gap-2 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
+              <div className="absolute bottom-0 left-0 right-0 z-50 px-4 pb-8 pt-6 flex items-center justify-evenly gap-2 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
                   <button 
                       onClick={toggleMute} 
-                      className={`p-3 rounded-full transition-all shadow-lg ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
+                      className={`p-3.5 rounded-full transition-all shadow-lg ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
                   >
                       {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
                   </button>
@@ -847,7 +919,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   {viewState.type === 'video' && (
                       <button 
                           onClick={toggleVideo} 
-                          className={`p-3 rounded-full transition-all shadow-lg ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
+                          className={`p-3.5 rounded-full transition-all shadow-lg ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
                       >
                           {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
                       </button>
@@ -855,21 +927,21 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   
                   <button 
                       onClick={handleHangup} 
-                      className="p-4 rounded-full bg-red-600 text-white hover:bg-red-700 transition-all shadow-xl shadow-red-600/30 transform hover:scale-110"
+                      className="p-5 rounded-full bg-red-600 text-white hover:bg-red-700 transition-all shadow-xl shadow-red-600/30 transform hover:scale-110"
                   >
-                      <PhoneOff size={28} fill="currentColor" />
+                      <PhoneOff size={32} fill="currentColor" />
                   </button>
 
                    <button 
                       onClick={() => setIsSpeakerMuted(!isSpeakerMuted)}
-                      className={`p-3 rounded-full transition-all shadow-lg ${isSpeakerMuted ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
+                      className={`p-3.5 rounded-full transition-all shadow-lg ${isSpeakerMuted ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
                   >
                       {isSpeakerMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
                   </button>
                   
                   <button 
                       onClick={cycleVoiceFilter}
-                      className={`p-3 rounded-full transition-all shadow-lg ${voiceFilter !== 'normal' ? 'bg-purple-500 text-white' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
+                      className={`p-3.5 rounded-full transition-all shadow-lg ${voiceFilter !== 'normal' ? 'bg-purple-500 text-white' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
                       title="Voice Filters"
                   >
                       <Wand2 size={24} />
