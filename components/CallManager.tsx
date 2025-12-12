@@ -765,7 +765,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   />
 
                   {/* Top Bar (Quality & Timer) */}
-                  <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-30 pointer-events-none">
+                  <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-30 pointer-events-none pt-[calc(1rem+env(safe-area-inset-top))]">
                        {/* Connection Quality */}
                        <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
                            <Signal size={16} className={
@@ -811,9 +811,19 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       </div>
                   )}
 
+                  {/* Switch Camera Button (Mobile) - Positioned Top Right to save space below */}
+                   {viewState.type === 'video' && (
+                       <button 
+                           onClick={switchCamera} 
+                           className="sm:hidden absolute top-4 right-4 z-40 p-2.5 bg-black/40 backdrop-blur-md rounded-full text-white border border-white/20 hover:bg-black/60 pt-[calc(1rem+env(safe-area-inset-top))]"
+                       >
+                           <RotateCcw size={20} />
+                       </button>
+                  )}
+
                   {/* Local Video PiP */}
                   {viewState.type === 'video' && (
-                      <div className="absolute top-16 right-4 w-28 sm:w-36 aspect-[3/4] bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-white/20 z-20 transition-all hover:scale-105 cursor-pointer">
+                      <div className="absolute top-16 right-4 sm:top-4 sm:right-4 w-24 sm:w-36 aspect-[3/4] bg-slate-900 rounded-xl overflow-hidden shadow-2xl border-2 border-white/20 z-20 transition-all hover:scale-105 cursor-pointer pt-[calc(1rem+env(safe-area-inset-top))]">
                           <video 
                             ref={localVideoRef} 
                             autoPlay 
@@ -825,53 +835,44 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   )}
               </div>
 
-              {/* Controls Bar - Optimized for Mobile */}
-              <div className="bg-slate-900/90 backdrop-blur-lg p-4 pb-8 sm:p-6 sm:pb-10 grid grid-cols-5 gap-3 sm:gap-6 z-30 border-t border-white/10 place-items-center">
+              {/* Controls Bar - Floating Overlay Style */}
+              <div className="absolute bottom-0 left-0 right-0 z-40 px-4 pb-8 pt-6 flex items-center justify-evenly gap-2 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
                   <button 
                       onClick={toggleMute} 
-                      className={`p-3 sm:p-4 rounded-full transition-all w-fit ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
+                      className={`p-3 rounded-full transition-all shadow-lg ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
                   >
-                      {isMuted ? <MicOff className="w-5 h-5 sm:w-7 sm:h-7" /> : <Mic className="w-5 h-5 sm:w-7 sm:h-7" />}
+                      {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
                   </button>
 
-                  <button 
-                      onClick={() => setIsSpeakerMuted(!isSpeakerMuted)}
-                      className={`p-3 sm:p-4 rounded-full transition-all w-fit ${isSpeakerMuted ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
-                  >
-                      {isSpeakerMuted ? <VolumeX className="w-5 h-5 sm:w-7 sm:h-7" /> : <Volume2 className="w-5 h-5 sm:w-7 sm:h-7" />}
-                  </button>
-                  
-                  <button 
-                      onClick={cycleVoiceFilter}
-                      className={`p-3 sm:p-4 rounded-full transition-all w-fit ${voiceFilter !== 'normal' ? 'bg-purple-500 text-white' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
-                      title="Voice Filters"
-                  >
-                      <Wand2 className="w-5 h-5 sm:w-7 sm:h-7" />
-                  </button>
-                  
                   {viewState.type === 'video' && (
-                     <>
-                        <button 
-                            onClick={toggleVideo} 
-                            className={`p-3 sm:p-4 rounded-full transition-all w-fit ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
-                        >
-                            {isVideoOff ? <VideoOff className="w-5 h-5 sm:w-7 sm:h-7" /> : <Video className="w-5 h-5 sm:w-7 sm:h-7" />}
-                        </button>
-                        
-                         <button 
-                             onClick={switchCamera} 
-                             className="sm:hidden p-3 sm:p-4 rounded-full bg-slate-800 text-white border border-white/20 hover:bg-slate-700 w-fit"
-                         >
-                             <RotateCcw className="w-5 h-5 sm:w-7 sm:h-7" />
-                         </button>
-                     </>
+                      <button 
+                          onClick={toggleVideo} 
+                          className={`p-3 rounded-full transition-all shadow-lg ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
+                      >
+                          {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
+                      </button>
                   )}
                   
                   <button 
                       onClick={handleHangup} 
-                      className="col-span-5 sm:col-auto mt-2 sm:mt-0 p-4 sm:p-5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all shadow-lg shadow-red-500/40 hover:scale-105 w-fit"
+                      className="p-4 rounded-full bg-red-600 text-white hover:bg-red-700 transition-all shadow-xl shadow-red-600/30 transform hover:scale-110"
                   >
-                      <PhoneOff className="w-6 h-6 sm:w-9 sm:h-9" fill="currentColor" />
+                      <PhoneOff size={28} fill="currentColor" />
+                  </button>
+
+                   <button 
+                      onClick={() => setIsSpeakerMuted(!isSpeakerMuted)}
+                      className={`p-3 rounded-full transition-all shadow-lg ${isSpeakerMuted ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
+                  >
+                      {isSpeakerMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
+                  </button>
+                  
+                  <button 
+                      onClick={cycleVoiceFilter}
+                      className={`p-3 rounded-full transition-all shadow-lg ${voiceFilter !== 'normal' ? 'bg-purple-500 text-white' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
+                      title="Voice Filters"
+                  >
+                      <Wand2 size={24} />
                   </button>
               </div>
           </div>
