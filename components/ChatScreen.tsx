@@ -446,6 +446,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             table: 'messages',
             filter: `room_key=eq.${config.roomKey}` 
         }, (payload) => {
+            console.log("Realtime event received:", payload.eventType, payload);
+
             if (payload.eventType === 'INSERT') {
                  const d = payload.new;
                  const newMsg: Message = {
@@ -461,7 +463,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                      replyTo: d.reply_to,
                      type: d.type || 'text'
                  };
-                 setMessages(prev => [...prev, newMsg]);
+                 setMessages(prev => {
+                     // Check if message already exists to avoid duplicates
+                     if (prev.some(m => m.id === newMsg.id)) return prev;
+                     return [...prev, newMsg];
+                 });
 
                  if (d.uid !== user.uid && d.type !== 'system') {
                       if (soundEnabled) {
@@ -494,7 +500,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 } : m));
             }
             else if (payload.eventType === 'DELETE') {
-                 setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+                 // Important: payload.old contains the ID of the deleted record
+                 const deletedId = payload.old.id;
+                 if (deletedId) {
+                    console.log("Removing deleted message:", deletedId);
+                    setMessages(prev => prev.filter(m => m.id !== deletedId));
+                 } else {
+                    console.warn("Received DELETE event but no ID found in payload.old. Ensure 'REPLICA IDENTITY FULL' is enabled for the table.");
+                 }
             }
         })
         .subscribe();
@@ -674,14 +687,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, []);
 
   const handleDeleteMessage = useCallback(async (msgId: string) => {
-      // Optimistic UI update: Remove the message from the list immediately
+      // Optimistic UI update
       setMessages(prev => prev.filter(m => m.id !== msgId));
 
       try {
           const { error } = await supabase.from('messages').delete().eq('id', msgId);
           if (error) {
               console.error("Error deleting message:", error);
-              // Optionally revert the state here if we want to be strict, but alert is usually enough for quick apps
               alert("Failed to delete message. Please refresh.");
           }
       } catch (e) {
