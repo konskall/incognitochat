@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
   FileText, Download, Edit2, 
-  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, Trash2, Eye
+  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, Trash2, Eye, Play, Pause
 } from 'lucide-react';
 
 interface MessageListProps {
@@ -15,6 +15,135 @@ interface MessageListProps {
   onReact: (msg: Message, emoji: string) => void;
   onReply: (msg: Message) => void;
 }
+
+// -- Custom Audio Player Component (Waveform Style) --
+const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) => {
+    const audioRef = useRef<HTMLAudioElement>(null);
+    const waveformRef = useRef<HTMLDivElement>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
+
+    // Optimized bar count for mobile screens (approx 24-28 fits well in a chat bubble)
+    const bars = useMemo(() => {
+        return Array.from({ length: 26 }, () => Math.floor(Math.random() * 50) + 25);
+    }, []);
+
+    useEffect(() => {
+        const audio = audioRef.current;
+        if (!audio) return;
+
+        const setAudioData = () => {
+            if(audio.duration !== Infinity) setDuration(audio.duration);
+        };
+
+        const setAudioTime = () => {
+            setCurrentTime(audio.currentTime);
+        };
+
+        const handleEnded = () => {
+            setIsPlaying(false);
+            setCurrentTime(0);
+        };
+
+        audio.addEventListener('loadedmetadata', setAudioData);
+        audio.addEventListener('timeupdate', setAudioTime);
+        audio.addEventListener('ended', handleEnded);
+
+        return () => {
+            audio.removeEventListener('loadedmetadata', setAudioData);
+            audio.removeEventListener('timeupdate', setAudioTime);
+            audio.removeEventListener('ended', handleEnded);
+        };
+    }, []);
+
+    const togglePlay = () => {
+        const audio = audioRef.current;
+        if (!audio) return;
+
+        if (isPlaying) {
+            audio.pause();
+        } else {
+            audio.play();
+        }
+        setIsPlaying(!isPlaying);
+    };
+
+    const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+        const audio = audioRef.current;
+        const container = waveformRef.current;
+        if (!audio || !container) return;
+
+        const rect = container.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const percentage = Math.min(Math.max(0, x / rect.width), 1);
+        
+        const newTime = percentage * (duration || 0);
+        if (isFinite(newTime)) {
+             audio.currentTime = newTime;
+             setCurrentTime(newTime);
+        }
+    };
+
+    const formatTime = (time: number) => {
+        if (isNaN(time) || !isFinite(time)) return "0:00";
+        const minutes = Math.floor(time / 60);
+        const seconds = Math.floor(time % 60);
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    };
+
+    // Calculate percentage for progress
+    const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+    return (
+        <div className={`flex items-center gap-3 p-2.5 rounded-xl w-full sm:w-[260px] max-w-full select-none ${isMe ? 'text-white' : 'text-slate-800 dark:text-slate-200'}`}>
+            <audio ref={audioRef} src={src} preload="metadata" />
+            
+            <button 
+                onClick={togglePlay}
+                className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full transition-all shadow-sm
+                    ${isMe 
+                        ? 'bg-white text-blue-600 hover:bg-blue-50' 
+                        : 'bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-500'}`}
+            >
+                {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-0.5"/>}
+            </button>
+
+            {/* Flex-1 and min-w-0 ensures this container shrinks if needed and doesn't overflow */}
+            <div className="flex-1 flex flex-col justify-center gap-1.5 min-w-0">
+                
+                {/* Waveform Visualizer */}
+                <div 
+                    ref={waveformRef}
+                    className="flex items-center justify-between h-8 cursor-pointer w-full pr-1"
+                    onClick={handleSeek}
+                >
+                    {bars.map((height, index) => {
+                        const barPercent = (index / bars.length) * 100;
+                        const isActive = barPercent < progressPercent;
+                        
+                        return (
+                            <div 
+                                key={index}
+                                className={`w-1 sm:w-1.5 rounded-full transition-colors duration-100 ease-in-out
+                                    ${isActive 
+                                        ? (isMe ? 'bg-white/90' : 'bg-blue-500 dark:bg-blue-400') 
+                                        : (isMe ? 'bg-white/30' : 'bg-slate-300 dark:bg-slate-600')
+                                    }`}
+                                style={{ height: `${height}%` }}
+                            />
+                        );
+                    })}
+                </div>
+
+                <div className={`flex justify-between text-[10px] font-medium opacity-80 select-none px-0.5`}>
+                    <span>{formatTime(currentTime)}</span>
+                    <span>{formatTime(duration)}</span>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // -- Image Preview Modal Component --
 const ImagePreviewModal: React.FC<{ 
@@ -381,24 +510,9 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
     // 2. Audio/Voice Message Handler
     if (type.startsWith('audio/')) {
         return (
-            <div className="mt-2 mb-1 w-full max-w-full overflow-hidden">
-                <div className={`flex flex-col gap-1 rounded-xl p-2 ${isMe ? 'bg-blue-700/30' : 'bg-slate-100 dark:bg-slate-700'} w-full max-w-full`}>
-                    <div className="flex items-center justify-between mb-1 px-1">
-                         <span className={`text-[10px] font-bold uppercase tracking-wider truncate mr-2 ${isMe ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
-                            {name.includes('recorder') ? 'Voice Message' : name}
-                         </span>
-                         <span className={`text-[9px] whitespace-nowrap ${isMe ? 'text-blue-200' : 'text-slate-400'}`}>
-                            {sizeKB} KB
-                         </span>
-                    </div>
-                    
-                    {/* Native Audio Player */}
-                    <audio 
-                        controls 
-                        preload="metadata"
-                        className="w-full h-8 rounded opacity-90 focus:outline-none max-w-full" 
-                        src={url}
-                    />
+            <div className="mt-2 mb-1 w-full max-w-full">
+                <div className={`rounded-xl p-1 ${isMe ? 'bg-white/10 border border-white/20' : 'bg-slate-100 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600'}`}>
+                    <AudioPlayer src={url} isMe={isMe} />
                 </div>
             </div>
         );
