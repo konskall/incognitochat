@@ -78,5 +78,20 @@
   <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased selection:bg-primary-200 selection:text-primary-900">
     <div id="root" class="w-full"></div>
     <script type="module" src="/index.tsx"></script>
+        <!-- PWA Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          // Registering the existing service worker to fulfill PWA install criteria
+          navigator.serviceWorker.register('./firebase-messaging-sw.js')
+            .then((registration) => {
+              console.log('Service Worker registered successfully:', registration.scope);
+            })
+            .catch((err) => {
+              console.log('Service Worker registration failed:', err);
+            });
+        });
+      }
+    </script>
   </body>
 </html>
