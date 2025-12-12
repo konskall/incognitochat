@@ -925,6 +925,17 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                       </button>
                   )}
                   
+                   {/* Switch Camera (Desktop/Tablet) */}
+                   {viewState.type === 'video' && (
+                       <button 
+                           onClick={switchCamera} 
+                           className={`hidden sm:block p-3.5 rounded-full transition-all shadow-lg bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700`}
+                           title="Switch Camera"
+                       >
+                           <RotateCcw size={24} />
+                       </button>
+                  )}
+
                   <button 
                       onClick={handleHangup} 
                       className="p-5 rounded-full bg-red-600 text-white hover:bg-red-700 transition-all shadow-xl shadow-red-600/30 transform hover:scale-110"
