@@ -10,6 +10,7 @@ import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { WifiOff } from 'lucide-react';
 
 interface ChatScreenProps {
   config: ChatConfig;
@@ -968,9 +969,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   return (
     <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
+      {/* Offline Indicator - Modern Pill Style */}
       {isOffline && (
-        <div className="bg-red-500 text-white text-center py-1 text-sm font-bold animate-pulse absolute top-0 w-full z-50">
-          📴 You are offline. Messages will not be sent.
+        <div className="absolute top-20 left-0 right-0 flex justify-center z-40 pointer-events-none animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className="flex items-center gap-2.5 px-4 py-2 bg-slate-900/90 dark:bg-white/90 backdrop-blur-md rounded-full shadow-2xl border border-white/10 dark:border-slate-200/20">
+              <div className="bg-red-500/20 p-1.5 rounded-full">
+                <WifiOff size={14} className="text-red-500 animate-pulse" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-white dark:text-slate-900">No Connection</span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Reconnecting...</span>
+              </div>
+          </div>
         </div>
       )}
 
