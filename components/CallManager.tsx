@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Monitor, MonitorOff, Wand2 } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, Presence, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
@@ -66,7 +66,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isSpeakerMuted, setIsSpeakerMuted] = useState<boolean>(false); 
   const [isVideoOff, setIsVideoOff] = useState<boolean>(false);
-  const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [voiceFilter, setVoiceFilter] = useState<VoiceFilterType>('normal');
 
   const [incomingCall, setIncomingCall] = useState<SignalData | null>(null);
@@ -600,61 +599,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       }
   };
 
-  const toggleScreenShare = async () => {
-      if (!pc.current) return;
-      
-      try {
-          if (!isScreenSharing) {
-              // Start Sharing
-              const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-              const screenTrack = screenStream.getVideoTracks()[0];
-              
-              if (pc.current) {
-                  const sender = pc.current.getSenders().find(s => s.track?.kind === 'video');
-                  if (sender) {
-                      await sender.replaceTrack(screenTrack);
-                  }
-              }
-              
-              // Handle stop sharing from browser UI
-              screenTrack.onended = () => {
-                  stopScreenShare();
-              };
-
-              if (localVideoRef.current) {
-                  localVideoRef.current.srcObject = screenStream;
-              }
-              setIsScreenSharing(true);
-          } else {
-             await stopScreenShare();
-          }
-      } catch (e) {
-          console.error("Screen share error", e);
-          setIsScreenSharing(false);
-      }
-  };
-
-  const stopScreenShare = async () => {
-      if (!localStream.current) return;
-      
-      try {
-         // Revert to camera
-         const videoTrack = localStream.current.getVideoTracks()[0];
-         if (pc.current && videoTrack) {
-             const sender = pc.current.getSenders().find(s => s.track?.kind === 'video');
-             if (sender) {
-                 await sender.replaceTrack(videoTrack);
-             }
-         }
-         if (localVideoRef.current) {
-             localVideoRef.current.srcObject = localStream.current;
-         }
-         setIsScreenSharing(false);
-      } catch (e) {
-          console.error("Stop screen share error", e);
-      }
-  };
-
   const handleHangup = async () => {
       await sendSignal({
           type: 'bye',
@@ -706,7 +650,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       setIsMuted(false);
       setIsSpeakerMuted(false);
       setIsVideoOff(false);
-      setIsScreenSharing(false);
       setVoiceFilter('normal');
       setCallDuration(0);
       setNetworkQuality('good');
@@ -727,7 +670,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   };
 
   const switchCamera = async () => {
-      if (!localStream.current || viewState.type !== 'video' || isScreenSharing) return;
+      if (!localStream.current || viewState.type !== 'video') return;
       const newMode = facingMode === 'user' ? 'environment' : 'user';
       
       try {
@@ -876,7 +819,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                             autoPlay 
                             playsInline 
                             muted 
-                            className={`w-full h-full object-cover ${!isScreenSharing && 'transform scale-x-[-1]'}`} 
+                            className={`w-full h-full object-cover transform scale-x-[-1]`} 
                           />
                       </div>
                   )}
@@ -915,14 +858,6 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                             {isVideoOff ? <VideoOff className="w-5 h-5 sm:w-7 sm:h-7" /> : <Video className="w-5 h-5 sm:w-7 sm:h-7" />}
                         </button>
                         
-                        <button 
-                             onClick={toggleScreenShare}
-                             className={`hidden sm:block p-3 sm:p-4 rounded-full transition-all w-fit ${isScreenSharing ? 'bg-green-500 text-white' : 'bg-slate-800 text-white border border-white/20 hover:bg-slate-700'}`}
-                             title="Share Screen"
-                         >
-                             {isScreenSharing ? <MonitorOff className="w-5 h-5 sm:w-7 sm:h-7" /> : <Monitor className="w-5 h-5 sm:w-7 sm:h-7" />}
-                         </button>
-
                          <button 
                              onClick={switchCamera} 
                              className="sm:hidden p-3 sm:p-4 rounded-full bg-slate-800 text-white border border-white/20 hover:bg-slate-700 w-fit"
