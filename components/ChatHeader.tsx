@@ -1,6 +1,6 @@
 
-import React, { useRef, useEffect } from 'react';
-import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
+import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut, Download } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
 
 interface ChatHeaderProps {
@@ -50,6 +50,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
 }) => {
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   // Close settings menu when clicking outside
   useEffect(() => {
@@ -70,6 +71,36 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showSettingsMenu, setShowSettingsMenu]);
+
+  // Handle PWA Install Prompt
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: any) => {
+      // Prevent the mini-infobar from appearing on mobile
+      e.preventDefault();
+      // Stash the event so it can be triggered later.
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+
+    // Show the install prompt
+    deferredPrompt.prompt();
+
+    // Wait for the user to respond to the prompt
+    const { outcome } = await deferredPrompt.userChoice;
+    
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   const handleShare = async () => {
     const baseUrl = window.location.href.split('?')[0]; 
@@ -122,6 +153,18 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
              </div>
         </div>
         <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center relative">
+            
+            {/* Install App Button (Desktop) */}
+            {deferredPrompt && (
+                <button
+                    onClick={handleInstallClick}
+                    className="hidden sm:block p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition"
+                    title="Install App"
+                >
+                    <Download size={20} />
+                </button>
+            )}
+
             <button
                 onClick={handleShare}
                 className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
@@ -189,6 +232,18 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             {showSettingsMenu && (
                 <>
                     <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5 sm:hidden" ref={settingsMenuRef}>
+                        
+                        {/* Install App Button (Mobile Menu) */}
+                        {deferredPrompt && (
+                             <button 
+                                onClick={() => { handleInstallClick(); setShowSettingsMenu(false); }}
+                                className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition mb-1"
+                            >
+                                <Download size={18} />
+                                <span>Install App</span>
+                            </button>
+                        )}
+
                         {canVibrate && (
                              <button 
                                 onClick={() => { setVibrationEnabled(!vibrationEnabled); setShowSettingsMenu(false); }}
