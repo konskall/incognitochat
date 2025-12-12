@@ -97,13 +97,10 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   };
 
   return (
-    <header className="glass-panel px-3 py-3 flex items-center justify-between z-10 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
-        {/* Room Info Section - Clickable */}
-        <button 
-            onClick={() => setShowParticipantsList(true)}
-            className="flex items-center gap-3 overflow-hidden text-left hover:bg-slate-100/50 dark:hover:bg-slate-800/50 p-1.5 -ml-1.5 rounded-xl transition-colors cursor-pointer group"
-        >
-             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0 group-hover:scale-105 transition-transform">
+    <header className="glass-panel px-4 py-3 flex items-center justify-between z-10 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
+        {/* Room Info Section - Static Div */}
+        <div className="flex items-center gap-3 overflow-hidden">
+             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
                 {config.roomName.substring(0,2).toUpperCase()}
              </div>
              <div className="min-w-0 flex flex-col justify-center">
@@ -126,7 +123,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                      </span>
                  </div>
              </div>
-        </button>
+        </div>
 
         <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center relative">
             <button
