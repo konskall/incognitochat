@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
@@ -974,46 +975,56 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                 </div>
                 
                 <div className="max-h-[60vh] overflow-y-auto p-2 space-y-1">
-                    {users.filter(u => u.uid !== user.uid).map((u) => (
-                        <div key={u.uid} className="flex items-center justify-between p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-xl transition group">
-                            <div className="flex items-center gap-3 overflow-hidden">
-                                <div className="relative">
-                                    <img src={u.avatar} className="w-10 h-10 rounded-full bg-slate-200 object-cover border border-slate-100 dark:border-slate-600" />
-                                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white dark:border-slate-800 rounded-full"></span>
+                    {users.map((u) => {
+                        const isMe = u.uid === user.uid;
+                        const lastSeen = u.onlineAt ? new Date(u.onlineAt).toLocaleString([], {
+                             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                        }) : 'Just now';
+                        
+                        return (
+                            <div key={u.uid} className="flex items-center justify-between p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-xl transition group">
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                    <div className="relative">
+                                        <img src={u.avatar} className="w-10 h-10 rounded-full bg-slate-200 object-cover border border-slate-100 dark:border-slate-600" alt={u.username} />
+                                        <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 border-2 border-white dark:border-slate-800 rounded-full ${u.status === 'active' ? 'bg-green-500' : 'bg-orange-400'}`}></span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="font-medium text-slate-700 dark:text-slate-200 truncate flex items-center gap-1 text-sm">
+                                            {u.username} {isMe && "(You)"}
+                                            {roomCreatorId === u.uid && <Crown size={12} className="text-yellow-500 fill-yellow-500" />}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400">
+                                            {u.status === 'active' ? 'Online' : 'Idle'} • {lastSeen}
+                                        </span>
+                                    </div>
                                 </div>
-                                <div className="flex flex-col">
-                                    <span className="font-medium text-slate-700 dark:text-slate-200 truncate flex items-center gap-1 text-sm">
-                                        {u.username}
-                                        {roomCreatorId === u.uid && <Crown size={12} className="text-yellow-500 fill-yellow-500" />}
-                                    </span>
-                                    <span className="text-[10px] text-slate-400">Online</span>
-                                </div>
+                                
+                                {!isMe && (
+                                    <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                        <button 
+                                            onClick={() => startCall(u.uid, u.username, u.avatar, 'audio')} 
+                                            className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition"
+                                            title="Audio Call"
+                                        >
+                                            <Phone size={18} />
+                                        </button>
+                                        <button 
+                                            onClick={() => startCall(u.uid, u.username, u.avatar, 'video')} 
+                                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition"
+                                            title="Video Call"
+                                        >
+                                            <Video size={18} />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
-                            
-                            <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                <button 
-                                    onClick={() => startCall(u.uid, u.username, u.avatar, 'audio')} 
-                                    className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition"
-                                    title="Audio Call"
-                                >
-                                    <Phone size={18} />
-                                </button>
-                                <button 
-                                    onClick={() => startCall(u.uid, u.username, u.avatar, 'video')} 
-                                    className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition"
-                                    title="Video Call"
-                                >
-                                    <Video size={18} />
-                                </button>
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                     
-                    {users.length <= 1 && (
+                    {users.length === 0 && (
                         <div className="p-8 text-center text-slate-400 dark:text-slate-500 text-sm flex flex-col items-center gap-2">
                             <AlertCircle size={24} className="opacity-50" />
-                            <p>No one else is here yet.</p>
-                            <p className="text-xs opacity-70">Share the room details to invite friends!</p>
+                            <p>No participants found.</p>
                         </div>
                     )}
                 </div>
