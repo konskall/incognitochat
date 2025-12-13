@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { ChatConfig, Message, User, Attachment, Presence, Subscriber } from '../types';
@@ -11,6 +12,7 @@ import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { WifiOff } from 'lucide-react';
+import { subscribeToPushNotifications, unsubscribeFromPushNotifications } from '../utils/pushService';
 
 interface ChatScreenProps {
   config: ChatConfig;
@@ -225,6 +227,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     window.addEventListener('online', handleNetworkChange);
     window.addEventListener('offline', handleNetworkChange);
 
+    // Initial check for notification permission
     if ('Notification' in window && Notification.permission === 'granted') {
       setNotificationsEnabled(true);
     }
@@ -279,7 +282,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     initRoom();
   }, [user, config.roomKey, config.roomName, config.username]);
 
-  // Check Subscription
+  // Check Email Subscription
   useEffect(() => {
       if (isRoomReady && user && config.roomKey) {
           const checkSubscription = async () => {
@@ -303,6 +306,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           checkSubscription();
       }
   }, [isRoomReady, user, config.roomKey]);
+
+  // Check Push Subscription on load
+  useEffect(() => {
+    // We can assume if notifications are enabled in browser, we might have a push sub
+    // or we should try to restore state. For now, we just trust local permission state.
+    // Ideally, we'd check the DB for existence of subscription too.
+  }, []);
 
   // Join Message & Notification
   useEffect(() => {
@@ -601,15 +611,27 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   const toggleNotifications = async () => {
       if (notificationsEnabled) {
+          // Disable notifications
           setNotificationsEnabled(false);
           setShowSettingsMenu(false);
+          if (user && config.roomKey) {
+            await unsubscribeFromPushNotifications(user.uid, config.roomKey);
+          }
           return;
       }
-      if (Notification.permission === 'granted') {
+      
+      // Enable notifications
+      const p = await Notification.requestPermission();
+      if (p === 'granted') {
           setNotificationsEnabled(true);
-      } else if (Notification.permission !== 'denied') {
-          const p = await Notification.requestPermission();
-          if (p === 'granted') setNotificationsEnabled(true);
+          // Subscribe to Web Push
+          if (user && config.roomKey) {
+             const success = await subscribeToPushNotifications(user.uid, config.roomKey);
+             if (success) console.log("Web Push Subscribed");
+             else console.error("Web Push Subscription Failed");
+          }
+      } else {
+          alert("Permission needed to show notifications.");
       }
       setShowSettingsMenu(false);
   };
