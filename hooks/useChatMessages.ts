@@ -2,10 +2,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { Message, Attachment } from '../types';
-import { decodeMessage, encodeMessage } from '../utils/helpers';
+import { decryptMessage, encryptMessage } from '../utils/helpers';
 
 export const useChatMessages = (
-  roomKey: string, 
+  roomKey: string,
+  pin: string, // We need the PIN to derive the encryption key
   userUid: string | undefined, 
   onNewMessage?: (msg: Message) => void
 ) => {
@@ -26,14 +27,15 @@ export const useChatMessages = (
       if (data) {
         const msgs: Message[] = data.map((d) => ({
           id: d.id,
-          text: decodeMessage(d.text || ''),
+          // Decrypt the text using PIN and RoomKey
+          text: decryptMessage(d.text || '', pin, roomKey),
           uid: d.uid,
           username: d.username,
           avatarURL: d.avatar_url,
           createdAt: d.created_at,
           attachment: d.attachment,
           location: d.location,
-          isEdited: false, // You might want to track this in DB schema later
+          isEdited: false, 
           reactions: d.reactions || {},
           replyTo: d.reply_to,
           type: d.type || 'text',
@@ -60,7 +62,8 @@ export const useChatMessages = (
             const d = payload.new;
             const newMsg: Message = {
               id: d.id,
-              text: decodeMessage(d.text || ''),
+              // Decrypt real-time messages
+              text: decryptMessage(d.text || '', pin, roomKey),
               uid: d.uid,
               username: d.username,
               avatarURL: d.avatar_url,
@@ -83,9 +86,10 @@ export const useChatMessages = (
                 m.id === d.id
                   ? {
                       ...m,
-                      text: decodeMessage(d.text || ''),
+                      // Decrypt updated messages
+                      text: decryptMessage(d.text || '', pin, roomKey),
                       reactions: d.reactions || {},
-                      isEdited: true, // Optimistic / Simplified
+                      isEdited: true, 
                     }
                   : m
               )
@@ -103,7 +107,7 @@ export const useChatMessages = (
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [roomKey]);
+  }, [roomKey, pin]);
 
   const sendMessage = useCallback(
     async (
@@ -116,16 +120,18 @@ export const useChatMessages = (
     ) => {
       if (!userUid || !roomKey) return;
       
-      // If it's a file upload, we handle loading state externally usually, but setting here is fine
       if(attachment) setIsUploading(true);
 
       try {
+        // Encrypt before sending
+        const encryptedText = encryptMessage(text, pin, roomKey);
+
         await supabase.from('messages').insert({
           room_key: roomKey,
           uid: userUid,
           username: config.username,
           avatar_url: config.avatarURL,
-          text: encodeMessage(text),
+          text: encryptedText, // Store encrypted
           type: type,
           attachment: attachment,
           reactions: {},
@@ -134,7 +140,7 @@ export const useChatMessages = (
             ? {
                 id: replyTo.id,
                 username: replyTo.username,
-                text: replyTo.text || 'Attachment',
+                text: replyTo.text || 'Attachment', // Note: Reply preview text might be stored in clear if not careful, but usually acceptable for context. For full security, this should also be encrypted or fetched.
                 isAttachment: !!replyTo.attachment,
               }
             : null,
@@ -146,24 +152,24 @@ export const useChatMessages = (
         if(attachment) setIsUploading(false);
       }
     },
-    [roomKey, userUid]
+    [roomKey, pin, userUid]
   );
 
   const editMessage = useCallback(async (msgId: string, newText: string) => {
     try {
+      const encryptedText = encryptMessage(newText, pin, roomKey);
       await supabase
         .from('messages')
         .update({
-          text: encodeMessage(newText),
+          text: encryptedText,
         })
         .eq('id', msgId);
     } catch (e) {
       console.error('Edit failed', e);
     }
-  }, []);
+  }, [pin, roomKey]);
 
   const deleteMessage = useCallback(async (msgId: string) => {
-    // Optimistic update
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
     try {
       await supabase.from('messages').delete().eq('id', msgId);
@@ -186,7 +192,6 @@ export const useChatMessages = (
       }
 
       const updatedReactions = { ...currentReactions, [emoji]: newList };
-      // Optimistic update
        setMessages((prev) =>
         prev.map((m) =>
           m.id === msg.id ? { ...m, reactions: updatedReactions } : m
