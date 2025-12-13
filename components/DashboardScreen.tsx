@@ -5,8 +5,8 @@ import { User, ChatConfig, Room } from '../types';
 import { generateRoomKey, compressImage } from '../utils/helpers';
 import { 
   LogOut, Trash2, ArrowRight, Loader2, 
-  Camera, 
-  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing
+  Camera, Upload, RotateCcw,
+  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Image as ImageIcon, Link as LinkIcon
 } from 'lucide-react';
 
 interface DashboardScreenProps {
@@ -30,12 +30,14 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   // Profile State
   const [displayName, setDisplayName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [googleAvatarUrl, setGoogleAvatarUrl] = useState(''); // Store original google/provider image
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   
   // Avatar Editing State
   const [tempAvatarUrl, setTempAvatarUrl] = useState('');
   const [linkInput, setLinkInput] = useState('');
+  const [showLinkInput, setShowLinkInput] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load User Data & Rooms
@@ -49,7 +51,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           
           const finalName = meta.display_name || meta.full_name || meta.name || localStorage.getItem('chatUsername') || user.email?.split('@')[0] || 'User';
           
-          const finalAvatar = meta.custom_avatar || meta.avatar_url || meta.picture || localStorage.getItem('chatAvatarURL') || `https://ui-avatars.com/api/?name=${finalName}&background=random`;
+          // Determine the "original" avatar (from Google/Provider)
+          const original = meta.picture || meta.avatar_url || `https://ui-avatars.com/api/?name=${finalName}&background=random`;
+          setGoogleAvatarUrl(original);
+
+          // Determine current display avatar
+          const finalAvatar = meta.custom_avatar || localStorage.getItem('chatAvatarURL') || original;
           
           setDisplayName(finalName);
           setAvatarUrl(finalAvatar);
@@ -205,6 +212,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           localStorage.setItem('chatAvatarURL', tempAvatarUrl);
           
           setIsEditingProfile(false);
+          setShowLinkInput(false);
       } catch (e: any) {
           console.error("Profile update failed", e);
           alert("Failed to update profile: " + e.message);
@@ -219,9 +227,16 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       setTempAvatarUrl(randomUrl);
   };
 
+  const handleRestoreGoogleAvatar = () => {
+      if (googleAvatarUrl) {
+          setTempAvatarUrl(googleAvatarUrl);
+      }
+  };
+
   const handleLinkAvatar = () => {
       if (linkInput.trim().startsWith('http')) {
           setTempAvatarUrl(linkInput.trim());
+          setShowLinkInput(false);
       }
   };
 
@@ -421,73 +436,82 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 
-                {/* Left Column: Compact Profile Card */}
+                {/* Left Column: Profile Card - Redesigned for Pro Look */}
                 <div className="lg:col-span-4 xl:col-span-3 space-y-6">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 transition-all duration-300">
+                    <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-900 dark:to-slate-950 rounded-2xl shadow-lg shadow-slate-200/50 dark:shadow-none border border-slate-200/60 dark:border-slate-800 p-5 transition-all duration-300 relative overflow-hidden group">
                         
+                        {/* Subtle decorative background blur */}
+                        <div className="absolute -top-10 -right-10 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/20 transition-all duration-500"></div>
+
                         {isEditingProfile ? (
                             // --- EDIT MODE ---
-                            <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-300">
-                                <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
-                                    {/* Avatar Edit */}
-                                    <div className="relative group flex-shrink-0">
+                            <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-300 relative z-10">
+                                <div className="flex flex-col items-center gap-4">
+                                    <div className="relative group/edit-avatar">
                                         <img 
                                             src={tempAvatarUrl} 
                                             alt="Preview" 
-                                            className="w-20 h-20 rounded-full object-cover border-4 border-slate-100 dark:border-slate-800 bg-slate-100"
+                                            className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-slate-800 shadow-md ring-1 ring-slate-100 dark:ring-slate-700"
                                         />
-                                        <label className="absolute -bottom-1 -right-1 p-2 bg-blue-600 text-white rounded-full cursor-pointer hover:bg-blue-700 transition shadow-lg ring-2 ring-white dark:ring-slate-900">
-                                            <Camera size={14} />
-                                            <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
-                                        </label>
-                                    </div>
-                                    
-                                    {/* Fields */}
-                                    <div className="flex-1 w-full space-y-3">
-                                        <div>
-                                            <label className="text-[10px] uppercase font-bold text-slate-400 ml-1 mb-1 block">Display Name</label>
-                                            <input 
-                                                type="text" 
-                                                value={displayName} 
-                                                onChange={(e) => setDisplayName(e.target.value)}
-                                                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                                placeholder="Display Name"
-                                            />
+                                        <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/edit-avatar:opacity-100 transition-opacity">
+                                            <span className="text-white text-xs font-bold">Preview</span>
                                         </div>
                                     </div>
+                                    
+                                    <input 
+                                        type="text" 
+                                        value={displayName} 
+                                        onChange={(e) => setDisplayName(e.target.value)}
+                                        className="w-full text-center px-3 py-2 border-b-2 border-slate-200 dark:border-slate-700 bg-transparent focus:border-blue-500 outline-none transition-all font-bold text-lg text-slate-800 dark:text-white placeholder:font-normal"
+                                        placeholder="Display Name"
+                                    />
                                 </div>
 
-                                <div>
-                                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1 mb-1 block">Avatar Options</label>
-                                    <div className="flex gap-2">
-                                            <button 
-                                            onClick={handleGenerateRandomAvatar}
-                                            className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition flex items-center gap-2"
-                                            title="Generate Random Avatar"
-                                            >
-                                            <RefreshCw size={14} /> Random
-                                            </button>
-                                            <div className="flex-1 flex relative">
-                                            <input 
-                                                type="text" 
-                                                value={linkInput}
-                                                onChange={(e) => setLinkInput(e.target.value)}
-                                                placeholder="Paste image URL..."
-                                                className="w-full pl-3 pr-9 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent focus:ring-2 focus:ring-blue-500 outline-none"
-                                            />
-                                            <button 
-                                                onClick={handleLinkAvatar} 
-                                                className="absolute right-1 top-1/2 -translate-y-1/2 p-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition"
-                                            >
-                                                <ArrowRight size={12} />
-                                            </button>
-                                            </div>
-                                    </div>
+                                {/* Avatar Action Grid */}
+                                <div className="grid grid-cols-4 gap-2">
+                                    <label className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Upload Photo">
+                                        <Upload size={18} className="text-blue-600 dark:text-blue-400" />
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Upload</span>
+                                        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
+                                    </label>
+
+                                    <button onClick={handleGenerateRandomAvatar} className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Random Avatar">
+                                        <RefreshCw size={18} className="text-purple-600 dark:text-purple-400" />
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Random</span>
+                                    </button>
+                                    
+                                    <button onClick={() => setShowLinkInput(!showLinkInput)} className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Link URL">
+                                        <LinkIcon size={18} className="text-orange-600 dark:text-orange-400" />
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Link</span>
+                                    </button>
+
+                                    <button onClick={handleRestoreGoogleAvatar} className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Restore Original">
+                                        <RotateCcw size={18} className="text-green-600 dark:text-green-400" />
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Reset</span>
+                                    </button>
                                 </div>
+
+                                {showLinkInput && (
+                                    <div className="flex relative animate-in slide-in-from-top-2 fade-in">
+                                        <input 
+                                            type="text" 
+                                            value={linkInput}
+                                            onChange={(e) => setLinkInput(e.target.value)}
+                                            placeholder="https://image-url.png"
+                                            className="w-full pl-3 pr-9 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
+                                        />
+                                        <button 
+                                            onClick={handleLinkAvatar} 
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 p-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition"
+                                        >
+                                            <ArrowRight size={12} />
+                                        </button>
+                                    </div>
+                                )}
                                 
-                                <div className="flex gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 mt-2">
+                                <div className="flex gap-3 pt-2">
                                     <button 
-                                        onClick={() => setIsEditingProfile(false)}
+                                        onClick={() => { setIsEditingProfile(false); setShowLinkInput(false); }}
                                         className="flex-1 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
                                     >
                                         Cancel
@@ -498,38 +522,41 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         className="flex-1 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg shadow-md hover:bg-blue-700 transition flex items-center justify-center gap-2"
                                     >
                                         {isSavingProfile ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
-                                        Save
+                                        Save Changes
                                     </button>
                                 </div>
                             </div>
                         ) : (
-                            // --- VIEW MODE (Compact Horizontal) ---
-                            <div className="flex items-center gap-5 animate-in fade-in zoom-in-95 duration-300">
-                                <div className="relative flex-shrink-0 group">
+                            // --- VIEW MODE (Compact Horizontal Professional) ---
+                            <div className="flex items-center gap-5 animate-in fade-in zoom-in-95 duration-300 relative z-10">
+                                <div className="relative flex-shrink-0 group/avatar">
+                                    <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full opacity-0 group-hover/avatar:opacity-100 transition duration-500 blur-sm"></div>
                                     <img 
                                         src={avatarUrl} 
                                         alt="Profile" 
-                                        className="w-20 h-20 rounded-full object-cover border-4 border-slate-100 dark:border-slate-800 shadow-sm bg-slate-100"
+                                        className="relative w-20 h-20 rounded-full object-cover border-4 border-white dark:border-slate-900 shadow-lg"
                                     />
                                     <button 
                                         onClick={() => {
                                             setTempAvatarUrl(avatarUrl);
                                             setIsEditingProfile(true);
                                         }}
-                                        className="absolute bottom-0 right-0 p-2 bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-200 rounded-full shadow-lg border border-slate-200 dark:border-slate-600 hover:text-blue-600 hover:scale-110 transition-all"
+                                        className="absolute bottom-0 right-0 p-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-full shadow-md border border-slate-100 dark:border-slate-700 hover:text-blue-600 hover:scale-110 transition-all z-20"
                                         title="Edit Profile"
                                     >
-                                        <Edit2 size={14} />
+                                        <Edit2 size={12} />
                                     </button>
                                 </div>
                                 
-                                <div className="flex-1 min-w-0 overflow-hidden">
-                                    <h3 className="text-2xl font-bold text-slate-800 dark:text-white truncate" title={displayName}>
+                                <div className="flex-1 min-w-0 flex flex-col justify-center h-20">
+                                    <h3 className="text-xl font-bold text-slate-900 dark:text-white truncate tracking-tight" title={displayName}>
                                         {displayName}
                                     </h3>
                                     <div className="flex items-center gap-2 mt-1 text-slate-500 dark:text-slate-400">
-                                        <Mail size={14} className="flex-shrink-0" />
-                                        <span className="text-sm truncate" title={user.email}>{user.email}</span>
+                                        <div className="p-1 bg-slate-100 dark:bg-slate-800 rounded-md">
+                                            <Mail size={10} className="flex-shrink-0" />
+                                        </div>
+                                        <span className="text-xs font-medium truncate opacity-80" title={user.email}>{user.email}</span>
                                     </div>
                                 </div>
                             </div>
