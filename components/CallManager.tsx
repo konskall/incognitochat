@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2 } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2 } from 'lucide-react';
 import { User, ChatConfig, Presence } from '../types';
 import { useWebRTC } from '../hooks/useWebRTC';
 import { VoiceFilterType } from '../hooks/useVoiceFilter';
