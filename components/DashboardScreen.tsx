@@ -6,7 +6,7 @@ import { generateRoomKey, compressImage } from '../utils/helpers';
 import { 
   LogOut, Trash2, ArrowRight, Loader2, 
   Camera, 
-  RefreshCw, Save, X, Edit2, Mail, LogIn
+  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing
 } from 'lucide-react';
 
 interface DashboardScreenProps {
@@ -23,6 +23,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomPin, setNewRoomPin] = useState('');
   const [creating, setCreating] = useState(false);
+  
+  // Notification State
+  const [unreadRooms, setUnreadRooms] = useState<Set<string>>(new Set());
 
   // Profile State
   const [displayName, setDisplayName] = useState('');
@@ -99,6 +102,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         allRooms.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
         setRooms(allRooms);
+        
+        // E. Check for unread messages
+        checkUnreadMessages(allRooms);
+
       } catch (error) {
         console.error('Error fetching rooms:', error);
       } finally {
@@ -108,6 +115,67 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
     initData();
   }, [user.uid, user.email]);
+
+  // Realtime subscription for new messages to update badges live
+  useEffect(() => {
+    const channel = supabase.channel('dashboard-notifications')
+        .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'messages' },
+            (payload) => {
+                const newMsg = payload.new;
+                // If I am the sender, don't mark as unread
+                if (newMsg.uid === user.uid) return;
+
+                // Check if we have this room in our list
+                const hasRoom = rooms.some(r => r.room_key === newMsg.room_key);
+                if (hasRoom) {
+                    setUnreadRooms(prev => new Set(prev).add(newMsg.room_key));
+                }
+            }
+        )
+        .subscribe();
+
+    return () => {
+        supabase.removeChannel(channel);
+    };
+  }, [rooms, user.uid]);
+
+  const checkUnreadMessages = async (currentRooms: Room[]) => {
+      if (currentRooms.length === 0) return;
+
+      const newUnreadSet = new Set<string>();
+      
+      // We process checks in parallel
+      await Promise.all(currentRooms.map(async (room) => {
+          try {
+              // 1. Get the last time the user opened this room from LocalStorage
+              const lastReadTimestamp = localStorage.getItem(`lastRead_${room.room_key}`);
+              const lastReadTime = lastReadTimestamp ? parseInt(lastReadTimestamp) : 0;
+
+              // 2. Fetch the MOST RECENT message for this room from Supabase
+              const { data: latestMsg, error } = await supabase
+                  .from('messages')
+                  .select('created_at')
+                  .eq('room_key', room.room_key)
+                  .order('created_at', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+              
+              if (!error && latestMsg) {
+                  const msgTime = new Date(latestMsg.created_at).getTime();
+                  // 3. Compare: If message is newer than last read time, mark unread
+                  if (msgTime > lastReadTime) {
+                      newUnreadSet.add(room.room_key);
+                  }
+              }
+          } catch (err) {
+              console.error(`Error checking unread for ${room.room_name}`, err);
+          }
+      }));
+
+      setUnreadRooms(newUnreadSet);
+  };
 
 
   // --- Profile Management Functions ---
@@ -188,6 +256,14 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   // --- Room Management Functions ---
 
   const handleJoin = (room: Room) => {
+    // Mark room as read by updating the timestamp in localStorage
+    localStorage.setItem(`lastRead_${room.room_key}`, Date.now().toString());
+    
+    // Update local state to remove the red dot immediately
+    const newUnread = new Set(unreadRooms);
+    newUnread.delete(room.room_key);
+    setUnreadRooms(newUnread);
+
     const config: ChatConfig = {
         username: displayName,
         avatarURL: avatarUrl,
@@ -275,6 +351,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
                if (subError) console.error("Subscription warning:", subError);
 
+               // Mark as read immediately on join
+               localStorage.setItem(`lastRead_${existingRoom.room_key}`, Date.now().toString());
+
                const config: ChatConfig = {
                    username: displayName,
                    avatarURL: avatarUrl,
@@ -295,6 +374,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                if (error) throw error;
                
                if (data) {
+                   // Mark as read immediately on creation
+                   localStorage.setItem(`lastRead_${data.room_key}`, Date.now().toString());
+
                    // Add new room to list if it's not there
                    if (!rooms.find(r => r.room_key === data.room_key)) {
                         setRooms([data, ...rooms]);
@@ -549,10 +631,18 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                         ) : (
                             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
                                 {rooms.map(room => (
-                                    <div key={room.id} className="group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 transition-all duration-300 flex flex-col justify-between">
-                                        <div className="mb-4">
+                                    <div key={room.id} className="group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
+                                        <div className="mb-4 relative z-10">
                                             <div className="flex justify-between items-start mb-2">
-                                                <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 truncate pr-2">{room.room_name}</h4>
+                                                <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 truncate pr-2 flex items-center gap-2">
+                                                    {room.room_name}
+                                                    {unreadRooms.has(room.room_key) && (
+                                                        <span className="flex h-2.5 w-2.5 relative">
+                                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                                                        </span>
+                                                    )}
+                                                </h4>
                                                 <button 
                                                     onClick={() => handleDeleteRoom(room.id, room.room_name)}
                                                     className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-0 group-hover:opacity-100"
@@ -572,11 +662,23 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                                 <span>•</span>
                                                 <span>{new Date(room.created_at).toLocaleDateString()}</span>
                                             </div>
+                                            
+                                            {/* Unread Message Indicator Text */}
+                                            {unreadRooms.has(room.room_key) && (
+                                                <div className="mt-3 flex items-center gap-1.5 text-xs font-bold text-red-500 dark:text-red-400 animate-pulse">
+                                                    <BellRing size={14} />
+                                                    <span>New messages</span>
+                                                </div>
+                                            )}
                                         </div>
                                         
                                         <button 
                                             onClick={() => handleJoin(room)}
-                                            className="w-full py-2.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-semibold rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/30 transition flex items-center justify-center gap-2 group-hover:bg-blue-600 group-hover:text-white dark:group-hover:bg-blue-600 dark:group-hover:text-white"
+                                            className={`w-full py-2.5 font-semibold rounded-xl transition flex items-center justify-center gap-2 z-10 
+                                                ${unreadRooms.has(room.room_key) 
+                                                    ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/30 group-hover:bg-red-500 group-hover:text-white group-hover:border-red-500' 
+                                                    : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 group-hover:bg-blue-600 group-hover:text-white dark:group-hover:bg-blue-600 dark:group-hover:text-white'
+                                                }`}
                                         >
                                             Enter Room <ArrowRight size={16} />
                                         </button>
