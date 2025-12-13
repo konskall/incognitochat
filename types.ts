@@ -1,6 +1,8 @@
+
 export interface User {
   uid: string;
   isAnonymous: boolean;
+  email?: string;
 }
 
 export interface Attachment {
@@ -64,7 +66,6 @@ export interface SignalData {
   callType?: 'audio' | 'video';
 }
 
-// Updated Subscriber interface to match Supabase table structure
 export interface Subscriber {
     id?: string;
     room_key: string;
@@ -72,4 +73,14 @@ export interface Subscriber {
     username: string;
     email: string;
     created_at?: string;
+}
+
+// New Interface for Room Dashboard
+export interface Room {
+  id: string;
+  room_key: string;
+  room_name: string;
+  pin: string; // Stored to allow auto-join for creator
+  created_at: string;
+  created_by: string;
 }
