@@ -6,7 +6,7 @@ import { generateRoomKey, compressImage } from '../utils/helpers';
 import { 
   LogOut, Plus, Trash2, ArrowRight, Loader2, 
   Camera, 
-  RefreshCw, Save, X, Edit2, Mail, Shield
+  RefreshCw, Save, X, Edit2, Mail, Shield, LogIn
 } from 'lucide-react';
 
 interface DashboardScreenProps {
@@ -101,13 +101,11 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
       try {
           // Update Supabase Auth Metadata
-          // We save to both standard keys (full_name) and custom keys (display_name)
-          // to ensure persistence even if OAuth provider overwrites standard keys.
           const updates = {
-              display_name: displayName, // Custom key that won't be overwritten by Google
-              full_name: displayName,    // Standard key
-              custom_avatar: tempAvatarUrl, // Custom key
-              avatar_url: tempAvatarUrl     // Standard key
+              display_name: displayName,
+              full_name: displayName,
+              custom_avatar: tempAvatarUrl,
+              avatar_url: tempAvatarUrl
           };
 
           const { error } = await supabase.auth.updateUser({
@@ -214,7 +212,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     }
   };
 
-  const handleCreateRoom = async (e: React.FormEvent) => {
+  const handleCreateOrJoinRoom = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newRoomName || !newRoomPin) return;
 
@@ -222,36 +220,49 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       const roomKey = generateRoomKey(newRoomPin, newRoomName);
       
       try {
-           const { data: existing } = await supabase
+           // 1. Check if room exists
+           const { data: existingRoom, error: fetchError } = await supabase
             .from('rooms')
-            .select('id')
+            .select('*')
             .eq('room_key', roomKey)
             .maybeSingle();
+
+           if (fetchError) throw fetchError;
             
-           if (existing) {
-               alert("A room with this name and PIN already exists.");
-               setCreating(false);
-               return;
-           }
+           if (existingRoom) {
+               // --- JOIN EXISTING ROOM ---
+               // Don't alert, just join
+               const config: ChatConfig = {
+                   username: displayName,
+                   avatarURL: avatarUrl,
+                   roomName: existingRoom.room_name,
+                   pin: existingRoom.pin,
+                   roomKey: existingRoom.room_key
+               };
+               onJoinRoom(config);
+           } else {
+               // --- CREATE NEW ROOM ---
+               const { data, error } = await supabase.from('rooms').insert({
+                   room_key: roomKey,
+                   room_name: newRoomName,
+                   pin: newRoomPin,
+                   created_by: user.uid
+               }).select().single();
 
-           const { data, error } = await supabase.from('rooms').insert({
-               room_key: roomKey,
-               room_name: newRoomName,
-               pin: newRoomPin,
-               created_by: user.uid
-           }).select().single();
-
-           if (error) throw error;
-           
-           if (data) {
-               setRooms([data, ...rooms]);
-               setNewRoomName('');
-               setNewRoomPin('');
-               setShowCreate(false);
+               if (error) throw error;
+               
+               if (data) {
+                   setRooms([data, ...rooms]);
+                   setNewRoomName('');
+                   setNewRoomPin('');
+                   setShowCreate(false);
+                   // We don't auto-join on create based on UX preference, 
+                   // but user sees it in list immediately.
+               }
            }
       } catch (e: any) {
-          console.error("Create failed", e);
-          alert("Failed to create room: " + e.message);
+          console.error("Operation failed", e);
+          alert("Failed to create or join room: " + e.message);
       } finally {
           setCreating(false);
       }
@@ -417,21 +428,21 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                             {!showCreate ? (
                                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                                     <div>
-                                        <h3 className="text-lg font-bold text-slate-800 dark:text-white">Create a New Room</h3>
-                                        <p className="text-sm text-slate-500 dark:text-slate-400">Start a secure conversation instantly</p>
+                                        <h3 className="text-lg font-bold text-slate-800 dark:text-white">Join or Create Room</h3>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">Enter a room name and PIN to connect</p>
                                     </div>
                                     <button 
                                         onClick={() => setShowCreate(true)}
                                         className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2"
                                     >
-                                        <Plus size={20} />
-                                        Create Room
+                                        <LogIn size={20} />
+                                        Enter / Create Room
                                     </button>
                                 </div>
                             ) : (
-                                <form onSubmit={handleCreateRoom} className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                <form onSubmit={handleCreateOrJoinRoom} className="space-y-4 animate-in fade-in slide-in-from-top-2">
                                     <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-4">
-                                        <h3 className="font-semibold text-lg">Room Details</h3>
+                                        <h3 className="font-semibold text-lg">Room Access</h3>
                                         <button type="button" onClick={() => setShowCreate(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                                             <X size={20} />
                                         </button>
@@ -460,14 +471,15 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                             />
                                         </div>
                                     </div>
-                                    <div className="flex justify-end pt-2">
+                                    <div className="flex justify-between items-center pt-2">
+                                        <p className="text-xs text-slate-500 italic">If the room exists, you will join it. Otherwise, a new room will be created.</p>
                                         <button 
                                             type="submit" 
                                             disabled={creating}
                                             className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2"
                                         >
-                                            {creating ? <Loader2 className="animate-spin" size={18} /> : <Plus size={18} />}
-                                            Launch Room
+                                            {creating ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}
+                                            Enter Room
                                         </button>
                                     </div>
                                 </form>
@@ -477,7 +489,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
                     {/* Rooms List */}
                     <div>
-                        <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 px-1">Your Rooms</h3>
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4 px-1">Your Rooms</h3>
                         
                         {loadingRooms ? (
                             <div className="flex justify-center py-12">
@@ -486,7 +498,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                         ) : rooms.length === 0 ? (
                             <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800">
                                 <p className="text-slate-500 dark:text-slate-400">You haven't created any rooms yet.</p>
-                                <button onClick={() => setShowCreate(true)} className="text-blue-500 font-semibold mt-2 hover:underline">Create one now</button>
+                                <button onClick={() => setShowCreate(true)} className="text-blue-500 font-semibold mt-2 hover:underline">Create or Join one now</button>
                             </div>
                         ) : (
                             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
