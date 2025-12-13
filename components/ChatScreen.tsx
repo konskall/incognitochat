@@ -69,7 +69,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isFirstLoad = useRef(true);
   const prevMessageCount = useRef(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- CUSTOM HOOKS INTEGRATION ---
   
