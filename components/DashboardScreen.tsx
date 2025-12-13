@@ -39,18 +39,34 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   // Load User Data & Rooms
   useEffect(() => {
     const initData = async () => {
-      // 1. Fetch latest user metadata
+      // 1. Fetch latest user metadata from Supabase
+      // We force a refresh to ensure we have the latest metadata
       const { data: { user: authUser } } = await supabase.auth.getUser();
       
       if (authUser) {
-          const meta = authUser.user_metadata;
-          // Priority: Metadata -> LocalStorage -> Default
-          const initialName = meta?.full_name || localStorage.getItem('chatUsername') || user.email?.split('@')[0] || 'User';
-          const initialAvatar = meta?.avatar_url || localStorage.getItem('chatAvatarURL') || `https://ui-avatars.com/api/?name=${initialName}&background=random`;
+          const meta = authUser.user_metadata || {};
           
-          setDisplayName(initialName);
-          setAvatarUrl(initialAvatar);
-          setTempAvatarUrl(initialAvatar);
+          // Priority Logic: 
+          // 1. 'display_name' (Custom saved by user)
+          // 2. 'full_name' (Provided by Google/OAuth)
+          // 3. LocalStorage backup
+          // 4. Email prefix default
+          const finalName = meta.display_name || meta.full_name || meta.name || localStorage.getItem('chatUsername') || user.email?.split('@')[0] || 'User';
+          
+          // Priority Logic:
+          // 1. 'custom_avatar' (Custom saved by user)
+          // 2. 'avatar_url' (Provided by Google/OAuth)
+          // 3. LocalStorage backup
+          // 4. Generated default
+          const finalAvatar = meta.custom_avatar || meta.avatar_url || meta.picture || localStorage.getItem('chatAvatarURL') || `https://ui-avatars.com/api/?name=${finalName}&background=random`;
+          
+          setDisplayName(finalName);
+          setAvatarUrl(finalAvatar);
+          setTempAvatarUrl(finalAvatar);
+
+          // Update LocalStorage to keep sync
+          localStorage.setItem('chatUsername', finalName);
+          localStorage.setItem('chatAvatarURL', finalAvatar);
       }
 
       // 2. Fetch Rooms
@@ -83,21 +99,27 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       }
       setIsSavingProfile(true);
 
-      const updates = {
-          full_name: displayName,
-          avatar_url: tempAvatarUrl
-      };
-
       try {
           // Update Supabase Auth Metadata
+          // We save to both standard keys (full_name) and custom keys (display_name)
+          // to ensure persistence even if OAuth provider overwrites standard keys.
+          const updates = {
+              display_name: displayName, // Custom key that won't be overwritten by Google
+              full_name: displayName,    // Standard key
+              custom_avatar: tempAvatarUrl, // Custom key
+              avatar_url: tempAvatarUrl     // Standard key
+          };
+
           const { error } = await supabase.auth.updateUser({
               data: updates
           });
 
           if (error) throw error;
 
-          // Update Local State & Storage as fallback
+          // Update Local State immediately
           setAvatarUrl(tempAvatarUrl);
+          
+          // Update LocalStorage as fallback/cache
           localStorage.setItem('chatUsername', displayName);
           localStorage.setItem('chatAvatarURL', tempAvatarUrl);
           
