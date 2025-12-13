@@ -1,0 +1,245 @@
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { supabase } from '../services/supabase';
+import { Message, Attachment } from '../types';
+import { decodeMessage, encodeMessage } from '../utils/helpers';
+
+export const useChatMessages = (
+  roomKey: string, 
+  userUid: string | undefined, 
+  onNewMessage?: (msg: Message) => void
+) => {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Load initial messages
+  useEffect(() => {
+    if (!roomKey) return;
+
+    const fetchMessages = async () => {
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('room_key', roomKey)
+        .order('created_at', { ascending: true });
+
+      if (data) {
+        const msgs: Message[] = data.map((d) => ({
+          id: d.id,
+          text: decodeMessage(d.text || ''),
+          uid: d.uid,
+          username: d.username,
+          avatarURL: d.avatar_url,
+          createdAt: d.created_at,
+          attachment: d.attachment,
+          location: d.location,
+          isEdited: false, // You might want to track this in DB schema later
+          reactions: d.reactions || {},
+          replyTo: d.reply_to,
+          type: d.type || 'text',
+        }));
+        setMessages(msgs);
+      }
+    };
+
+    fetchMessages();
+
+    // Subscription
+    const channel = supabase
+      .channel(`messages:${roomKey}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `room_key=eq.${roomKey}`,
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const d = payload.new;
+            const newMsg: Message = {
+              id: d.id,
+              text: decodeMessage(d.text || ''),
+              uid: d.uid,
+              username: d.username,
+              avatarURL: d.avatar_url,
+              createdAt: d.created_at,
+              attachment: d.attachment,
+              location: d.location,
+              reactions: d.reactions || {},
+              replyTo: d.reply_to,
+              type: d.type || 'text',
+            };
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+            if (onNewMessage) onNewMessage(newMsg);
+          } else if (payload.eventType === 'UPDATE') {
+            const d = payload.new;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === d.id
+                  ? {
+                      ...m,
+                      text: decodeMessage(d.text || ''),
+                      reactions: d.reactions || {},
+                      isEdited: true, // Optimistic / Simplified
+                    }
+                  : m
+              )
+            );
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old.id;
+            if (deletedId) {
+              setMessages((prev) => prev.filter((m) => m.id !== deletedId));
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [roomKey]);
+
+  const sendMessage = useCallback(
+    async (
+      text: string,
+      config: { username: string; avatarURL: string },
+      attachment: Attachment | null = null,
+      replyTo: Message | null = null,
+      location: { lat: number; lng: number } | null = null,
+      type: 'text' | 'system' = 'text'
+    ) => {
+      if (!userUid || !roomKey) return;
+      
+      // If it's a file upload, we handle loading state externally usually, but setting here is fine
+      if(attachment) setIsUploading(true);
+
+      try {
+        await supabase.from('messages').insert({
+          room_key: roomKey,
+          uid: userUid,
+          username: config.username,
+          avatar_url: config.avatarURL,
+          text: encodeMessage(text),
+          type: type,
+          attachment: attachment,
+          reactions: {},
+          location: location,
+          reply_to: replyTo
+            ? {
+                id: replyTo.id,
+                username: replyTo.username,
+                text: replyTo.text || 'Attachment',
+                isAttachment: !!replyTo.attachment,
+              }
+            : null,
+        });
+      } catch (e) {
+        console.error('Send message failed', e);
+        throw e;
+      } finally {
+        if(attachment) setIsUploading(false);
+      }
+    },
+    [roomKey, userUid]
+  );
+
+  const editMessage = useCallback(async (msgId: string, newText: string) => {
+    try {
+      await supabase
+        .from('messages')
+        .update({
+          text: encodeMessage(newText),
+        })
+        .eq('id', msgId);
+    } catch (e) {
+      console.error('Edit failed', e);
+    }
+  }, []);
+
+  const deleteMessage = useCallback(async (msgId: string) => {
+    // Optimistic update
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    try {
+      await supabase.from('messages').delete().eq('id', msgId);
+    } catch (e) {
+      console.error('Delete failed', e);
+    }
+  }, []);
+
+  const reactToMessage = useCallback(
+    async (msg: Message, emoji: string) => {
+      if (!userUid) return;
+      const currentReactions = msg.reactions || {};
+      const userList = currentReactions[emoji] || [];
+      let newList: string[];
+
+      if (userList.includes(userUid)) {
+        newList = userList.filter((u) => u !== userUid);
+      } else {
+        newList = [...userList, userUid];
+      }
+
+      const updatedReactions = { ...currentReactions, [emoji]: newList };
+      // Optimistic update
+       setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id ? { ...m, reactions: updatedReactions } : m
+        )
+      );
+
+      await supabase
+        .from('messages')
+        .update({ reactions: updatedReactions })
+        .eq('id', msg.id);
+    },
+    [userUid]
+  );
+
+  const uploadFile = async (file: File): Promise<Attachment | null> => {
+    if (!userUid) return null;
+    setIsUploading(true);
+    try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random()}.${fileExt}`;
+        const filePath = `${roomKey}/${fileName}`;
+    
+        const { error } = await supabase.storage
+          .from('attachments')
+          .upload(filePath, file);
+    
+        if (error) throw error;
+    
+        const { data: { publicUrl } } = supabase.storage
+          .from('attachments')
+          .getPublicUrl(filePath);
+    
+        return {
+          url: publicUrl,
+          name: file.name,
+          type: file.type,
+          size: file.size,
+        };
+    } catch (e) {
+        console.error("Upload error", e);
+        throw e;
+    } finally {
+        setIsUploading(false);
+    }
+  };
+
+  return {
+    messages,
+    isUploading,
+    sendMessage,
+    editMessage,
+    deleteMessage,
+    reactToMessage,
+    uploadFile
+  };
+};
