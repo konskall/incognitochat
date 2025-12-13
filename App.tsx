@@ -19,7 +19,7 @@ const App: React.FC = () => {
         
         if (session?.user) {
             // User is logged in
-            const isAnon = session.user.is_anonymous;
+            const isAnon = !!session.user.is_anonymous;
             setCurrentUser({ 
                 uid: session.user.id, 
                 isAnonymous: isAnon,
