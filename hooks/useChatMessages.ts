@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { Message, Attachment } from '../types';
 import { decodeMessage, encodeMessage } from '../utils/helpers';
