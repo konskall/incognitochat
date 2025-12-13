@@ -40,33 +40,19 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   useEffect(() => {
     const initData = async () => {
       // 1. Fetch latest user metadata from Supabase
-      // We force a refresh to ensure we have the latest metadata from the server
       const { data: { user: authUser } } = await supabase.auth.getUser();
       
       if (authUser) {
           const meta = authUser.user_metadata || {};
           
-          // Priority Logic for Name: 
-          // 1. 'display_name' (Custom saved by us)
-          // 2. 'full_name' (Provided by Google/OAuth)
-          // 3. 'name' (OAuth fallback)
-          // 4. LocalStorage backup (for anonymous persistence)
-          // 5. Email prefix default
           const finalName = meta.display_name || meta.full_name || meta.name || localStorage.getItem('chatUsername') || user.email?.split('@')[0] || 'User';
           
-          // Priority Logic for Avatar:
-          // 1. 'custom_avatar' (Custom saved by us)
-          // 2. 'avatar_url' (Provided by Google/OAuth)
-          // 3. 'picture' (OAuth fallback)
-          // 4. LocalStorage backup
-          // 5. Generated default
           const finalAvatar = meta.custom_avatar || meta.avatar_url || meta.picture || localStorage.getItem('chatAvatarURL') || `https://ui-avatars.com/api/?name=${finalName}&background=random`;
           
           setDisplayName(finalName);
           setAvatarUrl(finalAvatar);
           setTempAvatarUrl(finalAvatar);
 
-          // Sync to LocalStorage for fallback
           localStorage.setItem('chatUsername', finalName);
           localStorage.setItem('chatAvatarURL', finalAvatar);
       }
@@ -92,7 +78,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         let joinedRooms: Room[] = [];
         if (subscriptions && subscriptions.length > 0) {
             const keys = subscriptions.map(s => s.room_key);
-            // Fetch room details for these keys
+            // Fetch room details for these keys (this automatically filters out deleted rooms)
             const { data: foundJoinedRooms, error: joinedRoomsError } = await supabase
                 .from('rooms')
                 .select('*')
@@ -134,12 +120,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       setIsSavingProfile(true);
 
       try {
-          // Update Supabase Auth Metadata
-          // Saving to 'display_name' and 'custom_avatar' ensures our changes persist
-          // even if the OAuth provider refreshes the standard fields.
           const updates = {
               display_name: displayName,
-              full_name: displayName, // Also update standard field for consistency
+              full_name: displayName, 
               custom_avatar: tempAvatarUrl,
               avatar_url: tempAvatarUrl
           };
@@ -150,10 +133,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
           if (error) throw error;
 
-          // Update Local State immediately
           setAvatarUrl(tempAvatarUrl);
-          
-          // Update LocalStorage as fallback/cache
           localStorage.setItem('chatUsername', displayName);
           localStorage.setItem('chatAvatarURL', tempAvatarUrl);
           
@@ -189,7 +169,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           const filePath = `profiles/${user.uid}/${fileName}`;
 
           const { error: uploadError } = await supabase.storage
-              .from('attachments') // Reusing attachments bucket
+              .from('attachments') 
               .upload(filePath, compressed);
 
           if (uploadError) throw uploadError;
@@ -208,7 +188,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   // --- Room Management Functions ---
 
   const handleJoin = (room: Room) => {
-    // Use the customized profile data
     const config: ChatConfig = {
         username: displayName,
         avatarURL: avatarUrl,
@@ -220,14 +199,19 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   };
 
   const handleDeleteRoom = async (roomId: string, roomName: string) => {
-    if (!window.confirm(`Are you sure you want to delete "${roomName}"? This cannot be undone.`)) return;
+    const room = rooms.find(r => r.id === roomId || r.room_name === roomName);
+    if (!room) return;
+
+    // Check if the current user is the creator
+    const isOwner = room.created_by === user.uid;
+    const message = isOwner 
+        ? `Are you sure you want to delete "${roomName}"? This will remove it for everyone and cannot be undone.`
+        : `Are you sure you want to remove "${roomName}" from your history?`;
+
+    if (!window.confirm(message)) return;
 
     try {
-        const room = rooms.find(r => r.id === roomId || r.room_name === roomName);
-        if (!room) return;
-
-        // Check if the current user is the creator
-        if (room.created_by !== user.uid) {
+        if (!isOwner) {
              // If not creator, just remove subscription (leave room)
              await supabase.from('subscribers')
                 .delete()
@@ -257,8 +241,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         if (error) throw error;
         setRooms(rooms.filter(r => r.room_key !== roomKey));
     } catch (e: any) {
-        console.error("Delete room failed:", e);
-        alert('Failed to delete room: ' + (e.message || "Unknown error"));
+        console.error("Delete/Leave room failed:", e);
+        alert('Operation failed: ' + (e.message || "Unknown error"));
     }
   };
 
@@ -281,7 +265,16 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             
            if (existingRoom) {
                // --- JOIN EXISTING ROOM ---
-               // Don't alert, just join
+               // Auto-subscribe user to this room if not already
+               const { error: subError } = await supabase.from('subscribers').upsert({
+                   room_key: roomKey,
+                   uid: user.uid,
+                   username: displayName,
+                   email: user.email || ''
+               }, { onConflict: 'room_key, uid' });
+
+               if (subError) console.error("Subscription warning:", subError);
+
                const config: ChatConfig = {
                    username: displayName,
                    avatarURL: avatarUrl,
