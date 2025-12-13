@@ -94,6 +94,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   }, [user, soundEnabled, vibrationEnabled, notificationsEnabled, canVibrate]);
 
+  // Updated hook: Passing config.pin to allow AES decryption
   const { 
     messages, 
     isUploading, 
@@ -102,7 +103,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     deleteMessage, 
     reactToMessage, 
     uploadFile 
-  } = useChatMessages(config.roomKey, user?.uid, handleNewMessageReceived);
+  } = useChatMessages(config.roomKey, config.pin, user?.uid, handleNewMessageReceived);
 
   // 2. Presence Handling
   const { participants, typingUsers, setTyping } = useRoomPresence(config.roomKey, user, config);
@@ -190,7 +191,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
               if (action === 'joined') actionLabel = 'New Participant';
 
               const emailParams = {
-                  to_email: recipients.join,
+                  to_email: recipients.join(','), // Fixed: join requires comma
                   room_name: config.roomName,
                   action_type: actionLabel,
                   sender_name: config.username, 
