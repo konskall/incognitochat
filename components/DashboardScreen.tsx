@@ -130,8 +130,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             { event: 'INSERT', schema: 'public', table: 'messages' },
             (payload) => {
                 const newMsg = payload.new;
-                // If I am the sender, don't mark as unread
-                if (newMsg.uid === user.uid) return;
+                // If I am the sender OR it is a system message, don't mark as unread
+                if (newMsg.uid === user.uid || newMsg.type === 'system') return;
 
                 // Check if we have this room in our list
                 const hasRoom = rooms.some(r => r.room_key === newMsg.room_key);
@@ -164,10 +164,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
               const lastReadTime = lastReadTimestamp ? parseInt(lastReadTimestamp) : Date.now();
 
               // 2. Fetch the MOST RECENT message for this room from Supabase
+              // CRITICAL FIX: Ignore system messages (type != 'system')
               const { data: latestMsg, error } = await supabase
                   .from('messages')
                   .select('created_at')
                   .eq('room_key', room.room_key)
+                  .neq('type', 'system') // Ignore join/leave messages
                   .order('created_at', { ascending: false })
                   .limit(1)
                   .maybeSingle();
