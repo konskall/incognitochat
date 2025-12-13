@@ -129,7 +129,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: redirectUrl
+            redirectTo: redirectUrl,
+            queryParams: {
+              // This forces the Google account chooser screen to appear every time,
+              // allowing users to switch accounts even if they are already logged in to Google.
+              prompt: 'select_account',
+              access_type: 'offline'
+            }
           }
         });
         
