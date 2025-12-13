@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatConfig } from '../types';
 import { generateRoomKey, initAudio } from '../utils/helpers';
@@ -121,6 +122,31 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       }
   };
 
+  const handleGoogleLogin = async () => {
+    try {
+        const redirectUrl = window.location.origin + window.location.pathname;
+
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: redirectUrl
+          }
+        });
+        
+        if (error) {
+            console.error("Google Auth Error:", error);
+            if (error.message && (error.message.includes('provider is not enabled') || error.message.includes('Unsupported provider'))) {
+                 alert("Configuration Error: Google Login is not enabled in your Supabase project.\n\nPlease enable it in the Supabase Dashboard > Authentication > Providers.");
+            } else {
+                 alert(`Login Failed: ${error.message}`);
+            }
+        }
+    } catch (e: any) {
+        console.error("Login Exception:", e);
+        alert(`An unexpected error occurred: ${e.message || e}`);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -140,14 +166,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
     setLoading(true);
     initAudio();
 
-    // Authenticate with Supabase anonymously
-    const { error } = await supabase.auth.signInAnonymously();
-
-    if (error) {
-        console.error("Login failed:", error);
-        alert("Could not connect to server. Please try again.");
-        setLoading(false);
-        return;
+    // Authenticate with Supabase anonymously if not already logged in
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        const { error } = await supabase.auth.signInAnonymously();
+        if (error) {
+            console.error("Login failed:", error);
+            alert("Could not connect to server. Please try again.");
+            setLoading(false);
+            return;
+        }
     }
 
     const roomKey = generateRoomKey(pin, roomName);
@@ -188,7 +216,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
            <img 
             src="https://konskall.github.io/incognitochat/favicon-96x96.png" 
             alt="Logo"
-            style={{ width: '64px', height: '64px' }}
             className="w-16 h-16 rounded-2xl shadow-lg mb-4"
           />
           <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Incognito Chat</h1>
@@ -235,7 +262,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                     <img 
                         src={getDiceBearUrl(avatarStyle, avatarSeed)} 
                         alt="Avatar Preview" 
-                        style={{ width: '64px', height: '64px' }}
                         className="w-16 h-16 rounded-full bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600"
                     />
                     <div className="flex-1 flex flex-col gap-2">
@@ -344,6 +370,40 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
           </button>
         </form>
 
+        <div className="my-6 flex items-center justify-center gap-4">
+            <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
+            <span className="text-xs text-slate-400 uppercase font-medium">Or manage rooms</span>
+            <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
+        </div>
+
+        <div className="flex items-center gap-2">
+            <button 
+                type="button"
+                onClick={handleGoogleLogin}
+                className="flex-1 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-xl transition flex items-center justify-center gap-3"
+            >
+                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        fill="#4285F4"
+                    />
+                    <path
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        fill="#34A853"
+                    />
+                    <path
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                        fill="#FBBC05"
+                    />
+                    <path
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                        fill="#EA4335"
+                    />
+                </svg>
+                Sign in with Google
+            </button>
+        </div>
+
         <div className="mt-6 border border-blue-100 dark:border-blue-900/30 bg-blue-50/50 dark:bg-blue-900/10 rounded-xl overflow-hidden">
             <button 
                 type="button"
@@ -370,7 +430,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       
       <footer className="mt-8 text-center text-slate-400 dark:text-slate-500 text-xs pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
         <p>
-                   Incognito Chat © 2025 • Powered by{' '}
+          Incognito Chat © 2025 • Powered by{' '}
           <a 
             href="http://linkedin.com/in/konstantinos-kalliakoudis-902b90103" 
             target="_blank" 
