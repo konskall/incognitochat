@@ -1,5 +1,5 @@
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, SignalData } from '../types';
 import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
