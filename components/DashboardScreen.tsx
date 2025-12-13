@@ -157,7 +157,11 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           try {
               // 1. Get the last time the user opened this room from LocalStorage
               const lastReadTimestamp = localStorage.getItem(`lastRead_${room.room_key}`);
-              const lastReadTime = lastReadTimestamp ? parseInt(lastReadTimestamp) : 0;
+              
+              // FIX: If no timestamp exists (fresh login/new device), default to current time 
+              // instead of 0 (1970). This prevents marking all historic messages as unread 
+              // on a fresh login, solving the "ghost notification" issue.
+              const lastReadTime = lastReadTimestamp ? parseInt(lastReadTimestamp) : Date.now();
 
               // 2. Fetch the MOST RECENT message for this room from Supabase
               const { data: latestMsg, error } = await supabase
