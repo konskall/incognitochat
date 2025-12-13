@@ -71,16 +71,48 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           localStorage.setItem('chatAvatarURL', finalAvatar);
       }
 
-      // 2. Fetch Rooms
+      // 2. Fetch Rooms (Created AND Joined)
       try {
-        const { data, error } = await supabase
+        // A. Fetch Created Rooms
+        const { data: createdRooms, error: createdError } = await supabase
           .from('rooms')
           .select('*')
-          .eq('created_by', user.uid)
-          .order('created_at', { ascending: false });
+          .eq('created_by', user.uid);
 
-        if (error) throw error;
-        setRooms(data || []);
+        if (createdError) throw createdError;
+
+        // B. Fetch Joined Rooms (via subscribers table)
+        const { data: subscriptions, error: subError } = await supabase
+          .from('subscribers')
+          .select('room_key')
+          .eq('uid', user.uid);
+        
+        if (subError) throw subError;
+
+        let joinedRooms: Room[] = [];
+        if (subscriptions && subscriptions.length > 0) {
+            const keys = subscriptions.map(s => s.room_key);
+            // Fetch room details for these keys
+            const { data: foundJoinedRooms, error: joinedRoomsError } = await supabase
+                .from('rooms')
+                .select('*')
+                .in('room_key', keys);
+            
+            if (joinedRoomsError) throw joinedRoomsError;
+            joinedRooms = foundJoinedRooms || [];
+        }
+
+        // C. Merge and Deduplicate based on room_key
+        const roomMap = new Map<string, Room>();
+        (createdRooms || []).forEach(r => roomMap.set(r.room_key, r));
+        (joinedRooms || []).forEach(r => roomMap.set(r.room_key, r));
+        
+        const allRooms = Array.from(roomMap.values());
+
+        // D. Sort by created_at descending
+        allRooms.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+        setRooms(allRooms);
       } catch (error) {
         console.error('Error fetching rooms:', error);
       } finally {
@@ -194,6 +226,20 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         const room = rooms.find(r => r.id === roomId || r.room_name === roomName);
         if (!room) return;
 
+        // Check if the current user is the creator
+        if (room.created_by !== user.uid) {
+             // If not creator, just remove subscription (leave room)
+             await supabase.from('subscribers')
+                .delete()
+                .eq('room_key', room.room_key)
+                .eq('uid', user.uid);
+             
+             // Remove from local list
+             setRooms(rooms.filter(r => r.room_key !== room.room_key));
+             return;
+        }
+
+        // If creator, perform full delete
         const roomKey = room.room_key;
 
         // Cleanup associated data
@@ -256,12 +302,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                if (error) throw error;
                
                if (data) {
-                   setRooms([data, ...rooms]);
+                   // Add new room to list if it's not there
+                   if (!rooms.find(r => r.room_key === data.room_key)) {
+                        setRooms([data, ...rooms]);
+                   }
                    setNewRoomName('');
                    setNewRoomPin('');
                    setShowCreate(false);
-                   // We don't auto-join on create based on UX preference, 
-                   // but user sees it in list immediately.
                }
            }
       } catch (e: any) {
@@ -501,7 +548,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                             </div>
                         ) : rooms.length === 0 ? (
                             <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800">
-                                <p className="text-slate-500 dark:text-slate-400">You haven't created any rooms yet.</p>
+                                <p className="text-slate-500 dark:text-slate-400">You haven't created or joined any rooms yet.</p>
                                 <button onClick={() => setShowCreate(true)} className="text-blue-500 font-semibold mt-2 hover:underline">Create or Join one now</button>
                             </div>
                         ) : (
@@ -514,13 +561,19 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                                 <button 
                                                     onClick={() => handleDeleteRoom(room.id, room.room_name)}
                                                     className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-0 group-hover:opacity-100"
-                                                    title="Delete Room"
+                                                    title={room.created_by === user.uid ? "Delete Room" : "Remove from History"}
                                                 >
-                                                    <Trash2 size={16} />
+                                                    {room.created_by === user.uid ? <Trash2 size={16} /> : <X size={16} />}
                                                 </button>
                                             </div>
                                             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                                                 <span className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono border border-slate-200 dark:border-slate-700">PIN: {room.pin}</span>
+                                                {room.created_by === user.uid && (
+                                                    <>
+                                                        <span>•</span>
+                                                        <span className="text-blue-500 font-medium">Owner</span>
+                                                    </>
+                                                )}
                                                 <span>•</span>
                                                 <span>{new Date(room.created_at).toLocaleDateString()}</span>
                                             </div>
