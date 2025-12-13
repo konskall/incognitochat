@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, Room } from '../types';
 import { generateRoomKey, compressImage } from '../utils/helpers';
 import { 
   LogOut, Plus, Trash2, ArrowRight, Loader2, 
-  User as UserIcon, Camera, Link as LinkIcon, 
+  Camera, 
   RefreshCw, Save, X, Edit2, Mail, Shield
 } from 'lucide-react';
 
