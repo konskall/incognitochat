@@ -86,6 +86,10 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    
+    // Clear the avatar URL from local storage so it doesn't persist on the login screen
+    localStorage.removeItem('chatAvatarURL'); 
+
     setCurrentUser(null);
     setCurrentView('login');
   };
