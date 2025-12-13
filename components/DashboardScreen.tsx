@@ -1,8 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { User, ChatConfig, Room } from '../types';
-import { LogOut, Plus, ArrowRight, Hash, Activity, Clock } from 'lucide-react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
-import { generateRoomKey } from '../utils/helpers';
+import { User, ChatConfig, Room } from '../types';
+import { generateRoomKey, compressImage } from '../utils/helpers';
+import { 
+  LogOut, Trash2, ArrowRight, Loader2, 
+  Camera, 
+  RefreshCw, Save, X, Edit2, Mail, LogIn
+} from 'lucide-react';
 
 interface DashboardScreenProps {
   user: User;
@@ -11,200 +16,580 @@ interface DashboardScreenProps {
 }
 
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onLogout }) => {
-    const [myRooms, setMyRooms] = useState<Room[]>([]);
-    const [roomName, setRoomName] = useState('');
-    const [pin, setPin] = useState('');
-    const [username, setUsername] = useState(localStorage.getItem('chatUsername') || user.email?.split('@')[0] || 'Agent');
+  // Room State
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [loadingRooms, setLoadingRooms] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newRoomName, setNewRoomName] = useState('');
+  const [newRoomPin, setNewRoomPin] = useState('');
+  const [creating, setCreating] = useState(false);
 
-    useEffect(() => {
-        const fetchRooms = async () => {
-            if (!user) return;
-            // Retrieve rooms created by the user
-            const { data: createdRooms } = await supabase
+  // Profile State
+  const [displayName, setDisplayName] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  
+  // Avatar Editing State
+  const [avatarMode, setAvatarMode] = useState<'upload' | 'random' | 'link'>('random');
+  const [tempAvatarUrl, setTempAvatarUrl] = useState('');
+  const [linkInput, setLinkInput] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load User Data & Rooms
+  useEffect(() => {
+    const initData = async () => {
+      // 1. Fetch latest user metadata from Supabase
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      
+      if (authUser) {
+          const meta = authUser.user_metadata || {};
+          
+          const finalName = meta.display_name || meta.full_name || meta.name || localStorage.getItem('chatUsername') || user.email?.split('@')[0] || 'User';
+          
+          const finalAvatar = meta.custom_avatar || meta.avatar_url || meta.picture || localStorage.getItem('chatAvatarURL') || `https://ui-avatars.com/api/?name=${finalName}&background=random`;
+          
+          setDisplayName(finalName);
+          setAvatarUrl(finalAvatar);
+          setTempAvatarUrl(finalAvatar);
+
+          localStorage.setItem('chatUsername', finalName);
+          localStorage.setItem('chatAvatarURL', finalAvatar);
+      }
+
+      // 2. Fetch Rooms (Created AND Joined)
+      try {
+        // A. Fetch Created Rooms
+        const { data: createdRooms, error: createdError } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('created_by', user.uid);
+
+        if (createdError) throw createdError;
+
+        // B. Fetch Joined Rooms (via subscribers table)
+        const { data: subscriptions, error: subError } = await supabase
+          .from('subscribers')
+          .select('room_key')
+          .eq('uid', user.uid);
+        
+        if (subError) throw subError;
+
+        let joinedRooms: Room[] = [];
+        if (subscriptions && subscriptions.length > 0) {
+            const keys = subscriptions.map(s => s.room_key);
+            // Fetch room details for these keys (this automatically filters out deleted rooms)
+            const { data: foundJoinedRooms, error: joinedRoomsError } = await supabase
                 .from('rooms')
                 .select('*')
-                .eq('created_by', user.uid)
-                .order('created_at', { ascending: false });
+                .in('room_key', keys);
             
-            if (createdRooms) {
-                setMyRooms(createdRooms);
-            }
-        };
-        fetchRooms();
-    }, [user]);
+            if (joinedRoomsError) throw joinedRoomsError;
+            joinedRooms = foundJoinedRooms || [];
+        }
 
-    const handleJoinCreate = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!roomName || !pin || !username) return;
+        // C. Merge and Deduplicate based on room_key
+        const roomMap = new Map<string, Room>();
+        (createdRooms || []).forEach(r => roomMap.set(r.room_key, r));
+        (joinedRooms || []).forEach(r => roomMap.set(r.room_key, r));
         
-        const roomKey = generateRoomKey(pin, roomName);
-        
-        const config: ChatConfig = {
-            username: username,
-            avatarURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random`,
-            roomName: roomName,
-            pin: pin,
-            roomKey: roomKey
-        };
-        
-        // Save username preference
-        localStorage.setItem('chatUsername', username);
+        const allRooms = Array.from(roomMap.values());
 
-        onJoinRoom(config);
+        // D. Sort by created_at descending
+        allRooms.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+        setRooms(allRooms);
+      } catch (error) {
+        console.error('Error fetching rooms:', error);
+      } finally {
+        setLoadingRooms(false);
+      }
     };
 
-    const handleQuickJoin = (room: Room) => {
-        const roomKey = generateRoomKey(room.pin, room.room_name);
-        const config: ChatConfig = {
-             username: username,
-             avatarURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random`,
-             roomName: room.room_name,
-             pin: room.pin,
-             roomKey: roomKey
-        };
-        localStorage.setItem('chatUsername', username);
-        onJoinRoom(config);
+    initData();
+  }, [user.uid, user.email]);
+
+
+  // --- Profile Management Functions ---
+
+  const handleSaveProfile = async () => {
+      if (!displayName.trim()) {
+          alert("Display name cannot be empty");
+          return;
+      }
+      setIsSavingProfile(true);
+
+      try {
+          const updates = {
+              display_name: displayName,
+              full_name: displayName, 
+              custom_avatar: tempAvatarUrl,
+              avatar_url: tempAvatarUrl
+          };
+
+          const { error } = await supabase.auth.updateUser({
+              data: updates
+          });
+
+          if (error) throw error;
+
+          setAvatarUrl(tempAvatarUrl);
+          localStorage.setItem('chatUsername', displayName);
+          localStorage.setItem('chatAvatarURL', tempAvatarUrl);
+          
+          setIsEditingProfile(false);
+      } catch (e: any) {
+          console.error("Profile update failed", e);
+          alert("Failed to update profile: " + e.message);
+      } finally {
+          setIsSavingProfile(false);
+      }
+  };
+
+  const handleGenerateRandomAvatar = () => {
+      const seed = Math.random().toString(36).substring(7);
+      const randomUrl = `https://api.dicebear.com/9.x/bottts/svg?seed=${seed}`;
+      setTempAvatarUrl(randomUrl);
+  };
+
+  const handleLinkAvatar = () => {
+      if (linkInput.trim().startsWith('http')) {
+          setTempAvatarUrl(linkInput.trim());
+      }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!e.target.files || !e.target.files[0]) return;
+      
+      const file = e.target.files[0];
+      try {
+          const compressed = await compressImage(file);
+          const fileExt = compressed.name.split('.').pop();
+          const fileName = `avatar_${Date.now()}.${fileExt}`;
+          const filePath = `profiles/${user.uid}/${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+              .from('attachments') 
+              .upload(filePath, compressed);
+
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage
+              .from('attachments')
+              .getPublicUrl(filePath);
+
+          setTempAvatarUrl(publicUrl);
+      } catch (err: any) {
+          console.error("Avatar upload failed", err);
+          alert("Failed to upload image.");
+      }
+  };
+
+  // --- Room Management Functions ---
+
+  const handleJoin = (room: Room) => {
+    const config: ChatConfig = {
+        username: displayName,
+        avatarURL: avatarUrl,
+        roomName: room.room_name,
+        pin: room.pin,
+        roomKey: room.room_key
     };
+    onJoinRoom(config);
+  };
 
-    return (
-        <div className="min-h-[100dvh] bg-slate-50 dark:bg-slate-950 p-4 md:p-8 transition-colors">
-            <div className="max-w-5xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
-                <header className="flex justify-between items-center mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
-                    <div className="flex items-center gap-3">
-                        <img 
-                            src="https://konskall.github.io/incognitochat/favicon-96x96.png" 
-                            alt="Incognito Chat" 
-                            className="w-10 h-10 rounded-xl shadow-lg shadow-blue-500/20"
-                        />
-                        <div>
-                            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Dashboard</h1>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                                Logged in as <span className="font-semibold text-slate-700 dark:text-slate-300">{user.email}</span>
-                            </p>
-                        </div>
+  const handleDeleteRoom = async (roomId: string, roomName: string) => {
+    const room = rooms.find(r => r.id === roomId || r.room_name === roomName);
+    if (!room) return;
+
+    // Check if the current user is the creator
+    const isOwner = room.created_by === user.uid;
+    const message = isOwner 
+        ? `Are you sure you want to delete "${roomName}"? This will remove it for everyone and cannot be undone.`
+        : `Are you sure you want to remove "${roomName}" from your history?`;
+
+    if (!window.confirm(message)) return;
+
+    try {
+        if (!isOwner) {
+             // If not creator, just remove subscription (leave room)
+             await supabase.from('subscribers')
+                .delete()
+                .eq('room_key', room.room_key)
+                .eq('uid', user.uid);
+             
+             // Remove from local list
+             setRooms(rooms.filter(r => r.room_key !== room.room_key));
+             return;
+        }
+
+        // If creator, perform full delete
+        const roomKey = room.room_key;
+
+        // Cleanup associated data
+        await supabase.from('messages').delete().eq('room_key', roomKey);
+        await supabase.from('subscribers').delete().eq('room_key', roomKey);
+
+        const { data: files } = await supabase.storage.from('attachments').list(roomKey);
+        if (files && files.length > 0) {
+            const filesToRemove = files.map(x => `${roomKey}/${x.name}`);
+            await supabase.storage.from('attachments').remove(filesToRemove);
+        }
+
+        const { error } = await supabase.from('rooms').delete().eq('room_key', roomKey);
+        
+        if (error) throw error;
+        setRooms(rooms.filter(r => r.room_key !== roomKey));
+    } catch (e: any) {
+        console.error("Delete/Leave room failed:", e);
+        alert('Operation failed: ' + (e.message || "Unknown error"));
+    }
+  };
+
+  const handleCreateOrJoinRoom = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newRoomName || !newRoomPin) return;
+
+      setCreating(true);
+      const roomKey = generateRoomKey(newRoomPin, newRoomName);
+      
+      try {
+           // 1. Check if room exists
+           const { data: existingRoom, error: fetchError } = await supabase
+            .from('rooms')
+            .select('*')
+            .eq('room_key', roomKey)
+            .maybeSingle();
+
+           if (fetchError) throw fetchError;
+            
+           if (existingRoom) {
+               // --- JOIN EXISTING ROOM ---
+               // Auto-subscribe user to this room if not already
+               const { error: subError } = await supabase.from('subscribers').upsert({
+                   room_key: roomKey,
+                   uid: user.uid,
+                   username: displayName,
+                   email: user.email || ''
+               }, { onConflict: 'room_key, uid' });
+
+               if (subError) console.error("Subscription warning:", subError);
+
+               const config: ChatConfig = {
+                   username: displayName,
+                   avatarURL: avatarUrl,
+                   roomName: existingRoom.room_name,
+                   pin: existingRoom.pin,
+                   roomKey: existingRoom.room_key
+               };
+               onJoinRoom(config);
+           } else {
+               // --- CREATE NEW ROOM ---
+               const { data, error } = await supabase.from('rooms').insert({
+                   room_key: roomKey,
+                   room_name: newRoomName,
+                   pin: newRoomPin,
+                   created_by: user.uid
+               }).select().single();
+
+               if (error) throw error;
+               
+               if (data) {
+                   // Add new room to list if it's not there
+                   if (!rooms.find(r => r.room_key === data.room_key)) {
+                        setRooms([data, ...rooms]);
+                   }
+                   setNewRoomName('');
+                   setNewRoomPin('');
+                   setShowCreate(false);
+               }
+           }
+      } catch (e: any) {
+          console.error("Operation failed", e);
+          alert("Failed to create or join room: " + e.message);
+      } finally {
+          setCreating(false);
+      }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300">
+        <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+            
+            {/* Header / Top Bar */}
+            <header className="flex justify-between items-center mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                    <img 
+                        src="https://konskall.github.io/incognitochat/favicon-96x96.png" 
+                        alt="Incognito Chat" 
+                        className="w-10 h-10 rounded-xl shadow-lg shadow-blue-500/20"
+                    />
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Welcome back to your secure space</p>
                     </div>
-                    <button 
-                        onClick={onLogout} 
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
-                    >
-                        <LogOut size={16} />
-                        <span className="hidden sm:inline">Logout</span>
-                    </button>
-                </header>
+                </div>
+                <button 
+                    onClick={onLogout} 
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
+                >
+                    <LogOut size={16} />
+                    <span className="hidden sm:inline">Logout</span>
+                </button>
+            </header>
 
-                <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Left Column: Config & Create */}
-                    <div className="lg:col-span-1 space-y-6">
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-                            <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-800 dark:text-white">
-                                <Plus size={20} className="text-blue-500" />
-                                Join / Create Room
-                            </h2>
-                            <form onSubmit={handleJoinCreate} className="space-y-4">
-                                <div>
-                                    <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Display Name</label>
-                                    <input 
-                                        type="text" 
-                                        value={username}
-                                        onChange={e => setUsername(e.target.value)}
-                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 outline-none focus:border-blue-500 dark:focus:border-blue-400 dark:text-white transition-all"
-                                        placeholder="Your name in chat"
-                                        required
-                                    />
-                                </div>
-                                <div className="h-px bg-slate-100 dark:bg-slate-800 my-2"></div>
-                                <div>
-                                    <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Room Name</label>
-                                    <input 
-                                        type="text" 
-                                        value={roomName}
-                                        onChange={e => setRoomName(e.target.value)}
-                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 outline-none focus:border-blue-500 dark:focus:border-blue-400 dark:text-white transition-all"
-                                        placeholder="e.g. project-alpha"
-                                        required
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Room PIN</label>
-                                    <input 
-                                        type="password" 
-                                        value={pin}
-                                        onChange={e => setPin(e.target.value)}
-                                        className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 outline-none focus:border-blue-500 dark:focus:border-blue-400 dark:text-white transition-all"
-                                        placeholder="Min 4 chars"
-                                        required
-                                        minLength={4}
-                                    />
-                                </div>
-                                <button className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold rounded-xl transition shadow-lg shadow-blue-500/20 active:scale-95 transform">
-                                    Enter Room
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-
-                    {/* Right Column: Rooms List */}
-                    <div className="lg:col-span-2 space-y-4">
-                         <div className="flex items-center justify-between">
-                            <h2 className="text-lg font-bold flex items-center gap-2 text-slate-800 dark:text-white">
-                                <Hash size={20} className="text-blue-500" />
-                                Your Rooms
-                            </h2>
-                            <span className="text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-800">
-                                {myRooms.length} Found
-                            </span>
-                         </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                
+                {/* Left Column: Profile Card */}
+                <div className="lg:col-span-4 xl:col-span-3 space-y-6">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-white/50 dark:border-slate-800 overflow-hidden relative group">
                         
-                        {myRooms.length === 0 ? (
-                            <div className="bg-white dark:bg-slate-900 rounded-2xl p-12 text-center border border-slate-200 dark:border-slate-800 text-slate-500 flex flex-col items-center gap-4">
-                                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center">
-                                    <Hash size={32} className="text-slate-300 dark:text-slate-600" />
+                        {/* Decorative Background */}
+                        <div className="h-32 bg-gradient-to-r from-blue-600 to-indigo-600"></div>
+                        
+                        <div className="px-6 pb-6 relative">
+                            {/* Avatar Container */}
+                            <div className="relative -mt-16 mb-4 flex justify-center">
+                                <div className="relative p-1 bg-white dark:bg-slate-900 rounded-full">
+                                    <img 
+                                        src={isEditingProfile ? tempAvatarUrl : avatarUrl} 
+                                        alt="Profile" 
+                                        className="w-32 h-32 rounded-full object-cover border-4 border-slate-50 dark:border-slate-800 shadow-md bg-slate-100"
+                                    />
+                                    {!isEditingProfile && (
+                                        <button 
+                                            onClick={() => {
+                                                setTempAvatarUrl(avatarUrl);
+                                                setIsEditingProfile(true);
+                                            }}
+                                            className="absolute bottom-1 right-1 p-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-full shadow-lg border border-slate-100 dark:border-slate-700 hover:text-blue-600 transition-colors"
+                                            title="Edit Profile"
+                                        >
+                                            <Edit2 size={16} />
+                                        </button>
+                                    )}
                                 </div>
-                                <p>You haven't created any rooms yet.</p>
-                                <p className="text-xs text-slate-400">Use the form on the left to create one.</p>
+                            </div>
+
+                            {/* Info / Edit Form */}
+                            <div className="text-center space-y-4">
+                                {isEditingProfile ? (
+                                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                        {/* Avatar Controls */}
+                                        <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-1 flex justify-center gap-1">
+                                            <button 
+                                                onClick={() => setAvatarMode('random')}
+                                                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-colors ${avatarMode === 'random' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:bg-white/50'}`}
+                                            >
+                                                Random
+                                            </button>
+                                            <button 
+                                                onClick={() => setAvatarMode('upload')}
+                                                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-colors ${avatarMode === 'upload' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:bg-white/50'}`}
+                                            >
+                                                Upload
+                                            </button>
+                                            <button 
+                                                onClick={() => setAvatarMode('link')}
+                                                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-colors ${avatarMode === 'link' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:bg-white/50'}`}
+                                            >
+                                                Link
+                                            </button>
+                                        </div>
+
+                                        {/* Avatar Actions */}
+                                        <div className="h-10 flex items-center justify-center">
+                                            {avatarMode === 'random' && (
+                                                <button onClick={handleGenerateRandomAvatar} className="flex items-center gap-2 text-xs font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-full hover:bg-blue-100 transition">
+                                                    <RefreshCw size={14} /> Regenerate
+                                                </button>
+                                            )}
+                                            {avatarMode === 'upload' && (
+                                                <label className="flex items-center gap-2 text-xs font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-full hover:bg-blue-100 transition cursor-pointer">
+                                                    <Camera size={14} /> Choose File
+                                                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
+                                                </label>
+                                            )}
+                                            {avatarMode === 'link' && (
+                                                <div className="flex w-full gap-1">
+                                                    <input 
+                                                        type="text" 
+                                                        value={linkInput}
+                                                        onChange={(e) => setLinkInput(e.target.value)}
+                                                        placeholder="https://..."
+                                                        className="flex-1 text-xs px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-transparent"
+                                                    />
+                                                    <button onClick={handleLinkAvatar} className="p-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 rounded hover:bg-blue-200">
+                                                        <ArrowRight size={14} />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <input 
+                                            type="text" 
+                                            value={displayName} 
+                                            onChange={(e) => setDisplayName(e.target.value)}
+                                            className="w-full text-center px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none"
+                                            placeholder="Display Name"
+                                        />
+
+                                        <div className="flex gap-2 justify-center">
+                                            <button 
+                                                onClick={() => setIsEditingProfile(false)}
+                                                className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button 
+                                                onClick={handleSaveProfile}
+                                                disabled={isSavingProfile}
+                                                className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg shadow-lg hover:bg-blue-700 transition flex items-center gap-2"
+                                            >
+                                                {isSavingProfile ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                                                Save Changes
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="animate-in fade-in zoom-in-95 duration-300">
+                                        <h3 className="text-xl font-bold text-slate-800 dark:text-white">{displayName}</h3>
+                                        <div className="flex items-center justify-center gap-2 mt-1 text-slate-500 dark:text-slate-400">
+                                            <Mail size={14} />
+                                            <span className="text-sm">{user.email}</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right Column: Room Management */}
+                <div className="lg:col-span-8 xl:col-span-9 space-y-6">
+                    
+                    {/* Create Room Card */}
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+                         <div className="p-6">
+                            {!showCreate ? (
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-slate-800 dark:text-white">Join or Create Room</h3>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">Enter a room name and PIN to connect</p>
+                                    </div>
+                                    <button 
+                                        onClick={() => setShowCreate(true)}
+                                        className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <LogIn size={20} />
+                                        Enter / Create Room
+                                    </button>
+                                </div>
+                            ) : (
+                                <form onSubmit={handleCreateOrJoinRoom} className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                    <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-4">
+                                        <h3 className="font-semibold text-lg">Room Access</h3>
+                                        <button type="button" onClick={() => setShowCreate(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                            <X size={20} />
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Room Name</label>
+                                            <input 
+                                                type="text" 
+                                                value={newRoomName}
+                                                onChange={e => setNewRoomName(e.target.value)}
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none transition"
+                                                placeholder="e.g. Project Alpha"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Access PIN</label>
+                                            <input 
+                                                type="text" 
+                                                value={newRoomPin}
+                                                onChange={e => setNewRoomPin(e.target.value)}
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none transition"
+                                                placeholder="Secret Key"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center pt-2">
+                                        <p className="text-xs text-slate-500 italic">If the room exists, you will join it. Otherwise, a new room will be created.</p>
+                                        <button 
+                                            type="submit" 
+                                            disabled={creating}
+                                            className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {creating ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}
+                                            Enter Room
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+                         </div>
+                    </div>
+
+                    {/* Rooms List */}
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4 px-1">Your Rooms</h3>
+                        
+                        {loadingRooms ? (
+                            <div className="flex justify-center py-12">
+                                <Loader2 className="animate-spin text-slate-400" size={32} />
+                            </div>
+                        ) : rooms.length === 0 ? (
+                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800">
+                                <p className="text-slate-500 dark:text-slate-400">You haven't created or joined any rooms yet.</p>
+                                <button onClick={() => setShowCreate(true)} className="text-blue-500 font-semibold mt-2 hover:underline">Create or Join one now</button>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {myRooms.map(room => (
-                                    <div 
-                                        key={room.id} 
-                                        onClick={() => handleQuickJoin(room)} 
-                                        className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-500 cursor-pointer transition-all hover:shadow-md group relative"
-                                    >
-                                         <div className="flex justify-between items-start mb-3">
-                                             <div className="flex items-center gap-3">
-                                                 <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-500 font-bold text-lg group-hover:bg-blue-500 group-hover:text-white transition-colors">
-                                                     {room.room_name.substring(0,2).toUpperCase()}
-                                                 </div>
-                                                 <div>
-                                                     <h3 className="font-bold text-base text-slate-800 dark:text-white leading-tight">{room.room_name}</h3>
-                                                     <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">PIN: {'•'.repeat(room.pin.length)}</p>
-                                                 </div>
-                                             </div>
-                                             <div className="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-300 group-hover:text-blue-500 transition-colors">
-                                                 <ArrowRight size={16} />
-                                             </div>
-                                         </div>
-                                         
-                                         <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-400">
-                                            <div className="flex items-center gap-1.5">
-                                                <Clock size={12} />
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+                                {rooms.map(room => (
+                                    <div key={room.id} className="group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 transition-all duration-300 flex flex-col justify-between">
+                                        <div className="mb-4">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 truncate pr-2">{room.room_name}</h4>
+                                                <button 
+                                                    onClick={() => handleDeleteRoom(room.id, room.room_name)}
+                                                    className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-0 group-hover:opacity-100"
+                                                    title={room.created_by === user.uid ? "Delete Room" : "Remove from History"}
+                                                >
+                                                    {room.created_by === user.uid ? <Trash2 size={16} /> : <X size={16} />}
+                                                </button>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                                <span className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono border border-slate-200 dark:border-slate-700">PIN: {room.pin}</span>
+                                                {room.created_by === user.uid && (
+                                                    <>
+                                                        <span>•</span>
+                                                        <span className="text-blue-500 font-medium">Owner</span>
+                                                    </>
+                                                )}
+                                                <span>•</span>
                                                 <span>{new Date(room.created_at).toLocaleDateString()}</span>
                                             </div>
-                                            <div className="flex items-center gap-1.5">
-                                                <Activity size={12} />
-                                                <span>Active</span>
-                                            </div>
-                                         </div>
+                                        </div>
+                                        
+                                        <button 
+                                            onClick={() => handleJoin(room)}
+                                            className="w-full py-2.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-semibold rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/30 transition flex items-center justify-center gap-2 group-hover:bg-blue-600 group-hover:text-white dark:group-hover:bg-blue-600 dark:group-hover:text-white"
+                                        >
+                                            Enter Room <ArrowRight size={16} />
+                                        </button>
                                     </div>
                                 ))}
                             </div>
                         )}
                     </div>
-                </main>
+                </div>
             </div>
         </div>
-    );
+    </div>
+  );
 };
 
 export default DashboardScreen;
