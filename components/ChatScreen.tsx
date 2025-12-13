@@ -1,16 +1,20 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
-import { ChatConfig, Message, User, Attachment, Presence, Subscriber } from '../types';
-import { decodeMessage, encodeMessage } from '../utils/helpers';
+import { ChatConfig, Message, User, Subscriber } from '../types';
 import MessageList from './MessageList';
 import CallManager from './CallManager';
-import { initAudio } from '../utils/helpers';
+import { initAudio, playBeep } from '../utils/helpers';
 import emailjs from '@emailjs/browser';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
-import { RealtimeChannel } from '@supabase/supabase-js';
 import { WifiOff } from 'lucide-react';
+
+// Hooks
+import { useChatMessages } from '../hooks/useChatMessages';
+import { useRoomPresence } from '../hooks/useRoomPresence';
+import { useAudioRecorder } from '../hooks/useAudioRecorder';
 
 interface ChatScreenProps {
   config: ChatConfig;
@@ -24,10 +28,7 @@ const EMAILJS_PUBLIC_KEY: string = "cSDU4HLqgylnmX957";
 
 const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
-  const [participants, setParticipants] = useState<Presence[]>([]);
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
   
   // UI States
   const [isDeleting, setIsDeleting] = useState(false);
@@ -63,29 +64,75 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   
   // File & Location handling state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
 
-  // Audio Recording State
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const recordingMimeTypeRef = useRef<string>(''); 
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
-  // Refs for typing optimization and channels
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isTypingRef = useRef(false);
-  const roomChannelRef = useRef<RealtimeChannel | null>(null);
-  
   const isFirstLoad = useRef(true);
   const prevMessageCount = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- CUSTOM HOOKS INTEGRATION ---
+  
+  // 1. Message Handling
+  const handleNewMessageReceived = useCallback(async (msg: Message) => {
+    // Only notify if message is NOT from me and NOT system
+    if (msg.uid !== user?.uid && msg.type !== 'system') {
+        if (soundEnabled) {
+            initAudio();
+            setTimeout(() => playBeep(), 10);
+        }
+        
+        if (vibrationEnabled && canVibrate && 'vibrate' in navigator) {
+            navigator.vibrate(200);
+        }
+
+        if (document.hidden && notificationsEnabled) {
+            new Notification(`New message from ${msg.username}`, {
+                body: msg.text || 'Sent an attachment',
+                icon: '/favicon-96x96.png'
+            });
+        }
+    }
+  }, [user, soundEnabled, vibrationEnabled, notificationsEnabled, canVibrate]);
+
+  const { 
+    messages, 
+    isUploading, 
+    sendMessage, 
+    editMessage, 
+    deleteMessage, 
+    reactToMessage, 
+    uploadFile 
+  } = useChatMessages(config.roomKey, user?.uid, handleNewMessageReceived);
+
+  // 2. Presence Handling
+  const { participants, typingUsers, setTyping } = useRoomPresence(config.roomKey, user, config);
+
+  // 3. Audio Recorder Handling
+  const handleRecordingComplete = async (blob: Blob, mimeType: string) => {
+      try {
+           const ext = mimeType.includes('mp4') || mimeType.includes('aac') ? 'mp4' : 'webm';
+           const file = new File([blob], `voice_${Date.now()}.${ext}`, { type: mimeType });
+           const attachment = await uploadFile(file);
+           if (attachment) {
+               await sendMessage("", config, attachment, null, null, 'text');
+               notifySubscribers('message', 'Sent a voice message');
+           }
+      } catch (e) {
+          console.error("Failed to upload voice", e);
+      }
+  };
+
+  const {
+      isRecording,
+      recordingDuration,
+      startRecording,
+      stopRecording,
+      cancelRecording
+  } = useAudioRecorder(handleRecordingComplete);
+
+
+  // --- SIDE EFFECTS ---
 
   // Theme effect
   useEffect(() => {
@@ -101,17 +148,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       root.classList.remove('dark');
       root.style.colorScheme = 'light';
     }
-
-    const existingMeta = document.querySelector("meta[name='theme-color']");
-    if (existingMeta) {
-      existingMeta.remove();
-    }
-
-    const newMeta = document.createElement('meta');
-    newMeta.setAttribute('name', 'theme-color');
-    newMeta.setAttribute('content', themeColor);
-    document.head.appendChild(newMeta);
     
+    // Update PWA theme color dynamically
+    let meta = document.querySelector("meta[name='theme-color']");
+    if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', 'theme-color');
+        document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', themeColor);
   }, [isDarkMode]);
 
   const toggleTheme = () => {
@@ -121,91 +166,52 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     setShowSettingsMenu(false);
   };
 
-  const sendSystemMessage = useCallback(async (text: string) => {
-    if (!config.roomKey || !user) return;
-    try {
-        await supabase.from('messages').insert({
-            room_key: config.roomKey,
-            uid: "system",
-            username: "System",
-            avatar_url: "",
-            text: encodeMessage(text),
-            type: 'system',
-            attachment: null,
-            reactions: {}
-        });
-    } catch (e) {
-        console.error("Failed to send system message", e);
-    }
-  }, [config.roomKey, user]);
-
   const notifySubscribers = async (action: 'message' | 'deleted' | 'joined', details: string) => {
       if (!config.roomKey || !user) return;
-      
-      console.log(`[EmailJS] Attempting to notify subscribers. Action: ${action}`);
-
       try {
-          // Fetch subscribers (explicitly typed)
           const { data, error } = await supabase
             .from('subscribers')
             .select('*')
             .eq('room_key', config.roomKey);
           
-          if (error) {
-              console.error("[EmailJS] Error fetching subscribers:", error);
-              return;
-          }
-
+          if (error) return;
           const subscribers = data as Subscriber[];
-
-          if (!subscribers || subscribers.length === 0) {
-            console.log("[EmailJS] No subscribers found for this room.");
-            return;
-          }
+          if (!subscribers || subscribers.length === 0) return;
 
           const recipients: string[] = [];
           subscribers.forEach(sub => {
-              // Don't notify self
               if (sub.uid !== user.uid && sub.email) {
                   recipients.push(sub.email);
               }
           });
 
           if (recipients.length > 0) {
-              const toEmailString = recipients.join(',');
-              
-              // Map internal action to display label
               let actionLabel = 'New Message';
               if (action === 'deleted') actionLabel = 'Room Deleted';
               if (action === 'joined') actionLabel = 'New Participant';
 
-              console.log(`[EmailJS] Sending '${actionLabel}' to: ${toEmailString}`);
-              
               const emailParams = {
-                  to_email: toEmailString, // Ensure your EmailJS template uses {{to_email}} in the "To" field
+                  to_email: recipients.join,
                   room_name: config.roomName,
                   action_type: actionLabel,
-                  sender_name: config.username, // Pass the current user's name
+                  sender_name: config.username, 
                   message_body: details,
                   link: window.location.href
               };
               
-              const response = await emailjs.send(
+              await emailjs.send(
                   EMAILJS_SERVICE_ID,
                   EMAILJS_TEMPLATE_ID,
                   emailParams,
                   EMAILJS_PUBLIC_KEY
               );
-              console.log("[EmailJS] SUCCESS!", response.status, response.text);
-          } else {
-              console.log("[EmailJS] No other recipients to notify (you are the only subscriber or filtering self).");
           }
       } catch (e) {
-          console.error("[EmailJS] FAILED...", e);
+          console.error("EmailJS Failed", e);
       }
   };
 
-  // Auth Status
+  // Auth Status & Network
   useEffect(() => {
     const checkUser = async () => {
         const { data: { session } } = await supabase.auth.getSession();
@@ -218,20 +224,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              }
         }
     };
-    
     checkUser();
 
     const handleNetworkChange = () => setIsOffline(!navigator.onLine);
     window.addEventListener('online', handleNetworkChange);
     window.addEventListener('offline', handleNetworkChange);
-
-    if ('Notification' in window && Notification.permission === 'granted') {
-      setNotificationsEnabled(true);
-    }
-
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-        setCanVibrate(true);
-    }
+    if ('Notification' in window && Notification.permission === 'granted') setNotificationsEnabled(true);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) setCanVibrate(true);
 
     return () => {
       window.removeEventListener('online', handleNetworkChange);
@@ -243,9 +242,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   useEffect(() => {
     const initRoom = async () => {
       if (!user || !config.roomKey) return;
-      
       try {
-        // Use maybeSingle() instead of single() to avoid 406 errors if row doesn't exist
         const { data: room } = await supabase
             .from('rooms')
             .select('*')
@@ -263,10 +260,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                     pin: config.pin,
                     created_by: user.uid
                 });
-            
              if (!insertError) {
                  setRoomCreatorId(user.uid);
-                 await sendSystemMessage(`Room created by ${config.username}`);
+                 await sendMessage(`Room created by ${config.username}`, config, null, null, null, 'system');
              }
         }
         setIsRoomReady(true);
@@ -275,25 +271,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         setIsRoomReady(true); 
       }
     };
-    
     initRoom();
-  }, [user, config.roomKey, config.roomName, config.username]);
+  }, [user, config.roomKey]);
 
   // Check Subscription
   useEffect(() => {
       if (isRoomReady && user && config.roomKey) {
           const checkSubscription = async () => {
-              // Use maybeSingle() to return null instead of error if not found
-              const { data, error } = await supabase
+              const { data } = await supabase
                 .from('subscribers')
                 .select('email')
                 .eq('room_key', config.roomKey)
                 .eq('uid', user.uid)
                 .maybeSingle();
-
-              if (error) {
-                  console.error("Subscription Check Error:", error);
-              }
 
               if (data) {
                   setEmailAlertsEnabled(true);
@@ -304,276 +294,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
   }, [isRoomReady, user, config.roomKey]);
 
-  // Join Message & Notification
+  // Join Message
   useEffect(() => {
       if (isRoomReady && user && config.roomKey) {
           const sessionKey = `joined_${config.roomKey}`;
           if (!sessionStorage.getItem(sessionKey)) {
-              // Send system message to chat
-              sendSystemMessage(`${config.username} joined the room`);
-              
-              // Send email notification to subscribers
+              sendMessage(`${config.username} joined the room`, config, null, null, null, 'system');
               notifySubscribers('joined', `${config.username} has entered the room.`);
-              
               sessionStorage.setItem(sessionKey, 'true');
           }
       }
-  }, [isRoomReady, user, config.roomKey, config.username, sendSystemMessage]);
+  }, [isRoomReady, user, config.roomKey]);
 
-  const handleExitChat = async () => {
-      if (config.roomKey) {
-          await sendSystemMessage(`${config.username} left the room`);
-          sessionStorage.removeItem(`joined_${config.roomKey}`);
-          
-          if (roomChannelRef.current) {
-              await roomChannelRef.current.unsubscribe();
-          }
-          const dbChannel = supabase.channel(`messages:${config.roomKey}`);
-          await dbChannel.unsubscribe();
-          
-          const roomStatusChannel = supabase.channel(`room_status:${config.roomKey}`);
-          await roomStatusChannel.unsubscribe();
-      }
-      onExit();
-  };
-
-  // ----------------------------------------------------------------------
-  // SUPABASE REALTIME PRESENCE & SIGNALING CHANNEL
-  // ----------------------------------------------------------------------
-  
-  const updatePresenceState = async (overrides: Partial<Presence>) => {
-      if (!roomChannelRef.current || !user) return;
-      
-      await roomChannelRef.current.track({
-            uid: user.uid,
-            username: config.username,
-            avatar: config.avatarURL,
-            isTyping: false,
-            onlineAt: new Date().toISOString(),
-            status: 'active',
-            ...overrides
-      });
-  };
-
-  useEffect(() => {
-    if (!user || !config.roomKey || !isRoomReady) return;
-
-    const channel = supabase.channel(`presence:${config.roomKey}`, {
-      config: {
-        presence: {
-          key: user.uid,
-        },
-      },
-    });
-
-    roomChannelRef.current = channel;
-
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const newState = channel.presenceState();
-        const activeUsers: Presence[] = [];
-        const typers: string[] = [];
-        
-        for (const key in newState) {
-            const userPresences = newState[key] as unknown as Presence[];
-            if (userPresences && userPresences.length > 0) {
-                const p = userPresences[0]; 
-                // Only add if status is active (or undefined which defaults to active)
-                if (p.status !== 'inactive') {
-                    activeUsers.push(p);
-                }
-                
-                if (p.uid !== user.uid && p.isTyping && p.status !== 'inactive') {
-                    typers.push(p.username);
-                }
-            }
-        }
-        setParticipants(activeUsers);
-        setTypingUsers(typers);
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({
-            uid: user.uid,
-            username: config.username,
-            avatar: config.avatarURL,
-            isTyping: false,
-            onlineAt: new Date().toISOString(),
-            status: 'active'
-          });
-        }
-      });
-      
-    // --- PAGE VISIBILITY & UNLOAD HANDLERS ---
-    const handleVisibilityChange = async () => {
-        if (!roomChannelRef.current || !user) return;
-
-        if (document.hidden) {
-            // User minimized or switched tabs - Mark as inactive immediately
-            await updatePresenceState({ status: 'inactive', isTyping: false });
-        } else {
-            // User came back - Mark as active
-            await updatePresenceState({ status: 'active' });
-        }
-    };
-
-    const handleBeforeUnload = async () => {
-        if (roomChannelRef.current) {
-            // Try to gracefully untrack immediately
-            await roomChannelRef.current.untrack();
-        }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      
-      channel.unsubscribe();
-      roomChannelRef.current = null;
-    };
-  }, [user, config.roomKey, isRoomReady, config.username, config.avatarURL]);
-
-
-  // ----------------------------------------------------------------------
-  // SUPABASE REALTIME MESSAGES (DB CHANNEL)
-  // ----------------------------------------------------------------------
-  useEffect(() => {
-    if (!config.roomKey || !user || !isRoomReady) return;
-
-    const fetchMessages = async () => {
-        const { data } = await supabase
-            .from('messages')
-            .select('*')
-            .eq('room_key', config.roomKey)
-            .order('created_at', { ascending: true });
-        
-        if (data) {
-             const msgs: Message[] = data.map(d => ({
-                 id: d.id,
-                 text: decodeMessage(d.text || ''),
-                 uid: d.uid,
-                 username: d.username,
-                 avatarURL: d.avatar_url,
-                 createdAt: d.created_at,
-                 attachment: d.attachment,
-                 location: d.location,
-                 isEdited: false, 
-                 reactions: d.reactions || {},
-                 replyTo: d.reply_to,
-                 type: d.type || 'text'
-             }));
-             setMessages(msgs);
-        }
-    };
-
-    fetchMessages();
-
-    const dbChannel = supabase.channel(`messages:${config.roomKey}`)
-        .on('postgres_changes', { 
-            event: '*', 
-            schema: 'public', 
-            table: 'messages',
-            filter: `room_key=eq.${config.roomKey}` 
-        }, (payload) => {
-            console.log("Realtime event received:", payload.eventType, payload);
-
-            if (payload.eventType === 'INSERT') {
-                 const d = payload.new;
-                 const newMsg: Message = {
-                     id: d.id,
-                     text: decodeMessage(d.text || ''),
-                     uid: d.uid,
-                     username: d.username,
-                     avatarURL: d.avatar_url,
-                     createdAt: d.created_at,
-                     attachment: d.attachment,
-                     location: d.location,
-                     reactions: d.reactions || {},
-                     replyTo: d.reply_to,
-                     type: d.type || 'text'
-                 };
-                 setMessages(prev => {
-                     // Check if message already exists to avoid duplicates
-                     if (prev.some(m => m.id === newMsg.id)) return prev;
-                     return [...prev, newMsg];
-                 });
-
-                 if (d.uid !== user.uid && d.type !== 'system') {
-                      if (soundEnabled) {
-                          initAudio();
-                          setTimeout(async () => {
-                              const { playBeep } = await import('../utils/helpers');
-                              playBeep();
-                          }, 10);
-                      }
-                      
-                      if (vibrationEnabled && canVibrate && 'vibrate' in navigator) {
-                          navigator.vibrate(200);
-                      }
-
-                      if (document.hidden && notificationsEnabled) {
-                          new Notification(`New message from ${d.username}`, {
-                              body: newMsg.text || 'Sent an attachment',
-                              icon: '/favicon-96x96.png'
-                          });
-                      }
-                 }
-            } 
-            else if (payload.eventType === 'UPDATE') {
-                const d = payload.new;
-                setMessages(prev => prev.map(m => m.id === d.id ? {
-                     ...m,
-                     text: decodeMessage(d.text || ''),
-                     reactions: d.reactions || {},
-                     isEdited: true 
-                } : m));
-            }
-            else if (payload.eventType === 'DELETE') {
-                 // Important: payload.old contains the ID of the deleted record
-                 const deletedId = payload.old.id;
-                 if (deletedId) {
-                    console.log("Removing deleted message:", deletedId);
-                    setMessages(prev => prev.filter(m => m.id !== deletedId));
-                 } else {
-                    console.warn("Received DELETE event but no ID found in payload.old. Ensure 'REPLICA IDENTITY FULL' is enabled for the table.");
-                 }
-            }
-        })
-        .subscribe();
-
-    return () => {
-        supabase.removeChannel(dbChannel);
-    };
-
-  }, [config.roomKey, user, isRoomReady, soundEnabled, vibrationEnabled, notificationsEnabled, canVibrate]);
-  
-  // ----------------------------------------------------------------------
-  // SUPABASE ROOM DELETION LISTENER (Force Eject)
-  // ----------------------------------------------------------------------
-  useEffect(() => {
-    if (!config.roomKey || !isRoomReady) return;
-
-    const roomStatusChannel = supabase.channel(`room_status:${config.roomKey}`)
-      .on('postgres_changes', {
-        event: 'DELETE',
-        schema: 'public',
-        table: 'rooms',
-        filter: `room_key=eq.${config.roomKey}`
-      }, () => {
-        alert("This room has been deleted by the host.");
-        onExit();
-      })
-      .subscribe();
-
-    return () => {
-        supabase.removeChannel(roomStatusChannel);
-    };
-  }, [config.roomKey, isRoomReady, onExit]);
-
-
+  // Scroll to bottom
   useEffect(() => {
     if (!messagesEndRef.current) return;
     if (isFirstLoad.current && messages.length > 0) {
@@ -585,29 +318,126 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     prevMessageCount.current = messages.length;
   }, [messages]);
 
-
+  // Room Deletion Listener
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      if (inputText === '') {
-          textareaRef.current.style.height = '40px';
-          textareaRef.current.classList.add('h-[40px]');
-      } else {
-          textareaRef.current.classList.remove('h-[40px]');
-          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
-      }
-    }
-  }, [inputText]);
+    if (!config.roomKey || !isRoomReady) return;
+    const roomStatusChannel = supabase.channel(`room_status:${config.roomKey}`)
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'rooms',
+        filter: `room_key=eq.${config.roomKey}`
+      }, () => {
+        alert("This room has been deleted by the host.");
+        onExit();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(roomStatusChannel); };
+  }, [config.roomKey, isRoomReady]);
 
+
+  // --- HANDLERS ---
+
+  const handleExitChat = async () => {
+      if (config.roomKey) {
+          await sendMessage(`${config.username} left the room`, config, null, null, null, 'system');
+          sessionStorage.removeItem(`joined_${config.roomKey}`);
+          
+          // Cleanup subscriptions is handled by hooks unmounting
+      }
+      onExit();
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setInputText(e.target.value);
+      setTyping(true);
+  };
+
+  const handleSend = async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      if ((!inputText.trim() && !selectedFile) || !user) return;
+      
+      const textToSend = inputText.trim();
+      setInputText('');
+      setTyping(false);
+      setSelectedFile(null);
+      setReplyingTo(null);
+
+      if (editingMessageId) {
+          await editMessage(editingMessageId, textToSend);
+          setEditingMessageId(null);
+      } else {
+          let attachment = null;
+          if (selectedFile) {
+              attachment = await uploadFile(selectedFile);
+          }
+          await sendMessage(textToSend, config, attachment, replyingTo, null, 'text');
+          notifySubscribers('message', textToSend || 'Sent a file');
+      }
+  };
+
+  const handleSendLocation = async () => {
+       if (!navigator.geolocation || !user) return;
+       setIsGettingLocation(true);
+       navigator.geolocation.getCurrentPosition(async (pos) => {
+           try {
+               await sendMessage("📍 Shared a location", config, null, null, { lat: pos.coords.latitude, lng: pos.coords.longitude }, 'text');
+               notifySubscribers('message', 'Shared a location');
+           } catch(e) { console.error(e); }
+           finally { setIsGettingLocation(false); }
+       });
+  };
+
+  const handleEditMessage = useCallback((msg: Message) => {
+      setInputText(msg.text);
+      setEditingMessageId(msg.id);
+      setReplyingTo(null);
+      setSelectedFile(null);
+  }, []);
+  
+  const handleReply = useCallback((msg: Message) => {
+      setReplyingTo(msg);
+      setEditingMessageId(null);
+  }, []);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          handleSend();
+      }
+      if (e.key === 'Escape') {
+          setEditingMessageId(null);
+          setReplyingTo(null);
+          setInputText('');
+      }
+  };
+
+  const handleDeleteChat = async () => {
+      if (!config.roomKey) return;
+      setIsDeleting(true);
+      try {
+           await notifySubscribers('deleted', 'Room was deleted by host');
+           
+           const { data: files } = await supabase.storage.from('attachments').list(config.roomKey);
+           if (files && files.length > 0) {
+               const filesToRemove = files.map(x => `${config.roomKey}/${x.name}`);
+               await supabase.storage.from('attachments').remove(filesToRemove);
+           }
+           
+           await supabase.from('rooms').delete().eq('room_key', config.roomKey);
+           onExit();
+      } catch(e) {
+          console.error("Delete failed", e);
+      } finally {
+          setIsDeleting(false);
+      }
+  };
+  
+  // Settings & Subs
   const toggleNotifications = async () => {
       if (notificationsEnabled) {
           setNotificationsEnabled(false);
-          setShowSettingsMenu(false);
-          return;
-      }
-      if (Notification.permission === 'granted') {
-          setNotificationsEnabled(true);
-      } else if (Notification.permission !== 'denied') {
+      } else {
           const p = await Notification.requestPermission();
           if (p === 'granted') setNotificationsEnabled(true);
       }
@@ -617,15 +447,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const handleEmailToggle = async () => {
       if (!user || !config.roomKey) return;
       if (emailAlertsEnabled) {
-          const { error } = await supabase.from('subscribers')
-            .delete()
-            .eq('room_key', config.roomKey)
-            .eq('uid', user.uid);
-            
-          if (error) {
-              console.error("Error disabling alerts:", error);
-              return;
-          }
+          await supabase.from('subscribers').delete().eq('room_key', config.roomKey).eq('uid', user.uid);
           setEmailAlertsEnabled(false);
           setEmailAddress('');
           setShowEmailModal(false);
@@ -641,345 +463,33 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
       setIsSavingEmail(true);
       try {
-          const { error } = await supabase.from('subscribers').insert({
+          await supabase.from('subscribers').insert({
               room_key: config.roomKey,
               uid: user.uid,
               username: config.username,
               email: emailAddress
           });
-          
-          if (error) {
-              console.error("Supabase insert error:", error);
-              throw error;
-          }
-
           setEmailAlertsEnabled(true);
           setShowEmailModal(false);
           setShowSettingsMenu(false);
-          alert("Successfully subscribed to email alerts for this room.");
       } catch (e: any) {
           console.error("Error saving email:", e);
-          alert("Failed to subscribe to alerts. The database table might be missing or permissions incorrect.");
+          alert("Failed to subscribe.");
       } finally {
           setIsSavingEmail(false);
       }
   };
 
-  const uploadFile = async (file: File): Promise<Attachment | null> => {
-      if (!user) return null;
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
-      const filePath = `${config.roomKey}/${fileName}`;
-      
-      const { error } = await supabase.storage
-        .from('attachments')
-        .upload(filePath, file);
-
-      if (error) {
-          console.error("Upload failed", error);
-          throw error;
-      }
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('attachments')
-        .getPublicUrl(filePath);
-
-      return {
-          url: publicUrl,
-          name: file.name,
-          type: file.type,
-          size: file.size
-      };
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setInputText(e.target.value);
-      if (!user) return;
-      
-      if (!isTypingRef.current) {
-          isTypingRef.current = true;
-          updatePresenceState({ isTyping: true });
-      }
-      
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      
-      typingTimeoutRef.current = setTimeout(() => {
-          isTypingRef.current = false;
-          updatePresenceState({ isTyping: false });
-          typingTimeoutRef.current = null;
-      }, 2000); 
-  };
-
-  const handleEditMessage = useCallback((msg: Message) => {
-      setInputText(msg.text);
-      setEditingMessageId(msg.id);
-      setReplyingTo(null);
-      setSelectedFile(null);
-      textareaRef.current?.focus();
-  }, []);
-
-  const handleDeleteMessage = useCallback(async (msgId: string) => {
-      // Optimistic UI update
-      setMessages(prev => prev.filter(m => m.id !== msgId));
-
-      try {
-          const { error } = await supabase.from('messages').delete().eq('id', msgId);
-          if (error) {
-              console.error("Error deleting message:", error);
-              alert("Failed to delete message. Please refresh.");
-          }
-      } catch (e) {
-          console.error("Exception deleting message:", e);
-      }
-  }, []);
-  
-  const handleReply = useCallback((msg: Message) => {
-      setReplyingTo(msg);
-      setEditingMessageId(null);
-      textareaRef.current?.focus();
-  }, []);
-
-  const handleReaction = useCallback(async (msg: Message, emoji: string) => {
-      if (!user || !config.roomKey) return;
-      
-      const currentReactions = msg.reactions || {};
-      const userList = currentReactions[emoji] || [];
-      let newList: string[];
-
-      if (userList.includes(user.uid)) {
-           newList = userList.filter(u => u !== user.uid);
-      } else {
-           newList = [...userList, user.uid];
-      }
-      
-      const updatedReactions = { ...currentReactions, [emoji]: newList };
-      
-      await supabase.from('messages')
-        .update({ reactions: updatedReactions })
-        .eq('id', msg.id);
-
-  }, [user, config.roomKey]);
-
-  const cancelEdit = useCallback(() => {
-      setEditingMessageId(null);
-      setInputText('');
-  }, []);
-  
-  const cancelReply = useCallback(() => {
-      setReplyingTo(null);
-  }, []);
-
-  const startRecording = async () => {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        
-        const types = [
-          'audio/mp4',
-          'audio/aac',
-          'audio/webm;codecs=opus',
-          'audio/webm'
-        ];
-        
-        const mimeType = types.find(type => MediaRecorder.isTypeSupported(type)) || 'audio/webm';
-        recordingMimeTypeRef.current = mimeType;
-        
-        const mediaRecorder = new MediaRecorder(stream, { mimeType });
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
-
-        mediaRecorder.ondataavailable = (event) => {
-             if (event.data.size > 0) audioChunksRef.current.push(event.data);
-        };
-
-        mediaRecorder.onstop = async () => {
-             const audioBlob = new Blob(audioChunksRef.current, { type: recordingMimeTypeRef.current });
-             await sendVoiceMessage(audioBlob);
-             stream.getTracks().forEach(track => track.stop());
-        };
-        
-        mediaRecorder.start();
-        setIsRecording(true);
-        setRecordingDuration(0);
-        recordingTimerRef.current = setInterval(() => setRecordingDuration(p => p+1), 1000);
-
-    } catch (e) {
-        console.error("Mic error", e);
-    }
-  };
-
-  const stopRecording = () => {
-     if(mediaRecorderRef.current && isRecording) {
-         mediaRecorderRef.current.stop();
-         setIsRecording(false);
-         if(recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-     }
-  };
-
-  const cancelRecording = () => {
-      if(mediaRecorderRef.current && isRecording) {
-          mediaRecorderRef.current.onstop = null; 
-          mediaRecorderRef.current.stop();
-          setIsRecording(false);
-          if(recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-      }
-  };
-
-  const sendVoiceMessage = async (audioBlob: Blob) => {
-      setIsUploading(true);
-      try {
-           const ext = recordingMimeTypeRef.current.includes('mp4') || recordingMimeTypeRef.current.includes('aac') ? 'mp4' : 'webm';
-           const file = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: recordingMimeTypeRef.current });
-           const attachment = await uploadFile(file);
-           
-           if (attachment) {
-               await supabase.from('messages').insert({
-                   room_key: config.roomKey,
-                   uid: user!.uid,
-                   username: config.username,
-                   avatar_url: config.avatarURL,
-                   text: "",
-                   type: 'text',
-                   attachment: attachment,
-                   reactions: {}
-               });
-               notifySubscribers('message', 'Sent a voice message');
-           }
-      } catch(e) {
-          console.error("Voice send failed", e);
-      } finally {
-          setIsUploading(false);
-      }
-  };
-
-  const handleSendLocation = async () => {
-       if (!navigator.geolocation || !user) return;
-       setIsGettingLocation(true);
-       navigator.geolocation.getCurrentPosition(async (pos) => {
-           try {
-               await supabase.from('messages').insert({
-                   room_key: config.roomKey,
-                   uid: user.uid,
-                   username: config.username,
-                   avatar_url: config.avatarURL,
-                   text: encodeMessage("📍 Shared a location"),
-                   type: 'text',
-                   reactions: {},
-                   location: { lat: pos.coords.latitude, lng: pos.coords.longitude }
-               });
-               notifySubscribers('message', 'Shared a location');
-           } catch(e) { console.error(e); }
-           finally { setIsGettingLocation(false); }
-       });
-  };
-
-  const handleSend = async (e?: React.FormEvent) => {
-      e?.preventDefault();
-      if ((!inputText.trim() && !selectedFile) || !user) return;
-      
-      const textToSend = inputText.trim();
-      setInputText('');
-      setIsUploading(true);
-      
-      if (isTypingRef.current) {
-          isTypingRef.current = false;
-          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-          updatePresenceState({ isTyping: false });
-      }
-
-      if (textareaRef.current) {
-          textareaRef.current.focus();
-          textareaRef.current.style.height = '40px';
-      }
-
-      try {
-          if (editingMessageId) {
-               await supabase.from('messages').update({
-                   text: encodeMessage(textToSend),
-               }).eq('id', editingMessageId);
-               setEditingMessageId(null);
-          } else {
-               let attachment = null;
-               if (selectedFile) {
-                   attachment = await uploadFile(selectedFile);
-               }
-
-               await supabase.from('messages').insert({
-                   room_key: config.roomKey,
-                   uid: user.uid,
-                   username: config.username,
-                   avatar_url: config.avatarURL,
-                   text: encodeMessage(textToSend),
-                   type: 'text',
-                   reactions: {},
-                   attachment: attachment,
-                   reply_to: replyingTo ? {
-                       id: replyingTo.id,
-                       username: replyingTo.username,
-                       text: replyingTo.text || 'Attachment',
-                       isAttachment: !!replyingTo.attachment
-                   } : null
-               });
-
-               notifySubscribers('message', textToSend || 'Sent a file');
-               setReplyingTo(null);
-               setSelectedFile(null);
-               if(fileInputRef.current) fileInputRef.current.value = '';
-          }
-      } catch (error) {
-          console.error("Send error", error);
-          setInputText(textToSend); // Restore on error
-      } finally {
-          setIsUploading(false);
-      }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          handleSend();
-      }
-      if (e.key === 'Escape') {
-          cancelEdit();
-          cancelReply();
-      }
-  };
-
-  const handleDeleteChat = async () => {
-      if (!config.roomKey) return;
-      setIsDeleting(true);
-      try {
-           // Notify users BEFORE deleting the room so subscribers table is still intact
-           await notifySubscribers('deleted', 'Room was deleted by host');
-
-           const { data: files } = await supabase.storage.from('attachments').list(config.roomKey);
-           if (files && files.length > 0) {
-               const filesToRemove = files.map(x => `${config.roomKey}/${x.name}`);
-               await supabase.storage.from('attachments').remove(filesToRemove);
-           }
-           
-           await supabase.from('rooms').delete().eq('room_key', config.roomKey);
-           
-           onExit();
-      } catch(e) {
-          console.error("Delete failed", e);
-      } finally {
-          setIsDeleting(false);
-      }
-  };
-
   return (
     <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
-      {/* Offline Indicator - Modern Pill Style */}
+      {/* Offline Indicator */}
       {isOffline && (
         <div className="absolute top-20 left-0 right-0 flex justify-center z-40 pointer-events-none animate-in slide-in-from-top-4 fade-in duration-300">
           <div className="flex items-center gap-2.5 px-4 py-2 bg-slate-900/90 dark:bg-white/90 backdrop-blur-md rounded-full shadow-2xl border border-white/10 dark:border-slate-200/20">
               <div className="bg-red-500/20 p-1.5 rounded-full">
                 <WifiOff size={14} className="text-red-500 animate-pulse" />
               </div>
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-white dark:text-slate-900">No Connection</span>
-                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Reconnecting...</span>
-              </div>
+              <span className="text-xs font-bold text-white dark:text-slate-900">No Connection</span>
           </div>
         </div>
       )}
@@ -1029,9 +539,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             messages={messages} 
             currentUserUid={user?.uid || ''} 
             onEdit={handleEditMessage}
-            onDelete={handleDeleteMessage}
+            onDelete={deleteMessage}
             onReply={handleReply}
-            onReact={handleReaction}
+            onReact={reactToMessage}
         />
         <div ref={messagesEndRef} />
       </main>
@@ -1053,9 +563,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         isGettingLocation={isGettingLocation}
         handleSendLocation={handleSendLocation}
         editingMessageId={editingMessageId}
-        cancelEdit={cancelEdit}
+        cancelEdit={() => { setEditingMessageId(null); setInputText(''); }}
         replyingTo={replyingTo}
-        cancelReply={cancelReply}
+        cancelReply={() => setReplyingTo(null)}
         isOffline={isOffline}
         isRoomReady={isRoomReady}
         typingUsers={typingUsers}
