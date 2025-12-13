@@ -1,17 +1,86 @@
-// Base64 encode
-export function encodeMessage(str: string): string {
+
+import CryptoJS from 'crypto-js';
+
+/**
+ * Derives a secure 256-bit key from the PIN and Room Key (Salt).
+ * Uses PBKDF2 to prevent rainbow table attacks.
+ */
+const deriveKey = (pin: string, roomKey: string) => {
+    // We combine PIN and RoomKey to ensure the same PIN in different rooms creates different keys.
+    return CryptoJS.PBKDF2(pin, roomKey, {
+        keySize: 256 / 32,
+        iterations: 1000
+    });
+};
+
+/**
+ * Encrypts a message using AES-256.
+ * Generates a random IV for every message so identical texts look different.
+ */
+export function encryptMessage(text: string, pin: string, roomKey: string): string {
   try {
-    return btoa(unescape(encodeURIComponent(str)));
+    if (!text) return '';
+    
+    const key = deriveKey(pin, roomKey);
+    const iv = CryptoJS.lib.WordArray.random(128 / 8); // 16 bytes random IV
+    
+    const encrypted = CryptoJS.AES.encrypt(text, key, { 
+        iv: iv,
+        mode: CryptoJS.mode.CBC,
+        padding: CryptoJS.pad.Pkcs7
+    });
+
+    // Return format: IV:Ciphertext (both in Hex or Base64)
+    // We use Hex for IV and standard string for ciphertext container
+    return `${iv.toString()}:${encrypted.toString()}`;
   } catch (e) {
-    console.error("Encoding error", e);
-    return str;
+    console.error("Encryption error", e);
+    return text; // Fallback (should ideally never happen)
   }
 }
 
-// Base64 decode
-export function decodeMessage(str: string): string {
+/**
+ * Decrypts a message using AES-256.
+ * Handles legacy Base64 messages gracefully.
+ */
+export function decryptMessage(encryptedStr: string, pin: string, roomKey: string): string {
   try {
-    return decodeURIComponent(escape(atob(str)));
+    if (!encryptedStr) return '';
+
+    // Check if it follows our "IV:Ciphertext" format
+    if (encryptedStr.includes(':')) {
+        const parts = encryptedStr.split(':');
+        const iv = CryptoJS.enc.Hex.parse(parts[0]);
+        const ciphertext = parts[1];
+        const key = deriveKey(pin, roomKey);
+
+        const decrypted = CryptoJS.AES.decrypt(ciphertext, key, {
+            iv: iv,
+            mode: CryptoJS.mode.CBC,
+            padding: CryptoJS.pad.Pkcs7
+        });
+
+        return decrypted.toString(CryptoJS.enc.Utf8);
+    } else {
+        // Fallback for legacy messages (Old Base64 format)
+        // If decryption fails, we assume it's legacy encoding
+        try {
+             return decodeURIComponent(escape(atob(encryptedStr)));
+        } catch {
+             return encryptedStr; // Return as-is if all else fails
+        }
+    }
+  } catch (e) {
+    // If decryption completely fails (wrong PIN?), return raw string or a placeholder
+    console.warn("Decryption failed (wrong PIN?)");
+    return "🔒 Encrypted Message (Wrong PIN)"; 
+  }
+}
+
+// Keep legacy Base64 for backward compatibility if needed internally, but prefer above
+export function encodeMessageLegacy(str: string): string {
+  try {
+    return btoa(unescape(encodeURIComponent(str)));
   } catch (e) {
     return str;
   }
