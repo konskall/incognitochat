@@ -338,133 +338,122 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 
-                {/* Left Column: Profile Card */}
-                <div className="lg:col-span-4 xl:col-span-3 space-y-6">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-white/50 dark:border-slate-800 overflow-hidden relative group">
+                {/* Left Column: Profile Card - COMPACT DESIGN */}
+                <div className="lg:col-span-4 xl:col-span-4 space-y-6">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-5 relative overflow-hidden">
                         
-                        {/* Decorative Background */}
-                        <div className="h-32 bg-gradient-to-r from-blue-600 to-indigo-600"></div>
-                        
-                        <div className="px-6 pb-6 relative">
-                            {/* Avatar Container */}
-                            <div className="relative -mt-16 mb-4 flex justify-center">
-                                <div className="relative p-1 bg-white dark:bg-slate-900 rounded-full">
-                                    <img 
-                                        src={isEditingProfile ? tempAvatarUrl : avatarUrl} 
-                                        alt="Profile" 
-                                        className="w-32 h-32 rounded-full object-cover border-4 border-slate-50 dark:border-slate-800 shadow-md bg-slate-100"
-                                    />
-                                    {!isEditingProfile && (
-                                        <button 
-                                            onClick={() => {
-                                                setTempAvatarUrl(avatarUrl);
-                                                setIsEditingProfile(true);
-                                            }}
-                                            className="absolute bottom-1 right-1 p-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-full shadow-lg border border-slate-100 dark:border-slate-700 hover:text-blue-600 transition-colors"
-                                            title="Edit Profile"
-                                        >
-                                            <Edit2 size={16} />
-                                        </button>
-                                    )}
-                                </div>
+                         {/* Subtle top decoration */}
+                         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
+
+                        <div className="flex flex-row items-center gap-4">
+                            {/* Avatar Left */}
+                            <div className="relative group shrink-0">
+                                <img 
+                                    src={isEditingProfile ? tempAvatarUrl : avatarUrl} 
+                                    alt="Profile" 
+                                    className="w-20 h-20 rounded-full object-cover border-2 border-slate-100 dark:border-slate-700 shadow-sm bg-slate-50"
+                                />
+                                {!isEditingProfile && (
+                                    <button 
+                                        onClick={() => {
+                                            setTempAvatarUrl(avatarUrl);
+                                            setIsEditingProfile(true);
+                                        }}
+                                        className="absolute -bottom-1 -right-1 p-1.5 bg-white dark:bg-slate-800 text-slate-500 hover:text-blue-600 border border-slate-200 dark:border-slate-700 rounded-full shadow-sm transition-colors"
+                                        title="Edit Profile"
+                                    >
+                                        <Edit2 size={14} />
+                                    </button>
+                                )}
                             </div>
 
-                            {/* Info / Edit Form */}
-                            <div className="text-center space-y-4">
-                                {isEditingProfile ? (
-                                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                        {/* Avatar Controls */}
-                                        <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-1 flex justify-center gap-1">
-                                            <button 
-                                                onClick={() => setAvatarMode('random')}
-                                                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-colors ${avatarMode === 'random' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:bg-white/50'}`}
-                                            >
-                                                Random
-                                            </button>
-                                            <button 
-                                                onClick={() => setAvatarMode('upload')}
-                                                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-colors ${avatarMode === 'upload' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:bg-white/50'}`}
-                                            >
-                                                Upload
-                                            </button>
-                                            <button 
-                                                onClick={() => setAvatarMode('link')}
-                                                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-colors ${avatarMode === 'link' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:bg-white/50'}`}
-                                            >
-                                                Link
-                                            </button>
-                                        </div>
-
-                                        {/* Avatar Actions */}
-                                        <div className="h-10 flex items-center justify-center">
-                                            {avatarMode === 'random' && (
-                                                <button onClick={handleGenerateRandomAvatar} className="flex items-center gap-2 text-xs font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-full hover:bg-blue-100 transition">
-                                                    <RefreshCw size={14} /> Regenerate
-                                                </button>
-                                            )}
-                                            {avatarMode === 'upload' && (
-                                                <label className="flex items-center gap-2 text-xs font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-full hover:bg-blue-100 transition cursor-pointer">
-                                                    <Camera size={14} /> Choose File
-                                                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
-                                                </label>
-                                            )}
-                                            {avatarMode === 'link' && (
-                                                <div className="flex w-full gap-1">
-                                                    <input 
-                                                        type="text" 
-                                                        value={linkInput}
-                                                        onChange={(e) => setLinkInput(e.target.value)}
-                                                        placeholder="https://..."
-                                                        className="flex-1 text-xs px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-transparent"
-                                                    />
-                                                    <button onClick={handleLinkAvatar} className="p-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 rounded hover:bg-blue-200">
-                                                        <ArrowRight size={14} />
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <input 
-                                            type="text" 
-                                            value={displayName} 
-                                            onChange={(e) => setDisplayName(e.target.value)}
-                                            className="w-full text-center px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none"
-                                            placeholder="Display Name"
-                                        />
-
-                                        <div className="flex gap-2 justify-center">
-                                            <button 
-                                                onClick={() => setIsEditingProfile(false)}
-                                                className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
-                                            >
-                                                Cancel
-                                            </button>
-                                            <button 
-                                                onClick={handleSaveProfile}
-                                                disabled={isSavingProfile}
-                                                className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg shadow-lg hover:bg-blue-700 transition flex items-center gap-2"
-                                            >
-                                                {isSavingProfile ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
-                                                Save Changes
-                                            </button>
+                            {/* Info Right */}
+                            <div className="flex-1 min-w-0 overflow-hidden">
+                                {!isEditingProfile ? (
+                                    <div className="flex flex-col justify-center h-full animate-in fade-in duration-300">
+                                        <h3 className="text-lg font-bold text-slate-800 dark:text-white truncate" title={displayName}>{displayName}</h3>
+                                        <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs mt-1">
+                                            <Mail size={12} className="shrink-0" />
+                                            <span className="truncate" title={user.email}>{user.email}</span>
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="animate-in fade-in zoom-in-95 duration-300">
-                                        <h3 className="text-xl font-bold text-slate-800 dark:text-white">{displayName}</h3>
-                                        <div className="flex items-center justify-center gap-2 mt-1 text-slate-500 dark:text-slate-400">
-                                            <Mail size={14} />
-                                            <span className="text-sm">{user.email}</span>
-                                        </div>
-                                    </div>
+                                    <div className="text-sm font-medium text-slate-400 italic">Editing profile...</div>
                                 )}
                             </div>
                         </div>
+
+                        {/* Expandable Edit Section */}
+                        {isEditingProfile && (
+                            <div className="mt-5 pt-5 border-t border-slate-100 dark:border-slate-800 space-y-4 animate-in slide-in-from-top-2 fade-in duration-200">
+                                
+                                {/* Avatar Sources */}
+                                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-1 flex justify-center gap-1">
+                                    <button onClick={() => setAvatarMode('random')} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${avatarMode === 'random' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:bg-white/50'}`}>Random</button>
+                                    <button onClick={() => setAvatarMode('upload')} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${avatarMode === 'upload' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:bg-white/50'}`}>Upload</button>
+                                    <button onClick={() => setAvatarMode('link')} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${avatarMode === 'link' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-600' : 'text-slate-500 hover:bg-white/50'}`}>Link</button>
+                                </div>
+
+                                {/* Avatar Actions Input */}
+                                <div className="flex items-center justify-center">
+                                    {avatarMode === 'random' && (
+                                        <button onClick={handleGenerateRandomAvatar} className="flex items-center gap-2 text-xs font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg hover:bg-blue-100 transition w-full justify-center">
+                                            <RefreshCw size={14} /> Regenerate
+                                        </button>
+                                    )}
+                                    {avatarMode === 'upload' && (
+                                        <label className="flex items-center gap-2 text-xs font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg hover:bg-blue-100 transition cursor-pointer w-full justify-center">
+                                            <Camera size={14} /> Choose File
+                                            <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
+                                        </label>
+                                    )}
+                                    {avatarMode === 'link' && (
+                                        <div className="flex w-full gap-2">
+                                            <input 
+                                                type="text" 
+                                                value={linkInput}
+                                                onChange={(e) => setLinkInput(e.target.value)}
+                                                placeholder="https://..."
+                                                className="flex-1 text-xs px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent"
+                                            />
+                                            <button onClick={handleLinkAvatar} className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 rounded-lg hover:bg-blue-200">
+                                                <ArrowRight size={14} />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <input 
+                                    type="text" 
+                                    value={displayName} 
+                                    onChange={(e) => setDisplayName(e.target.value)}
+                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none"
+                                    placeholder="Display Name"
+                                />
+
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => setIsEditingProfile(false)}
+                                        className="flex-1 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button 
+                                        onClick={handleSaveProfile}
+                                        disabled={isSavingProfile}
+                                        className="flex-1 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-blue-700 transition flex items-center justify-center gap-2"
+                                    >
+                                        {isSavingProfile ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                                        Save
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 {/* Right Column: Room Management */}
-                <div className="lg:col-span-8 xl:col-span-9 space-y-6">
+                <div className="lg:col-span-8 xl:col-span-8 space-y-6">
                     
                     {/* Create Room Card */}
                     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
