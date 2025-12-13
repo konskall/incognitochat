@@ -5,8 +5,8 @@ import { User, ChatConfig, Room } from '../types';
 import { generateRoomKey, compressImage } from '../utils/helpers';
 import { 
   LogOut, Trash2, ArrowRight, Loader2, 
-  Camera, Upload, RotateCcw,
-  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Image as ImageIcon, Link as LinkIcon
+  Upload, RotateCcw,
+  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon
 } from 'lucide-react';
 
 interface DashboardScreenProps {
