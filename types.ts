@@ -3,11 +3,6 @@ export interface User {
   uid: string;
   isAnonymous: boolean;
   email?: string;
-  user_metadata?: {
-      [key: string]: any;
-      room_themes?: { [roomKey: string]: string }; // Map roomKey -> css background string
-      global_theme?: string; // Default background
-  }
 }
 
 export interface Attachment {
@@ -47,8 +42,7 @@ export interface ChatConfig {
   avatarURL: string;
   roomName: string;
   pin: string;
-  roomKey: string;
-  backgroundImage?: string; // New property for custom background
+  roomKey: string; 
 }
 
 export interface Presence {
