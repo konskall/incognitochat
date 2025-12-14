@@ -16,29 +16,29 @@ const App: React.FC = () => {
     // 1. Check for active session from URL (OAuth redirect) or LocalStorage
     const initSession = async () => {
         const { data: { session } } = await supabase.auth.getSession();
+        let isGoogleUser = false;
         
         if (session?.user) {
             // User is logged in
             const isAnon = !!session.user.is_anonymous;
+            isGoogleUser = !isAnon;
+
             setCurrentUser({ 
                 uid: session.user.id, 
                 isAnonymous: isAnon,
                 email: session.user.email 
             });
-
-            if (!isAnon) {
-                // If persistent user (Google), go to Dashboard
-                setCurrentView('dashboard');
-                return;
-            }
         }
 
-        // 2. Auto-login logic for anonymous users: Check local storage for session details
-        // Only if we didn't find a Google session above.
+        // 2. Check local storage for active room session details (for ALL users)
+        // This ensures that if a Google user refreshes inside a room, they stay there.
         const storedPin = localStorage.getItem('chatPin');
         const storedRoomName = localStorage.getItem('chatRoomName');
-        const storedUsername = localStorage.getItem('chatUsername');
-        const storedAvatar = localStorage.getItem('chatAvatarURL');
+        
+        // We look for username/avatar in storage first (set by Login or Dashboard), 
+        // fallback to session metadata for Google users if storage is empty.
+        const storedUsername = localStorage.getItem('chatUsername') || session?.user?.user_metadata?.full_name;
+        const storedAvatar = localStorage.getItem('chatAvatarURL') || session?.user?.user_metadata?.avatar_url;
         
         if (storedPin && storedRoomName && storedUsername) {
             const roomKey = generateRoomKey(storedPin, storedRoomName);
@@ -50,6 +50,9 @@ const App: React.FC = () => {
                 roomKey: roomKey
             });
             setCurrentView('chat');
+        } else if (isGoogleUser) {
+            // If no active room in storage, but authenticated via Google, go to Dashboard
+            setCurrentView('dashboard');
         } else {
             // If no session and no local storage room data, show login
             if (!session?.user) {
@@ -68,7 +71,7 @@ const App: React.FC = () => {
                 isAnonymous: false,
                 email: session.user.email 
             });
-            // If we are not already in a chat, show dashboard
+            // Only redirect to dashboard if we are NOT already in a chat state (handled by initSession above)
             setChatConfig(prev => {
                 if (!prev) setCurrentView('dashboard');
                 return prev;
@@ -80,6 +83,12 @@ const App: React.FC = () => {
   }, []);
 
   const handleJoin = (config: ChatConfig) => {
+    // Persist room details to localStorage so refresh works
+    localStorage.setItem('chatPin', config.pin);
+    localStorage.setItem('chatRoomName', config.roomName);
+    localStorage.setItem('chatUsername', config.username);
+    localStorage.setItem('chatAvatarURL', config.avatarURL);
+
     setChatConfig(config);
     setCurrentView('chat');
   };
@@ -87,7 +96,9 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     
-    // Clear the avatar URL from local storage so it doesn't persist on the login screen
+    // Clear persisted data on logout
+    localStorage.removeItem('chatPin');
+    localStorage.removeItem('chatRoomName');
     localStorage.removeItem('chatAvatarURL'); 
 
     setCurrentUser(null);
@@ -97,13 +108,14 @@ const App: React.FC = () => {
   const handleExitChat = () => {
     setChatConfig(null);
     
+    // Clear active room persistence for everyone
+    localStorage.removeItem("chatPin");
+    localStorage.removeItem("chatRoomName");
+    
     // If user is authenticated with Google, go back to Dashboard
     if (currentUser && !currentUser.isAnonymous) {
         setCurrentView('dashboard');
     } else {
-        // If anonymous, go back to login and clear room persistence
-        localStorage.removeItem("chatPin");
-        localStorage.removeItem("chatRoomName");
         setCurrentView('login');
     }
   };
