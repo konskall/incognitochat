@@ -35,9 +35,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
   const [showHistory, setShowHistory] = useState(false);
   const historyRef = useRef<HTMLDivElement>(null);
   
-  // Theme State
+  // Theme State - Default to Dark Mode
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    return localStorage.getItem('theme') === 'dark';
+    return localStorage.getItem('theme') !== 'light';
   });
 
   // Advanced Avatar State
@@ -275,7 +275,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       <main className="relative bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-blue-500/10 dark:shadow-blue-900/10 w-full p-8 border border-white/50 dark:border-slate-800 transition-colors">
         <button 
             onClick={toggleTheme}
-            className="absolute top-6 right-6 p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-10"
+            className="absolute top-6 right-6 p-2 rounded-full text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-10"
             title="Toggle Theme"
         >
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
@@ -288,12 +288,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
             className="w-16 h-16 rounded-2xl shadow-lg mb-4"
           />
           <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Incognito Chat</h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm">Secure, anonymous, real-time.</p>
+          <p className="text-slate-600 dark:text-slate-400 text-sm">Secure, anonymous, real-time.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 ml-1 mb-1 block uppercase">Identity</label>
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1 block uppercase">Identity</label>
             <input
               type="text"
               placeholder="Username"
@@ -311,7 +311,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                  <button 
                     type="button" 
                     onClick={toggleCustomUrl}
-                    className="text-xs text-blue-500 dark:text-blue-400 font-semibold hover:underline"
+                    className="text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline"
                  >
                      {useCustomUrl ? 'Use Generator' : 'Use Custom URL'}
                  </button>
@@ -347,7 +347,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                         <button 
                             type="button"
                             onClick={regenerateAvatar}
-                            className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 py-1.5 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition"
+                            className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 py-1.5 rounded-lg font-bold hover:bg-blue-200 dark:hover:bg-blue-900/60 transition"
                         >
                             🔀 Shuffle Look
                         </button>
@@ -359,7 +359,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
           <div className="h-px bg-slate-200 dark:bg-slate-700 my-2"></div>
 
           <div>
-             <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 ml-1 mb-1 block uppercase">Destination</label>
+             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1 block uppercase">Destination</label>
              
              <div className="relative" ref={historyRef}>
                 <input
@@ -441,7 +441,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
 
         <div className="my-6 flex items-center justify-center gap-4">
             <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
-            <span className="text-xs text-slate-400 uppercase font-medium">Or manage rooms</span>
+            <span className="text-xs text-slate-400 uppercase font-bold tracking-wide">Or manage rooms</span>
             <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
         </div>
 
@@ -477,7 +477,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
             <button 
                 type="button"
                 onClick={() => setShowGuide(!showGuide)}
-                className="w-full flex items-center justify-between p-3 text-blue-600 dark:text-blue-400 font-semibold text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 transition"
+                className="w-full flex items-center justify-between p-3 text-blue-600 dark:text-blue-400 font-bold text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 transition"
             >
                 <div className="flex items-center gap-2">
                     <Info size={16} />
@@ -491,20 +491,20 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                     <p className="flex gap-2"><span className="text-blue-500">👤</span> <strong>Username:</strong> Your display name.</p>
                     <p className="flex gap-2"><span className="text-blue-500">🔐</span> <strong>PIN:</strong> 4+ chars key.</p>
                     <p className="flex gap-2"><span className="text-blue-500">🏠</span> <strong>Room:</strong> 3+ Latin chars.</p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 italic">Share the Room Name and invite others.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-500 mt-2 italic">Share the Room Name and invite others.</p>
                 </div>
             )}
         </div>
       </main>
       
-      <footer className="mt-8 text-center text-slate-400 dark:text-slate-500 text-xs pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+      <footer className="mt-8 text-center text-slate-500 dark:text-slate-500 text-xs pb-[calc(1.5rem+env(safe-area-inset-bottom))] font-medium">
         <p>
           Incognito Chat © 2025 • Powered by{' '}
           <a 
             href="http://linkedin.com/in/konstantinos-kalliakoudis-902b90103" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="text-blue-500 hover:text-blue-600 font-semibold hover:underline transition-colors"
+            className="text-blue-600 hover:text-blue-700 dark:text-blue-500 dark:hover:text-blue-400 font-bold hover:underline transition-colors"
           >
             KonsKall
           </a>
