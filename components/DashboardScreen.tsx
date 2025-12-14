@@ -8,7 +8,7 @@ import {
   LogOut, Trash2, ArrowRight, Loader2, 
   Upload, RotateCcw,
   RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon, AlertCircle, ImageIcon,
-  Palette, Layers, Check
+  Palette, LayoutGrid, CircleDot, Activity, Hexagon
 } from 'lucide-react';
 
 interface DashboardScreenProps {
@@ -17,30 +17,34 @@ interface DashboardScreenProps {
   onLogout: () => void;
 }
 
-// -- Professional Patterns (SVG Data URIs) --
-// We use encodeURIComponent to allow dynamic color injection
-const getPattern = (type: string, colorHex: string, opacity: number = 0.05) => {
-    // Convert hex to rgb for rgba usage if needed, or just use hex in SVG
-    const encodedColor = encodeURIComponent(colorHex);
-    
-    // 1. Technical Grid (Graph Paper)
-    if (type === 'grid') {
-        return `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h40v40H0V0zm1 1h38v38H1V1z' fill='none' stroke='${encodedColor}' stroke-width='0.5' stroke-opacity='${opacity}'/%3E%3Cpath d='M0 39h40M0 19h40M19 0v40M39 0v40' fill='none' stroke='${encodedColor}' stroke-width='0.5' stroke-opacity='${opacity}'/%3E%3C/svg%3E")`;
+// -- Professional SVG Pattern Generator --
+// Dynamically constructs SVG data URIs with user-selected colors
+const generatePattern = (type: string, colorHex: string) => {
+    // URL-encode the hex color (e.g., # is %23)
+    const color = encodeURIComponent(colorHex);
+    // Fixed opacity for text readability assurance
+    const opacity = "0.08"; 
+
+    switch (type) {
+        case 'graph':
+            return `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h40v40H0V0zm1 1h38v38H1V1z' fill='none' stroke='${color}' stroke-width='1' stroke-opacity='${opacity}'/%3E%3Cpath d='M0 39h40M0 19h40M19 0v40M39 0v40' fill='none' stroke='${color}' stroke-width='0.5' stroke-opacity='${opacity}'/%3E%3C/svg%3E")`;
+        case 'polka':
+            return `url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='2' cy='2' r='1.5' fill='${color}' fill-opacity='${opacity}'/%3E%3C/svg%3E")`;
+        case 'waves':
+             return `url("data:image/svg+xml,%3Csvg width='100' height='20' viewBox='0 0 100 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M21.184 20c.357-.13.72-.264 1.088-.402l1.768-.661C33.64 15.347 39.647 14 50 14c10.271 0 15.362 1.222 24.629 4.928.955.383 1.869.74 2.75 1.072h6.225c-2.51-.73-5.139-1.691-8.233-2.928C65.888 13.278 60.562 12 50 12c-10.626 0-16.855 1.397-26.66 5.063l-1.767.662c-2.475.923-4.66 1.674-6.724 2.275h6.335zm0-20C13.258 2.892 8.077 4 0 4V2c5.744 0 9.951-.574 14.85-2h6.334zM77.38 0C85.239 2.966 90.502 4 100 4V2c-6.842 0-11.386-.542-16.396-2h-6.225zM0 14c8.44 0 13.718-1.21 22.272-4.402l1.768-.661C33.64 5.347 39.647 4 50 4c10.271 0 15.362 1.222 24.629 4.928C84.112 12.722 89.438 14 100 14v-2c-10.271 0-15.362-1.222-24.629-4.928C65.888 3.278 60.562 2 50 2 39.374 2 33.145 3.397 23.34 7.063l-1.767.662C13.223 10.84 8.163 12 0 12v2z' fill='${color}' fill-opacity='${opacity}' fill-rule='evenodd'/%3E%3C/svg%3E")`;
+        case 'hex':
+            return `url("data:image/svg+xml,%3Csvg width='24' height='40' viewBox='0 0 24 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 40c5.523 0 10-4.477 10-10V10C10 4.477 5.523 0 0 0h24c-5.523 0-10 4.477-10 10v20c0 5.523 4.477 10 10 10H0z' fill='${color}' fill-opacity='${opacity}' fill-rule='evenodd'/%3E%3C/svg%3E")`;
+        default:
+            return '';
     }
-    // 2. Minimalist Dots (Matrix)
-    if (type === 'dots') {
-        return `url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='${encodedColor}' fill-opacity='${opacity}'%3E%3Ccircle cx='2' cy='2' r='1'/%3E%3C/g%3E%3C/svg%3E")`;
-    }
-    // 3. Diagonal Stripes (Modern)
-    if (type === 'stripes') {
-        return `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill-rule='evenodd'%3E%3Cg fill='${encodedColor}' fill-opacity='${opacity}'%3E%3Cpath d='M0 40L40 0H20L0 20M40 40V20L20 40'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`;
-    }
-    // 4. Circuit/Geometric (Tech)
-    if (type === 'circuit') {
-         return `url("data:image/svg+xml,%3Csvg width='52' height='26' viewBox='0 0 52 26' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='${encodedColor}' fill-opacity='${opacity}'%3E%3Cpath d='M10 10c0-2.21-1.79-4-4-4-3.314 0-6-2.686-6-6h2c0 2.21 1.79 4 4 4 3.314 0 6 2.686 6 6 0 2.21 1.79 4 4 4 3.314 0 6 2.686 6 6 0 2.21 1.79 4 4 4v2c-3.314 0-6-2.686-6-6 0-2.21-1.79-4-4-4-3.314 0-6-2.686-6-6zm25.464-1.95l8.486 8.486-1.414 1.414-8.486-8.486 1.414-1.414z' /%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`;
-    }
-    return '';
 };
+
+const PATTERN_OPTIONS = [
+    { id: 'graph', label: 'Graph', icon: LayoutGrid },
+    { id: 'polka', label: 'Polka', icon: CircleDot },
+    { id: 'waves', label: 'Waves', icon: Activity },
+    { id: 'hex', label: 'Hex', icon: Hexagon },
+];
 
 // -- Custom Room Delete Toast (Glassmorphism) --
 const RoomDeleteToast: React.FC<{ 
@@ -149,12 +153,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
           localStorage.setItem('chatUsername', finalName);
           localStorage.setItem('chatAvatarURL', finalAvatar);
-          
-          // Load Global Theme defaults to state
-          if (meta.global_theme) {
-             // If it's a color/pattern string, try to parse color for picker? 
-             // Simpler: Just rely on visual preview.
-          }
       }
 
       // 2. Fetch Rooms (Created AND Joined)
@@ -272,7 +270,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                finalBackgroundStr = customBgImage; // Should be URL
           } else if (themePattern !== 'none') {
                // Combine pattern and color
-               finalBackgroundStr = getPattern(themePattern, themeColor, 0.15); // Use 0.15 opacity for subtle look
+               finalBackgroundStr = getPattern(themePattern, themeColor); 
           }
           
           // Get current metadata first to avoid overwriting
@@ -309,7 +307,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           setIsEditingProfile(false);
           setShowLinkInput(false);
           
-          // Reset theme states
+          // Reset theme states to default to encourage new selection or just reset
           setThemePattern('none');
           setCustomBgImage('');
           setSelectedTargetRoom('global');
@@ -655,7 +653,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         style={{ 
                                             background: (themePattern === 'image' && customBgImage) 
                                                 ? `url(${customBgImage}) center/cover no-repeat fixed` 
-                                                : getPattern(themePattern, themeColor, 0.15) 
+                                                : getPattern(themePattern, themeColor) 
                                         }}
                                     >
                                         <div className="absolute inset-0 bg-slate-50 dark:bg-slate-900 -z-10"></div>
@@ -679,14 +677,15 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                             </button>
 
                                             {/* Pattern Options */}
-                                            {['grid', 'dots', 'stripes', 'circuit'].map(p => (
+                                            {PATTERN_OPTIONS.map(p => (
                                                 <button
-                                                    key={p}
-                                                    onClick={() => { setThemePattern(p); setCustomBgImage(''); }}
-                                                    className={`aspect-square rounded-lg border-2 transition-all overflow-hidden relative ${themePattern === p ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}
-                                                    title={p.charAt(0).toUpperCase() + p.slice(1)}
+                                                    key={p.id}
+                                                    onClick={() => { setThemePattern(p.id); setCustomBgImage(''); }}
+                                                    className={`aspect-square rounded-lg border-2 transition-all overflow-hidden relative group/pattern flex items-center justify-center ${themePattern === p.id ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}
+                                                    title={p.label}
                                                 >
-                                                    <div className="absolute inset-0 opacity-50" style={{background: getPattern(p, isEditingProfile ? '#64748b' : themeColor, 0.4)}}></div>
+                                                    <div className="absolute inset-0 opacity-50" style={{background: getPattern(p.id, isEditingProfile ? '#64748b' : themeColor)}}></div>
+                                                    <p.icon size={14} className="relative z-10 text-slate-500 opacity-60 group-hover/pattern:opacity-100" />
                                                 </button>
                                             ))}
                                         </div>
