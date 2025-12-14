@@ -109,7 +109,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 return;
             }
         } else {
-            alert(`File is too large. Max size is 40MB.`);
+            alert(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is 40MB.`);
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
