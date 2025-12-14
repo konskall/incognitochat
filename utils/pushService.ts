@@ -1,5 +1,6 @@
 
 import { supabase } from '../services/supabase';
+import { toast } from 'sonner';
 
 // REPLACE THIS WITH YOUR VAPID PUBLIC KEY FROM STEP 1
 const VAPID_PUBLIC_KEY = 'BGTGP7sFM_sOavl6uF_e-MeAnapyi6sI_bjoSSk3N4mjCW6bPHdQxvN7Z4w750IAhEHsy9xfPY9MCHu7Y7OADbU'; 
@@ -45,6 +46,10 @@ export async function subscribeToPushNotifications(userId: string, roomKey: stri
 
     if (error) {
         console.error('Supabase subscription error:', error);
+        // Alert user if table is missing (common issue)
+        if (error.code === '42P01') {
+            toast.error("System Error: The 'push_subscriptions' table does not exist in the database. Please contact the administrator.");
+        }
         return false;
     }
 
