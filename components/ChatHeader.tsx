@@ -2,6 +2,7 @@
 import React, { useRef, useEffect } from 'react';
 import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
+import { toast } from 'sonner';
 
 interface ChatHeaderProps {
   config: ChatConfig;
@@ -89,7 +90,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             });
         } else {
             await navigator.clipboard.writeText(`${shareText}\n\n${inviteUrl}`);
-            alert('Room details copied to clipboard!');
+            toast.success('Room details copied to clipboard!');
         }
     } catch (err) {
         console.error('Error sharing:', err);
