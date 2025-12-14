@@ -42,7 +42,8 @@ export interface ChatConfig {
   avatarURL: string;
   roomName: string;
   pin: string;
-  roomKey: string; 
+  roomKey: string;
+  backgroundImage?: string; // New property for custom background
 }
 
 export interface Presence {
