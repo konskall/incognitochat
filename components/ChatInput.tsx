@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Send, Paperclip, MapPin, Smile, Mic, Trash2, X, Image as ImageIcon, FileText, Edit2 } from 'lucide-react';
+import { Send, Paperclip, MapPin, Smile, Mic, Trash2, X, Image as ImageIcon, FileText, Edit2, FileVideo } from 'lucide-react';
 import EmojiPicker from './EmojiPicker';
 import { compressImage } from '../utils/helpers';
 import { Message } from '../types';
@@ -37,7 +37,7 @@ interface ChatInputProps {
   typingUsers: string[];
 }
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = 40 * 1024 * 1024; // 40MB
 
 const ChatInput: React.FC<ChatInputProps> = ({
   inputText,
@@ -84,7 +84,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       if (file.size > MAX_FILE_SIZE) {
         if (file.type.startsWith('image/')) {
             const confirmCompress = window.confirm(
-                `Image is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Compress to under 10MB?`
+                `Image is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Compress to under 40MB?`
             );
             
             if (confirmCompress) {
@@ -109,7 +109,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 return;
             }
         } else {
-            alert(`File is too large. Max size is 10MB.`);
+            alert(`File is too large. Max size is 40MB.`);
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
@@ -147,6 +147,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
       textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
     }
   }, [inputText]);
+
+  const getFileIcon = (type: string) => {
+      if (type.startsWith('image/')) return <ImageIcon size={20}/>;
+      if (type.startsWith('video/')) return <FileVideo size={20}/>;
+      return <FileText size={20}/>;
+  };
 
   return (
       <footer className="bg-white dark:bg-slate-900 p-1.5 border-t border-slate-200 dark:border-slate-800 shadow-lg z-20 relative pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex flex-col items-center justify-center transition-colors">
@@ -197,7 +203,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
              {selectedFile && !editingMessageId && (
                <div className="flex items-center gap-3 p-2 bg-blue-50 dark:bg-slate-800 border border-blue-100 dark:border-slate-700 rounded-xl w-fit animate-in slide-in-from-bottom-2 mb-2 self-start">
                   <div className="w-10 h-10 bg-blue-100 dark:bg-slate-700 rounded-lg flex items-center justify-center text-blue-500 dark:text-blue-400">
-                    {selectedFile.type.startsWith('image/') ? <ImageIcon size={20}/> : <FileText size={20}/>}
+                    {getFileIcon(selectedFile.type)}
                   </div>
                   <div className="flex flex-col">
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-200 max-w-[150px] truncate">{selectedFile.name}</span>
@@ -241,7 +247,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                         ref={fileInputRef}
                         onChange={handleFileSelect}
                         className="hidden"
-                        accept="image/*,.pdf,.doc,.docx,.txt"
+                        accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
                      />
                      {!editingMessageId && (
                         <>
