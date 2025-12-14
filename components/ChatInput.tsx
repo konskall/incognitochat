@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Send, Paperclip, MapPin, Smile, Mic, Trash2, X, Image as ImageIcon, FileText, Edit2, FileVideo } from 'lucide-react';
+import { Send, Paperclip, MapPin, Smile, Mic, Trash2, X, Image as ImageIcon, FileText, Edit2, FileVideo, FileArchive } from 'lucide-react';
 import EmojiPicker from './EmojiPicker';
 import { compressImage } from '../utils/helpers';
 import { Message } from '../types';
@@ -151,6 +151,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const getFileIcon = (type: string) => {
       if (type.startsWith('image/')) return <ImageIcon size={20}/>;
       if (type.startsWith('video/')) return <FileVideo size={20}/>;
+      if (type.includes('zip') || type.includes('rar') || type.includes('compressed') || type.includes('tar') || type.includes('7z')) return <FileArchive size={20}/>;
       return <FileText size={20}/>;
   };
 
@@ -247,7 +248,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                         ref={fileInputRef}
                         onChange={handleFileSelect}
                         className="hidden"
-                        accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
+                        accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip,.rar,.7z,.tar"
                      />
                      {!editingMessageId && (
                         <>
