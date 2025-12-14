@@ -548,6 +548,33 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
   };
 
+  // Determine Background Style
+  const getBackgroundStyle = () => {
+      if (!config.backgroundImage) {
+          return {
+              backgroundImage: `radial-gradient(${isDarkMode ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`, 
+              backgroundSize: '20px 20px'
+          };
+      }
+      
+      // Check if it looks like a URL (basic check) or a gradient string
+      if (config.backgroundImage.includes('url(') || config.backgroundImage.startsWith('http') || config.backgroundImage.startsWith('data:')) {
+           return {
+               backgroundImage: config.backgroundImage.startsWith('http') || config.backgroundImage.startsWith('data:') 
+                  ? `url(${config.backgroundImage})` 
+                  : config.backgroundImage,
+               backgroundSize: 'cover',
+               backgroundPosition: 'center',
+               backgroundAttachment: 'fixed'
+           };
+      }
+      
+      // Assume CSS gradient string
+      return {
+          background: config.backgroundImage
+      };
+  };
+
   return (
     <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
       {/* Offline Indicator */}
@@ -597,21 +624,25 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       />
 
       <main 
-        className="flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50 dark:bg-slate-950/50" 
-        style={{
-            backgroundImage: `radial-gradient(${isDarkMode ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`, 
-            backgroundSize: '20px 20px'
-        }}
+        className={`flex-1 overflow-y-auto overscroll-contain p-4 pb-20 ${!config.backgroundImage ? 'bg-slate-50/50 dark:bg-slate-950/50' : ''}`}
+        style={getBackgroundStyle()}
       >
-        <MessageList 
-            messages={messages} 
-            currentUserUid={user?.uid || ''} 
-            onEdit={handleEditMessage}
-            onDelete={deleteMessage}
-            onReply={handleReply}
-            onReact={reactToMessage}
-        />
-        <div ref={messagesEndRef} />
+        {/* If custom image background, add an overlay for readability */}
+        {config.backgroundImage && (config.backgroundImage.includes('http') || config.backgroundImage.includes('url')) && (
+            <div className="absolute inset-0 bg-white/30 dark:bg-black/40 pointer-events-none" />
+        )}
+        
+        <div className="relative z-10 min-h-full flex flex-col justify-end">
+            <MessageList 
+                messages={messages} 
+                currentUserUid={user?.uid || ''} 
+                onEdit={handleEditMessage}
+                onDelete={deleteMessage}
+                onReply={handleReply}
+                onReact={reactToMessage}
+            />
+            <div ref={messagesEndRef} />
+        </div>
       </main>
 
       <ChatInput
