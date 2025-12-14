@@ -19,7 +19,7 @@ interface DashboardScreenProps {
 
 // -- Professional SVG Pattern Generator --
 // Dynamically constructs SVG data URIs with user-selected colors
-const generatePattern = (type: string, colorHex: string) => {
+const getPattern = (type: string, colorHex: string) => {
     // URL-encode the hex color (e.g., # is %23)
     const color = encodeURIComponent(colorHex);
     // Fixed opacity for text readability assurance
