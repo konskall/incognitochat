@@ -4,6 +4,7 @@ import { ChatConfig } from '../types';
 import { generateRoomKey, initAudio } from '../utils/helpers';
 import { Info, ChevronDown, ChevronUp, Eye, EyeOff, Moon, Sun, History, X, Trash2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { toast } from 'sonner';
 
 interface LoginScreenProps {
   onJoin: (config: ChatConfig) => void;
@@ -142,14 +143,14 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
         if (error) {
             console.error("Google Auth Error:", error);
             if (error.message && (error.message.includes('provider is not enabled') || error.message.includes('Unsupported provider'))) {
-                 alert("Configuration Error: Google Login is not enabled in your Supabase project.\n\nPlease enable it in the Supabase Dashboard > Authentication > Providers.");
+                 toast.error("Configuration Error: Google Login is not enabled in your Supabase project. Please enable it in the Supabase Dashboard > Authentication > Providers.");
             } else {
-                 alert(`Login Failed: ${error.message}`);
+                 toast.error(`Login Failed: ${error.message}`);
             }
         }
     } catch (e: any) {
         console.error("Login Exception:", e);
-        alert(`An unexpected error occurred: ${e.message || e}`);
+        toast.error(`An unexpected error occurred: ${e.message || e}`);
     }
   };
 
@@ -157,15 +158,15 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
     e.preventDefault();
 
     if (username.length < 2) {
-      alert("Username must have at least 2 characters.");
+      toast.error("Username must have at least 2 characters.");
       return;
     }
     if (!pin.match(/^[\w\d]{4,}$/)) {
-      alert("PIN must be at least 4 characters (letters/numbers).");
+      toast.error("PIN must be at least 4 characters (letters/numbers).");
       return;
     }
     if (!roomName.match(/^[\w\d]{3,}$/)) {
-      alert("Room name must be at least 3 Latin characters.");
+      toast.error("Room name must be at least 3 Latin characters.");
       return;
     }
 
@@ -178,7 +179,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
         const { error } = await supabase.auth.signInAnonymously();
         if (error) {
             console.error("Login failed:", error);
-            alert("Could not connect to server. Please try again.");
+            toast.error("Could not connect to server. Please try again.");
             setLoading(false);
             return;
         }
