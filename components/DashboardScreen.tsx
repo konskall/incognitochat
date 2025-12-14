@@ -7,8 +7,7 @@ import { generateRoomKey, compressImage } from '../utils/helpers';
 import { 
   LogOut, Trash2, ArrowRight, Loader2, 
   Upload, RotateCcw,
-  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon, AlertCircle, ImageIcon,
-  Palette, Box, Grip, Zap, Circle
+  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon, AlertCircle
 } from 'lucide-react';
 
 interface DashboardScreenProps {
@@ -16,35 +15,6 @@ interface DashboardScreenProps {
   onJoinRoom: (config: ChatConfig) => void;
   onLogout: () => void;
 }
-
-// -- Professional SVG Pattern Generator (Bolder & Fixed Color) --
-const getPattern = (type: string, colorHex: string) => {
-    // Manually replace # with %23 for SVG data URI compatibility
-    const color = colorHex.replace('#', '%23');
-    // Increased opacity for better visibility
-    const opacity = "0.3"; 
-    const strokeWidth = "2";
-
-    switch (type) {
-        case 'cubes': // 3D Isometric Cubes
-            return `url("data:image/svg+xml,%3Csvg width='30' height='30' viewBox='0 0 30 30' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='${color}' stroke-opacity='${opacity}' stroke-width='${strokeWidth}'%3E%3Cpath d='M15 0 L30 8 L30 23 L15 30 L0 23 L0 8 Z' /%3E%3Cpath d='M15 0 L15 15 L30 23' /%3E%3Cpath d='M0 8 L15 15' /%3E%3C/g%3E%3C/svg%3E")`;
-        case 'rhombus': // Geometric Diamond Grid
-            return `url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='${color}' stroke-opacity='${opacity}' stroke-width='${strokeWidth}'%3E%3Cpath d='M0 10 L10 0 L20 10 L10 20 Z' /%3E%3C/g%3E%3C/svg%3E")`;
-        case 'zigzag': // Sharp ZigZag Lines
-            return `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='${color}' stroke-opacity='${opacity}' stroke-width='${strokeWidth}'%3E%3Cpath d='M0 20 L10 10 L20 20 L30 10 L40 20' /%3E%3Cpath d='M0 40 L10 30 L20 40 L30 30 L40 40' /%3E%3Cpath d='M0 0 L10 -10 L20 0 L30 -10 L40 0' /%3E%3C/g%3E%3C/svg%3E")`;
-        case 'circles': // Overlapping Circles
-            return `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='${color}' stroke-opacity='${opacity}' stroke-width='${strokeWidth}'%3E%3Ccircle cx='20' cy='20' r='10' /%3E%3Ccircle cx='0' cy='0' r='10' /%3E%3Ccircle cx='40' cy='0' r='10' /%3E%3Ccircle cx='0' cy='40' r='10' /%3E%3Ccircle cx='40' cy='40' r='10' /%3E%3C/g%3E%3C/svg%3E")`;
-        default:
-            return '';
-    }
-};
-
-const PATTERN_OPTIONS = [
-    { id: 'cubes', label: 'Cubes', icon: Box },
-    { id: 'rhombus', label: 'Rhombus', icon: Grip },
-    { id: 'zigzag', label: 'ZigZag', icon: Zap },
-    { id: 'circles', label: 'Circles', icon: Circle },
-];
 
 // -- Custom Room Delete Toast (Glassmorphism) --
 const RoomDeleteToast: React.FC<{ 
@@ -57,6 +27,8 @@ const RoomDeleteToast: React.FC<{
     return createPortal(
         <div className="fixed bottom-6 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto z-[100] animate-in slide-in-from-bottom-4 fade-in duration-300">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-6 p-4 bg-slate-900/90 dark:bg-white/10 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl text-white ring-1 ring-black/10">
+                
+                {/* Text Section */}
                 <div className="flex flex-col items-center sm:items-start text-center sm:text-left w-full sm:w-auto min-w-[200px]">
                     <span className="text-sm font-bold flex items-center justify-center sm:justify-start gap-2 text-white">
                         <AlertCircle size={18} className="text-red-400 shrink-0" />
@@ -68,7 +40,11 @@ const RoomDeleteToast: React.FC<{
                             : `Αφαίρεση του "${roomName}" από τη λίστα.`}
                     </span>
                 </div>
+
+                {/* Divider - Hidden on mobile */}
                 <div className="hidden sm:block h-8 w-px bg-white/10"></div>
+
+                {/* Buttons Section */}
                 <div className="flex gap-2 w-full sm:w-auto">
                     <button 
                         onClick={onCancel}
@@ -107,14 +83,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   // Profile State
   const [displayName, setDisplayName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [googleAvatarUrl, setGoogleAvatarUrl] = useState('');
-  
-  // Theme State
-  const [selectedTargetRoom, setSelectedTargetRoom] = useState<string>('global'); // 'global' or roomKey
-  const [themeColor, setThemeColor] = useState('#3b82f6'); // Default Blue
-  const [themePattern, setThemePattern] = useState<string>('none');
-  const [customBgImage, setCustomBgImage] = useState<string>('');
-  
+  const [googleAvatarUrl, setGoogleAvatarUrl] = useState(''); // Store original google/provider image
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   
@@ -123,9 +92,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const [linkInput, setLinkInput] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Background Upload State
-  const backgroundInputRef = useRef<HTMLInputElement>(null);
 
   // Delete Room State
   const [roomToDelete, setRoomToDelete] = useState<{name: string, key: string, isOwner: boolean} | null>(null);
@@ -142,9 +108,11 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           
           const finalName = meta.display_name || meta.full_name || meta.name || localStorage.getItem('chatUsername') || user.email?.split('@')[0] || 'User';
           
+          // Determine the "original" avatar (from Google/Provider)
           const original = meta.picture || meta.avatar_url || `https://ui-avatars.com/api/?name=${finalName}&background=random`;
           setGoogleAvatarUrl(original);
 
+          // Determine current display avatar
           const finalAvatar = meta.custom_avatar || localStorage.getItem('chatAvatarURL') || original;
           
           setDisplayName(finalName);
@@ -157,6 +125,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
       // 2. Fetch Rooms (Created AND Joined)
       try {
+        // A. Fetch Created Rooms
         const { data: createdRooms, error: createdError } = await supabase
           .from('rooms')
           .select('*')
@@ -164,6 +133,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
         if (createdError) throw createdError;
 
+        // B. Fetch Joined Rooms (via subscribers table)
         const { data: subscriptions, error: subError } = await supabase
           .from('subscribers')
           .select('room_key')
@@ -174,6 +144,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         let joinedRooms: Room[] = [];
         if (subscriptions && subscriptions.length > 0) {
             const keys = subscriptions.map(s => s.room_key);
+            // Fetch room details for these keys (this automatically filters out deleted rooms)
             const { data: foundJoinedRooms, error: joinedRoomsError } = await supabase
                 .from('rooms')
                 .select('*')
@@ -183,14 +154,19 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             joinedRooms = foundJoinedRooms || [];
         }
 
+        // C. Merge and Deduplicate based on room_key
         const roomMap = new Map<string, Room>();
         (createdRooms || []).forEach(r => roomMap.set(r.room_key, r));
         (joinedRooms || []).forEach(r => roomMap.set(r.room_key, r));
         
         const allRooms = Array.from(roomMap.values());
+
+        // D. Sort by created_at descending
         allRooms.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
         setRooms(allRooms);
+        
+        // E. Check for unread messages
         checkUnreadMessages(allRooms);
 
       } catch (error) {
@@ -203,7 +179,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     initData();
   }, [user.uid, user.email]);
 
-  // Realtime subscription
+  // Realtime subscription for new messages to update badges live
   useEffect(() => {
     const channel = supabase.channel('dashboard-notifications')
         .on(
@@ -211,7 +187,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             { event: 'INSERT', schema: 'public', table: 'messages' },
             (payload) => {
                 const newMsg = payload.new;
+                // If I am the sender OR it is a system message, don't mark as unread
                 if (newMsg.uid === user.uid || newMsg.type === 'system') return;
+
+                // Check if we have this room in our list
                 const hasRoom = rooms.some(r => r.room_key === newMsg.room_key);
                 if (hasRoom) {
                     setUnreadRooms(prev => new Set(prev).add(newMsg.room_key));
@@ -227,21 +206,34 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
   const checkUnreadMessages = async (currentRooms: Room[]) => {
       if (currentRooms.length === 0) return;
+
       const newUnreadSet = new Set<string>();
+      
+      // We process checks in parallel
       await Promise.all(currentRooms.map(async (room) => {
           try {
+              // 1. Get the last time the user opened this room from LocalStorage
               const lastReadTimestamp = localStorage.getItem(`lastRead_${room.room_key}`);
+              
+              // FIX: If no timestamp exists (fresh login/new device), default to current time 
+              // instead of 0 (1970). This prevents marking all historic messages as unread 
+              // on a fresh login, solving the "ghost notification" issue.
               const lastReadTime = lastReadTimestamp ? parseInt(lastReadTimestamp) : Date.now();
+
+              // 2. Fetch the MOST RECENT message for this room from Supabase
+              // CRITICAL FIX: Ignore system messages (type != 'system')
               const { data: latestMsg, error } = await supabase
                   .from('messages')
                   .select('created_at')
                   .eq('room_key', room.room_key)
-                  .neq('type', 'system') 
+                  .neq('type', 'system') // Ignore join/leave messages
                   .order('created_at', { ascending: false })
                   .limit(1)
                   .maybeSingle();
+              
               if (!error && latestMsg) {
                   const msgTime = new Date(latestMsg.created_at).getTime();
+                  // 3. Compare: If message is newer than last read time, mark unread
                   if (msgTime > lastReadTime) {
                       newUnreadSet.add(room.room_key);
                   }
@@ -250,6 +242,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
               console.error(`Error checking unread for ${room.room_name}`, err);
           }
       }));
+
       setUnreadRooms(newUnreadSet);
   };
 
@@ -264,35 +257,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       setIsSavingProfile(true);
 
       try {
-          // Construct the CSS string for background
-          let finalBackgroundStr = '';
-          if (themePattern === 'image' && customBgImage) {
-               finalBackgroundStr = customBgImage; // Should be URL
-          } else if (themePattern !== 'none') {
-               // Combine pattern and color
-               finalBackgroundStr = getPattern(themePattern, themeColor); 
-          }
-          
-          // Get current metadata first to avoid overwriting
-          const { data: { user: currUser } } = await supabase.auth.getUser();
-          const currentMeta = currUser?.user_metadata || {};
-          
-          const updates: any = {
+          const updates = {
               display_name: displayName,
               full_name: displayName, 
               custom_avatar: tempAvatarUrl,
-              avatar_url: tempAvatarUrl,
+              avatar_url: tempAvatarUrl
           };
-
-          // Handle Theme Saving based on scope
-          if (selectedTargetRoom === 'global') {
-               updates.global_theme = finalBackgroundStr;
-          } else {
-               // Update specific room entry in the map
-               const roomThemes = currentMeta.room_themes || {};
-               roomThemes[selectedTargetRoom] = finalBackgroundStr;
-               updates.room_themes = roomThemes;
-          }
 
           const { error } = await supabase.auth.updateUser({
               data: updates
@@ -306,12 +276,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           
           setIsEditingProfile(false);
           setShowLinkInput(false);
-          
-          // Reset theme states to default to encourage new selection or just reset
-          setThemePattern('none');
-          setCustomBgImage('');
-          setSelectedTargetRoom('global');
-
       } catch (e: any) {
           console.error("Profile update failed", e);
           alert("Failed to update profile: " + e.message);
@@ -341,15 +305,24 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (!e.target.files || !e.target.files[0]) return;
+      
       const file = e.target.files[0];
       try {
           const compressed = await compressImage(file);
           const fileExt = compressed.name.split('.').pop();
           const fileName = `avatar_${Date.now()}.${fileExt}`;
           const filePath = `profiles/${user.uid}/${fileName}`;
-          const { error: uploadError } = await supabase.storage.from('attachments').upload(filePath, compressed);
+
+          const { error: uploadError } = await supabase.storage
+              .from('attachments') 
+              .upload(filePath, compressed);
+
           if (uploadError) throw uploadError;
-          const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(filePath);
+
+          const { data: { publicUrl } } = supabase.storage
+              .from('attachments')
+              .getPublicUrl(filePath);
+
           setTempAvatarUrl(publicUrl);
       } catch (err: any) {
           console.error("Avatar upload failed", err);
@@ -357,43 +330,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       }
   };
 
-  const handleBackgroundUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!e.target.files || !e.target.files[0]) return;
-      const file = e.target.files[0];
-      try {
-          const compressed = await compressImage(file);
-          const fileExt = compressed.name.split('.').pop();
-          const fileName = `bg_${Date.now()}.${fileExt}`;
-          const filePath = `profiles/${user.uid}/backgrounds/${fileName}`;
-          const { error: uploadError } = await supabase.storage.from('attachments').upload(filePath, compressed);
-          if (uploadError) throw uploadError;
-          const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(filePath);
-          
-          setThemePattern('image');
-          setCustomBgImage(publicUrl);
-      } catch (err: any) {
-          console.error("Background upload failed", err);
-          alert("Failed to upload background.");
-      }
-  };
-
   // --- Room Management Functions ---
 
-  const handleJoin = async (room: Room) => {
+  const handleJoin = (room: Room) => {
+    // Mark room as read by updating the timestamp in localStorage
     localStorage.setItem(`lastRead_${room.room_key}`, Date.now().toString());
     
-    // Fetch latest metadata to get up-to-date preference
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    const meta = currentUser?.user_metadata || {};
-    
-    // Resolve background: Room Specific > Global > None
-    let bg = '';
-    if (meta.room_themes && meta.room_themes[room.room_key]) {
-        bg = meta.room_themes[room.room_key];
-    } else if (meta.global_theme) {
-        bg = meta.global_theme;
-    }
-
+    // Update local state to remove the red dot immediately
     const newUnread = new Set(unreadRooms);
     newUnread.delete(room.room_key);
     setUnreadRooms(newUnread);
@@ -403,12 +346,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         avatarURL: avatarUrl,
         roomName: room.room_name,
         pin: room.pin,
-        roomKey: room.room_key,
-        backgroundImage: bg
+        roomKey: room.room_key
     };
     onJoinRoom(config);
   };
 
+  // 1. Request Deletion (Opens Toast)
   const onRequestDeleteRoom = (roomName: string, roomKey: string, createdBy: string) => {
       setRoomToDelete({
           name: roomName,
@@ -417,6 +360,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       });
   };
 
+  // 2. Execute Deletion (Called by Toast)
   const handleConfirmDeleteRoom = async () => {
     if (!roomToDelete) return;
 
@@ -425,21 +369,28 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
     try {
         if (!isOwner) {
+             // If not creator, just remove subscription (leave room)
              await supabase.from('subscribers')
                 .delete()
                 .eq('room_key', key)
                 .eq('uid', user.uid);
+             
+             // Remove from local list
              setRooms(rooms.filter(r => r.room_key !== key));
         } else {
+             // If creator, perform full delete
              await supabase.from('messages').delete().eq('room_key', key);
              await supabase.from('subscribers').delete().eq('room_key', key);
+
              const { data: files } = await supabase.storage.from('attachments').list(key);
              if (files && files.length > 0) {
                  const filesToRemove = files.map(x => `${key}/${x.name}`);
                  await supabase.storage.from('attachments').remove(filesToRemove);
              }
+
              const { error } = await supabase.from('rooms').delete().eq('room_key', key);
              if (error) throw error;
+             
              setRooms(rooms.filter(r => r.room_key !== key));
         }
     } catch (e: any) {
@@ -459,6 +410,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       const roomKey = generateRoomKey(newRoomPin, newRoomName);
       
       try {
+           // 1. Check if room exists
            const { data: existingRoom, error: fetchError } = await supabase
             .from('rooms')
             .select('*')
@@ -468,30 +420,31 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
            if (fetchError) throw fetchError;
             
            if (existingRoom) {
+               // --- JOIN EXISTING ROOM ---
+               // Auto-subscribe user to this room (for Dashboard list) BUT DO NOT enable email alerts automatically.
+               // We explicitly pass an empty string for email, so notification logic skips this user until they opt-in.
                const { error: subError } = await supabase.from('subscribers').upsert({
                    room_key: roomKey,
                    uid: user.uid,
                    username: displayName,
-                   email: '' 
+                   email: '' // FORCE EMPTY EMAIL to prevent auto-notifications
                }, { onConflict: 'room_key, uid' });
 
                if (subError) console.error("Subscription warning:", subError);
+
+               // Mark as read immediately on join
                localStorage.setItem(`lastRead_${existingRoom.room_key}`, Date.now().toString());
 
-               // Fetch metadata to apply background
-               const { data: { user: curr } } = await supabase.auth.getUser();
-               const meta = curr?.user_metadata || {};
-               let bg = meta.room_themes?.[existingRoom.room_key] || meta.global_theme || '';
-
-               onJoinRoom({
+               const config: ChatConfig = {
                    username: displayName,
                    avatarURL: avatarUrl,
                    roomName: existingRoom.room_name,
                    pin: existingRoom.pin,
-                   roomKey: existingRoom.room_key,
-                   backgroundImage: bg
-               });
+                   roomKey: existingRoom.room_key
+               };
+               onJoinRoom(config);
            } else {
+               // --- CREATE NEW ROOM ---
                const { data, error } = await supabase.from('rooms').insert({
                    room_key: roomKey,
                    room_name: newRoomName,
@@ -502,7 +455,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                if (error) throw error;
                
                if (data) {
+                   // Mark as read immediately on creation
                    localStorage.setItem(`lastRead_${data.room_key}`, Date.now().toString());
+
+                   // Add new room to list if it's not there
                    if (!rooms.find(r => r.room_key === data.room_key)) {
                         setRooms([data, ...rooms]);
                    }
@@ -534,7 +490,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300">
         <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
             
-            {/* Header */}
+            {/* Header / Top Bar */}
             <header className="flex justify-between items-center mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-3">
                     <img 
@@ -558,166 +514,80 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 
-                {/* Left Column: Profile & Settings */}
-                <div className="lg:col-span-4 xl:col-span-4 space-y-6">
+                {/* Left Column: Profile Card - Redesigned for Pro Look */}
+                <div className="lg:col-span-4 xl:col-span-3 space-y-6">
                     <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-900 dark:to-slate-950 rounded-2xl shadow-lg shadow-slate-200/50 dark:shadow-none border border-slate-200/60 dark:border-slate-800 p-5 transition-all duration-300 relative overflow-hidden group">
                         
+                        {/* Subtle decorative background blur */}
                         <div className="absolute -top-10 -right-10 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/20 transition-all duration-500"></div>
 
                         {isEditingProfile ? (
                             // --- EDIT MODE ---
-                            <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300 relative z-10">
-                                
-                                {/* 1. Basic Info */}
-                                <div className="space-y-4">
-                                    <div className="flex flex-col items-center gap-4">
-                                        <div className="relative group/edit-avatar">
-                                            <img 
-                                                src={tempAvatarUrl} 
-                                                alt="Preview" 
-                                                className="w-20 h-20 rounded-full object-cover border-4 border-white dark:border-slate-800 shadow-md ring-1 ring-slate-100 dark:ring-slate-700"
-                                            />
-                                            <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/edit-avatar:opacity-100 transition-opacity">
-                                                <span className="text-white text-xs font-bold">Preview</span>
-                                            </div>
+                            <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-300 relative z-10">
+                                <div className="flex flex-col items-center gap-4">
+                                    <div className="relative group/edit-avatar">
+                                        <img 
+                                            src={tempAvatarUrl} 
+                                            alt="Preview" 
+                                            className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-slate-800 shadow-md ring-1 ring-slate-100 dark:ring-slate-700"
+                                        />
+                                        <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/edit-avatar:opacity-100 transition-opacity">
+                                            <span className="text-white text-xs font-bold">Preview</span>
                                         </div>
-                                        
+                                    </div>
+                                    
+                                    <input 
+                                        type="text" 
+                                        value={displayName} 
+                                        onChange={(e) => setDisplayName(e.target.value)}
+                                        className="w-full text-center px-3 py-2 border-b-2 border-slate-200 dark:border-slate-700 bg-transparent focus:border-blue-500 outline-none transition-all font-bold text-lg text-slate-800 dark:text-white placeholder:font-normal"
+                                        placeholder="Display Name"
+                                    />
+                                </div>
+
+                                {/* Avatar Action Grid */}
+                                <div className="grid grid-cols-4 gap-2">
+                                    <label className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Upload Photo">
+                                        <Upload size={18} className="text-blue-600 dark:text-blue-400" />
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Upload</span>
+                                        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
+                                    </label>
+
+                                    <button onClick={handleGenerateRandomAvatar} className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Random Avatar">
+                                        <RefreshCw size={18} className="text-purple-600 dark:text-purple-400" />
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Random</span>
+                                    </button>
+                                    
+                                    <button onClick={() => setShowLinkInput(!showLinkInput)} className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Link URL">
+                                        <LinkIcon size={18} className="text-orange-600 dark:text-orange-400" />
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Link</span>
+                                    </button>
+
+                                    <button onClick={handleRestoreGoogleAvatar} className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Restore Original">
+                                        <RotateCcw size={18} className="text-green-600 dark:text-green-400" />
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Reset</span>
+                                    </button>
+                                </div>
+
+                                {showLinkInput && (
+                                    <div className="flex relative animate-in slide-in-from-top-2 fade-in">
                                         <input 
                                             type="text" 
-                                            value={displayName} 
-                                            onChange={(e) => setDisplayName(e.target.value)}
-                                            className="w-full text-center px-3 py-2 border-b-2 border-slate-200 dark:border-slate-700 bg-transparent focus:border-blue-500 outline-none transition-all font-bold text-lg text-slate-800 dark:text-white placeholder:font-normal"
-                                            placeholder="Display Name"
+                                            value={linkInput}
+                                            onChange={(e) => setLinkInput(e.target.value)}
+                                            placeholder="https://image-url.png"
+                                            className="w-full pl-3 pr-9 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
                                         />
-                                    </div>
-                                    <div className="grid grid-cols-4 gap-2">
-                                        <label className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Upload Photo">
-                                            <Upload size={16} className="text-blue-600 dark:text-blue-400" />
-                                            <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
-                                        </label>
-                                        <button onClick={handleGenerateRandomAvatar} className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Random Avatar">
-                                            <RefreshCw size={16} className="text-purple-600 dark:text-purple-400" />
-                                        </button>
-                                        <button onClick={() => setShowLinkInput(!showLinkInput)} className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Link URL">
-                                            <LinkIcon size={16} className="text-orange-600 dark:text-orange-400" />
-                                        </button>
-                                        <button onClick={handleRestoreGoogleAvatar} className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Restore Original">
-                                            <RotateCcw size={16} className="text-green-600 dark:text-green-400" />
+                                        <button 
+                                            onClick={handleLinkAvatar} 
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 p-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition"
+                                        >
+                                            <ArrowRight size={12} />
                                         </button>
                                     </div>
-                                     {showLinkInput && (
-                                        <div className="flex relative animate-in slide-in-from-top-2 fade-in">
-                                            <input 
-                                                type="text" 
-                                                value={linkInput}
-                                                onChange={(e) => setLinkInput(e.target.value)}
-                                                placeholder="https://image-url.png"
-                                                className="w-full pl-3 pr-9 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
-                                            />
-                                            <button 
-                                                onClick={handleLinkAvatar} 
-                                                className="absolute right-1 top-1/2 -translate-y-1/2 p-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition"
-                                            >
-                                                <ArrowRight size={12} />
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* 2. Room Themes Section */}
-                                <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
-                                    <div className="flex justify-between items-center mb-4">
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                                            <Palette size={12} /> Theme Settings
-                                        </label>
-                                        <div className="relative">
-                                            <select 
-                                                value={selectedTargetRoom}
-                                                onChange={(e) => setSelectedTargetRoom(e.target.value)}
-                                                className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 pr-6 rounded-md border-none outline-none appearance-none cursor-pointer hover:bg-blue-100 transition"
-                                            >
-                                                <option value="global">Global Default</option>
-                                                {rooms.map(r => (
-                                                    <option key={r.room_key} value={r.room_key}>{r.room_name}</option>
-                                                ))}
-                                            </select>
-                                            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-blue-600 dark:text-blue-400">
-                                                <svg width="8" height="6" viewBox="0 0 8 6" fill="currentColor"><path d="M4 6L0 0H8L4 6Z"/></svg>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Preview Box */}
-                                    <div 
-                                        className="h-24 w-full rounded-xl border border-slate-200 dark:border-slate-700 mb-4 flex items-center justify-center relative overflow-hidden transition-all duration-300 shadow-inner"
-                                        style={{ 
-                                            background: (themePattern === 'image' && customBgImage) 
-                                                ? `url(${customBgImage}) center/cover no-repeat fixed` 
-                                                : getPattern(themePattern, themeColor) 
-                                        }}
-                                    >
-                                        <div className="absolute inset-0 bg-slate-50 dark:bg-slate-900 -z-10"></div>
-                                        <div className="bg-white/80 dark:bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full text-xs font-bold shadow-lg flex flex-col items-center">
-                                           <span>Preview {selectedTargetRoom === 'global' ? '(Global)' : '(Room)'}</span>
-                                           <span className="text-[10px] font-normal opacity-70 mt-1">Background will look like this</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Controls */}
-                                    <div className="space-y-4">
-                                        
-                                        {/* Pattern Grid */}
-                                        <div className="grid grid-cols-5 gap-2">
-                                            {/* No Pattern */}
-                                            <button 
-                                                onClick={() => { setThemePattern('none'); setCustomBgImage(''); }}
-                                                className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${themePattern === 'none' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}
-                                                title="No Pattern"
-                                            >
-                                                <span className="text-[10px] font-bold text-slate-400">NONE</span>
-                                            </button>
-
-                                            {/* Pattern Options */}
-                                            {PATTERN_OPTIONS.map(p => (
-                                                <button
-                                                    key={p.id}
-                                                    onClick={() => { setThemePattern(p.id); setCustomBgImage(''); }}
-                                                    className={`aspect-square rounded-lg border-2 transition-all overflow-hidden relative group/pattern flex items-center justify-center ${themePattern === p.id ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}
-                                                    title={p.label}
-                                                >
-                                                    <div className="absolute inset-0 opacity-100" style={{background: getPattern(p.id, themeColor)}}></div>
-                                                    <div className="absolute inset-0 bg-white/50 dark:bg-black/50 opacity-0 group-hover/pattern:opacity-100 transition-opacity flex items-center justify-center">
-                                                        <p.icon size={16} className="text-slate-800 dark:text-white" />
-                                                    </div>
-                                                </button>
-                                            ))}
-                                        </div>
-
-                                        {/* Additional Tools Row: Color + Upload */}
-                                        <div className="flex gap-2">
-                                            <div className="flex-1 flex items-center gap-2 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 relative group/color">
-                                                <input 
-                                                    type="color" 
-                                                    value={themeColor} 
-                                                    onChange={(e) => setThemeColor(e.target.value)}
-                                                    className="w-8 h-8 rounded cursor-pointer border-none bg-transparent p-0 absolute inset-0 opacity-0 z-10 w-full h-full"
-                                                    disabled={themePattern === 'image'}
-                                                    title="Pattern Color"
-                                                />
-                                                <div className="w-6 h-6 rounded-full border border-slate-300 dark:border-slate-600 shadow-sm" style={{ backgroundColor: themeColor }}></div>
-                                                <span className="text-[10px] font-bold text-slate-500 uppercase">Pick Color</span>
-                                            </div>
-
-                                            <label className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-xl border cursor-pointer transition-all ${themePattern === 'image' ? 'bg-blue-50 border-blue-500 text-blue-600' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-200'}`}>
-                                                <ImageIcon size={16} />
-                                                <span className="text-[10px] font-bold uppercase">Image</span>
-                                                <input type="file" ref={backgroundInputRef} className="hidden" accept="image/*" onChange={handleBackgroundUpload} />
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
+                                )}
                                 
-                                <div className="flex gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                                <div className="flex gap-3 pt-2">
                                     <button 
                                         onClick={() => { setIsEditingProfile(false); setShowLinkInput(false); }}
                                         className="flex-1 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
@@ -735,9 +605,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 </div>
                             </div>
                         ) : (
-                            // --- VIEW MODE ---
+                            // --- VIEW MODE (Compact Horizontal Professional) ---
                             <div className="flex items-center gap-5 animate-in fade-in zoom-in-95 duration-300 relative z-10">
                                 <div className="relative flex-shrink-0 group/avatar">
+                                    <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full opacity-0 group-hover/avatar:opacity-100 transition duration-500 blur-sm"></div>
                                     <img 
                                         src={avatarUrl} 
                                         alt="Profile" 
@@ -772,7 +643,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                 </div>
 
                 {/* Right Column: Room Management */}
-                <div className="lg:col-span-8 xl:col-span-8 space-y-6">
+                <div className="lg:col-span-8 xl:col-span-9 space-y-6">
                     
                     {/* Create Room Card */}
                     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
