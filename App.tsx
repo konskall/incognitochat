@@ -26,7 +26,8 @@ const App: React.FC = () => {
             setCurrentUser({ 
                 uid: session.user.id, 
                 isAnonymous: isAnon,
-                email: session.user.email 
+                email: session.user.email,
+                user_metadata: session.user.user_metadata
             });
         }
 
@@ -39,18 +40,27 @@ const App: React.FC = () => {
         // fallback to session metadata for Google users if storage is empty.
         const storedUsername = localStorage.getItem('chatUsername') || session?.user?.user_metadata?.full_name;
         const storedAvatar = localStorage.getItem('chatAvatarURL') || session?.user?.user_metadata?.avatar_url;
-        // Retrieve background preference
-        const storedBackground = localStorage.getItem('chatBackground') || session?.user?.user_metadata?.chat_background;
         
         if (storedPin && storedRoomName && storedUsername) {
             const roomKey = generateRoomKey(storedPin, storedRoomName);
+
+            // Logic to determine background: Room Specific -> Global -> Default
+            let bgToUse = '';
+            if (session?.user?.user_metadata?.room_themes?.[roomKey]) {
+                bgToUse = session.user.user_metadata.room_themes[roomKey];
+            } else if (session?.user?.user_metadata?.global_theme) {
+                bgToUse = session.user.user_metadata.global_theme;
+            } else {
+                bgToUse = localStorage.getItem('chatBackground') || '';
+            }
+
             setChatConfig({
                 username: storedUsername,
                 avatarURL: storedAvatar || '',
                 roomName: storedRoomName,
                 pin: storedPin,
                 roomKey: roomKey,
-                backgroundImage: storedBackground
+                backgroundImage: bgToUse
             });
             setCurrentView('chat');
         } else if (isGoogleUser) {
@@ -72,7 +82,8 @@ const App: React.FC = () => {
              setCurrentUser({ 
                 uid: session.user.id, 
                 isAnonymous: false,
-                email: session.user.email 
+                email: session.user.email,
+                user_metadata: session.user.user_metadata
             });
             // Only redirect to dashboard if we are NOT already in a chat state (handled by initSession above)
             setChatConfig(prev => {
@@ -91,6 +102,8 @@ const App: React.FC = () => {
     localStorage.setItem('chatRoomName', config.roomName);
     localStorage.setItem('chatUsername', config.username);
     localStorage.setItem('chatAvatarURL', config.avatarURL);
+    // Note: We don't store chatBackground in localStorage for logged in users anymore, 
+    // it comes from metadata. But we keep it for anon users or fallback.
     if (config.backgroundImage) {
         localStorage.setItem('chatBackground', config.backgroundImage);
     } else {
