@@ -44,9 +44,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [isRoomReady, setIsRoomReady] = useState(false);
   const [roomCreatorId, setRoomCreatorId] = useState<string | null>(null);
   
-  // Theme State
+  // Theme State - Default to Dark Mode
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    return localStorage.getItem('theme') === 'dark';
+    return localStorage.getItem('theme') !== 'light';
   });
 
   // Edit & Reply State
