@@ -361,12 +361,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             
            if (existingRoom) {
                // --- JOIN EXISTING ROOM ---
-               // Auto-subscribe user to this room if not already
+               // Auto-subscribe user to this room (for Dashboard list) BUT DO NOT enable email alerts automatically.
+               // We explicitly pass an empty string for email, so notification logic skips this user until they opt-in.
                const { error: subError } = await supabase.from('subscribers').upsert({
                    room_key: roomKey,
                    uid: user.uid,
                    username: displayName,
-                   email: user.email || ''
+                   email: '' // FORCE EMPTY EMAIL to prevent auto-notifications
                }, { onConflict: 'room_key, uid' });
 
                if (subError) console.error("Subscription warning:", subError);
