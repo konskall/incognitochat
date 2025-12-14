@@ -247,19 +247,19 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
   return (
     <div className="flex flex-col items-center justify-start min-h-[100dvh] p-4 pt-2 md:pt-6 w-full max-w-md mx-auto animate-in slide-in-from-bottom-4 duration-500 relative">
       
-      {/* Toast Notification Container */}
+      {/* Toast Notification Container - Centered */}
       {notification && (
         <div className={`
-            fixed top-6 left-1/2 -translate-x-1/2 z-50 w-auto max-w-[90vw]
-            flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl
-            backdrop-blur-md border animate-in slide-in-from-top-6 fade-in duration-300
+            fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-auto max-w-[90vw]
+            flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl
+            backdrop-blur-md border animate-in zoom-in-95 fade-in duration-300
             ${notification.type === 'error' ? 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400' : ''}
             ${notification.type === 'success' ? 'bg-green-500/10 border-green-500/20 text-green-600 dark:text-green-400' : ''}
             ${notification.type === 'info' ? 'bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400' : ''}
         `}>
-            {notification.type === 'error' && <AlertCircle size={20} className="shrink-0" />}
-            {notification.type === 'success' && <CheckCircle size={20} className="shrink-0" />}
-            {notification.type === 'info' && <AlertTriangle size={20} className="shrink-0" />}
+            {notification.type === 'error' && <AlertCircle size={24} className="shrink-0" />}
+            {notification.type === 'success' && <CheckCircle size={24} className="shrink-0" />}
+            {notification.type === 'info' && <AlertTriangle size={24} className="shrink-0" />}
             
             <p className="text-sm font-semibold pr-2">{notification.message}</p>
             
@@ -267,7 +267,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                 onClick={closeToast}
                 className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
             >
-                <X size={16} />
+                <X size={18} />
             </button>
         </div>
       )}
