@@ -5,7 +5,7 @@ import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
   FileText, Download, Edit2, 
-  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, Trash2, Eye, Play, Pause
+  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, Trash2, Eye, Play, Pause, AlertCircle, Check
 } from 'lucide-react';
 
 interface MessageListProps {
@@ -16,6 +16,42 @@ interface MessageListProps {
   onReact: (msg: Message, emoji: string) => void;
   onReply: (msg: Message) => void;
 }
+
+// -- Custom Delete Toast Component (Glassmorphism) --
+const DeleteToast: React.FC<{ onConfirm: () => void; onCancel: () => void }> = ({ onConfirm, onCancel }) => {
+    return createPortal(
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] w-auto max-w-[90vw] animate-in slide-in-from-bottom-4 fade-in duration-300">
+            <div className="flex items-center gap-4 px-6 py-4 bg-slate-900/90 dark:bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-2xl text-white">
+                <div className="flex flex-col">
+                    <span className="text-sm font-bold flex items-center gap-2">
+                        <AlertCircle size={16} className="text-red-400" />
+                        Διαγραφή μηνύματος;
+                    </span>
+                    <span className="text-[10px] text-white/60">Η ενέργεια δεν αναιρείται.</span>
+                </div>
+
+                <div className="h-8 w-px bg-white/10 mx-1"></div>
+
+                <div className="flex gap-2">
+                    <button 
+                        onClick={onCancel}
+                        className="px-3 py-1.5 text-xs font-medium text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                        Ακύρωση
+                    </button>
+                    <button 
+                        onClick={onConfirm}
+                        className="px-4 py-1.5 text-xs font-bold bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center gap-1.5"
+                    >
+                        <Trash2 size={14} />
+                        Διαγραφή
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+};
 
 // -- Custom Audio Player Component (Waveform Style) --
 const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) => {
@@ -321,12 +357,12 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
 };
 
 // Memoized Message Item to prevent re-renders of the whole list
-const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onReact, onReply, onPreview }: { 
+const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete, onReact, onReply, onPreview }: { 
     msg: Message; 
     isMe: boolean; 
     currentUid: string; 
     onEdit: (msg: Message) => void; 
-    onDelete: (msgId: string) => void;
+    onRequestDelete: (msgId: string) => void;
     onReact: (msg: Message, emoji: string) => void; 
     onReply: (msg: Message) => void;
     onPreview: (url: string, name: string, type: string) => void;
@@ -717,11 +753,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
              {/* Delete Button (Directly exposed for 'Me') */}
              {isMe && (
                 <button 
-                    onClick={() => {
-                        if (window.confirm('Delete this message?')) {
-                            onDelete(msg.id);
-                        }
-                    }}
+                    onClick={() => onRequestDelete(msg.id)}
                     className={`p-1 text-slate-400 hover:text-red-500 rounded-full transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100`}
                     title="Delete"
                 >
@@ -859,12 +891,18 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
 
 const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply }) => {
   const [previewMedia, setPreviewMedia] = useState<{url: string; name: string; type: string} | null>(null);
+  const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
 
   const handleMediaPreview = useCallback((url: string, name: string, type: string) => {
       setPreviewMedia({ url, name, type });
   }, []);
 
   const closePreview = () => setPreviewMedia(null);
+
+  // New delete request handler
+  const handleRequestDelete = useCallback((msgId: string) => {
+      setDeletingMsgId(msgId);
+  }, []);
 
   return (
     <>
@@ -876,6 +914,17 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
                 onClose={closePreview} 
             />
         )}
+        
+        {deletingMsgId && (
+            <DeleteToast
+                onConfirm={() => {
+                    onDelete(deletingMsgId);
+                    setDeletingMsgId(null);
+                }}
+                onCancel={() => setDeletingMsgId(null)}
+            />
+        )}
+
         <div className="flex flex-col justify-end min-h-full pb-2">
         {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60">
@@ -890,7 +939,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
                 isMe={msg.uid === currentUserUid}
                 currentUid={currentUserUid}
                 onEdit={onEdit}
-                onDelete={onDelete}
+                onRequestDelete={handleRequestDelete} // New prop for toast trigger
                 onReact={onReact}
                 onReply={onReply}
                 onPreview={handleMediaPreview}
