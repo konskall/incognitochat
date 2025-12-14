@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, Room } from '../types';
 import { generateRoomKey, compressImage } from '../utils/helpers';
@@ -23,9 +24,9 @@ const RoomDeleteToast: React.FC<{
     onCancel: () => void; 
     isDeleting: boolean;
 }> = ({ roomName, isOwner, onConfirm, onCancel, isDeleting }) => {
-    return (
+    return createPortal(
         <div className="fixed bottom-6 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto z-[100] animate-in slide-in-from-bottom-4 fade-in duration-300">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-slate-900/95 dark:bg-white/10 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-2xl text-white ring-1 ring-black/10">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-6 p-4 bg-slate-900/90 dark:bg-white/10 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl text-white ring-1 ring-black/10">
                 
                 {/* Text Section */}
                 <div className="flex flex-col items-center sm:items-start text-center sm:text-left w-full sm:w-auto min-w-[200px]">
@@ -33,36 +34,37 @@ const RoomDeleteToast: React.FC<{
                         <AlertCircle size={18} className="text-red-400 shrink-0" />
                         <span>{isOwner ? 'Διαγραφή Δωματίου;' : 'Αφαίρεση από Ιστορικό;'}</span>
                     </span>
-                    <span className="text-[11px] text-white/60 mt-1">
+                    <span className="text-[11px] text-white/60 mt-0.5">
                         {isOwner 
-                            ? `Το "${roomName}" θα διαγραφεί μόνιμα για όλους.` 
-                            : `Το "${roomName}" θα αφαιρεθεί από τη λίστα σας.`}
+                            ? `Το "${roomName}" θα διαγραφεί μόνιμα.` 
+                            : `Αφαίρεση του "${roomName}" από τη λίστα.`}
                     </span>
                 </div>
 
                 {/* Divider - Hidden on mobile */}
-                <div className="hidden sm:block h-10 w-px bg-white/10"></div>
+                <div className="hidden sm:block h-8 w-px bg-white/10"></div>
 
                 {/* Buttons Section */}
-                <div className="flex gap-3 w-full sm:w-auto">
+                <div className="flex gap-2 w-full sm:w-auto">
                     <button 
                         onClick={onCancel}
                         disabled={isDeleting}
-                        className="flex-1 sm:flex-none px-4 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-white rounded-xl transition-colors text-center border border-white/5"
+                        className="flex-1 sm:flex-none px-3 py-1.5 text-xs font-medium bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors text-center border border-white/5"
                     >
                         Ακύρωση
                     </button>
                     <button 
                         onClick={onConfirm}
                         disabled={isDeleting}
-                        className="flex-1 sm:flex-none px-4 py-2 text-xs font-bold bg-red-500 hover:bg-red-600 text-white rounded-xl shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+                        className="flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center justify-center gap-1.5"
                     >
                         {isDeleting ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14} />}
                         <span>{isOwner ? 'Διαγραφή' : 'Αφαίρεση'}</span>
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
@@ -92,7 +94,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Delete Room State
-  const [roomToDelete, setRoomToDelete] = useState<{id: string, name: string, key: string, isOwner: boolean} | null>(null);
+  const [roomToDelete, setRoomToDelete] = useState<{name: string, key: string, isOwner: boolean} | null>(null);
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
 
   // Load User Data & Rooms
@@ -350,9 +352,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   };
 
   // 1. Request Deletion (Opens Toast)
-  const onRequestDeleteRoom = (roomId: string, roomName: string, roomKey: string, createdBy: string) => {
+  const onRequestDeleteRoom = (roomName: string, roomKey: string, createdBy: string) => {
       setRoomToDelete({
-          id: roomId,
           name: roomName,
           key: roomKey,
           isOwner: createdBy === user.uid
@@ -364,7 +365,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     if (!roomToDelete) return;
 
     setIsDeletingRoom(true);
-    const { id, key, isOwner } = roomToDelete;
+    const { key, isOwner } = roomToDelete;
 
     try {
         if (!isOwner) {
@@ -738,7 +739,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                                     )}
                                                 </h4>
                                                 <button 
-                                                    onClick={() => onRequestDeleteRoom(room.id, room.room_name, room.room_key, room.created_by)}
+                                                    onClick={() => onRequestDeleteRoom(room.room_name, room.room_key, room.created_by)}
                                                     className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-0 group-hover:opacity-100"
                                                     title={room.created_by === user.uid ? "Delete Room" : "Remove from History"}
                                                 >
