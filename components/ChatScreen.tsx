@@ -557,13 +557,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           };
       }
       
+      // Check if it's an SVG pattern (from our generator which uses data:image/svg+xml)
+      const isSvgPattern = config.backgroundImage.includes('image/svg+xml');
+
       // Check if it looks like a URL (basic check) or a gradient string
       if (config.backgroundImage.includes('url(') || config.backgroundImage.startsWith('http') || config.backgroundImage.startsWith('data:')) {
            return {
                backgroundImage: config.backgroundImage.startsWith('http') || config.backgroundImage.startsWith('data:') 
                   ? `url(${config.backgroundImage})` 
                   : config.backgroundImage,
-               backgroundSize: 'cover',
+               backgroundSize: isSvgPattern ? 'auto' : 'cover', // Use 'auto' for patterns to repeat correctly, 'cover' for images
+               backgroundRepeat: isSvgPattern ? 'repeat' : 'no-repeat',
                backgroundPosition: 'center',
                backgroundAttachment: 'fixed'
            };
@@ -628,7 +632,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         style={getBackgroundStyle()}
       >
         {/* If custom image background, add an overlay for readability */}
-        {config.backgroundImage && (config.backgroundImage.includes('http') || config.backgroundImage.includes('url')) && (
+        {config.backgroundImage && (config.backgroundImage.includes('http') || (config.backgroundImage.includes('url') && !config.backgroundImage.includes('svg+xml'))) && (
             <div className="absolute inset-0 bg-white/30 dark:bg-black/40 pointer-events-none" />
         )}
         
