@@ -216,7 +216,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     const checkUser = async () => {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-             setUser({ uid: session.user.id, isAnonymous: true });
+             // Correctly populate user object including email from session
+             setUser({ 
+                 uid: session.user.id, 
+                 isAnonymous: session.user.is_anonymous ?? false,
+                 email: session.user.email 
+             });
         } else {
              const { data: anonData } = await supabase.auth.signInAnonymously();
              if (anonData.user) {
@@ -288,6 +293,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
               if (data) {
                   setEmailAlertsEnabled(true);
                   setEmailAddress(data.email);
+              } else if (user.email) {
+                  // Auto-fill with user's login email if available and not already subscribed
+                  setEmailAddress(user.email);
               }
           };
           checkSubscription();
