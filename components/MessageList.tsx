@@ -465,6 +465,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
     if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('tar') || mimeType.includes('7z') || mimeType.includes('compressed')) return <FileArchive size={20} />;
     if (mimeType.includes('json') || mimeType.includes('javascript') || mimeType.includes('html') || mimeType.includes('css') || mimeType.includes('xml')) return <FileCode size={20} />;
     if (mimeType.includes('text/')) return <FileText size={20} />;
+    if (mimeType.includes('video/')) return <FileVideo size={20} />;
     return <File size={20} />;
   };
 
