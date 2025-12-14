@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Message } from '../types';
@@ -11,7 +12,7 @@ interface MessageListProps {
   messages: Message[];
   currentUserUid: string;
   onEdit: (msg: Message) => void;
-  onDelete: (msgId: string) => void; // New prop for deletion
+  onDelete: (msgId: string) => void; 
   onReact: (msg: Message, emoji: string) => void;
   onReply: (msg: Message) => void;
 }
@@ -145,12 +146,13 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
     );
 };
 
-// -- Image Preview Modal Component --
-const ImagePreviewModal: React.FC<{ 
+// -- Universal Media Preview Modal Component (Images & Video) --
+const MediaPreviewModal: React.FC<{ 
     src: string; 
     alt: string; 
+    type: string;
     onClose: () => void; 
-}> = ({ src, alt, onClose }) => {
+}> = ({ src, alt, type, onClose }) => {
     
     // Lock body scroll when modal is open
     useEffect(() => {
@@ -169,7 +171,7 @@ const ImagePreviewModal: React.FC<{
             
             const link = document.createElement('a');
             link.href = blobUrl;
-            link.download = alt || 'image';
+            link.download = alt || 'media';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -181,6 +183,8 @@ const ImagePreviewModal: React.FC<{
         }
     };
 
+    const isVideo = type.startsWith('video/');
+
     const modalContent = (
         <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-in fade-in duration-200 backdrop-blur-sm" onClick={onClose}>
             
@@ -191,7 +195,7 @@ const ImagePreviewModal: React.FC<{
                  <button 
                     onClick={handleDownload}
                     className="pointer-events-auto p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"
-                    aria-label="Download Image"
+                    aria-label="Download Media"
                     title="Download Original"
                  >
                     <Download size={24} />
@@ -208,14 +212,24 @@ const ImagePreviewModal: React.FC<{
                  </button>
             </div>
                  
-            {/* Image Area */}
+            {/* Media Area */}
             <div className="w-full h-full flex items-center justify-center p-4 overflow-hidden">
-                <img 
-                    src={src} 
-                    alt={alt} 
-                    className="max-w-full max-h-full object-contain shadow-2xl rounded-lg"
-                    onClick={(e) => e.stopPropagation()} 
-                />
+                {isVideo ? (
+                    <video 
+                        src={src} 
+                        controls 
+                        autoPlay 
+                        className="max-w-full max-h-full shadow-2xl rounded-lg outline-none"
+                        onClick={(e) => e.stopPropagation()} 
+                    />
+                ) : (
+                    <img 
+                        src={src} 
+                        alt={alt} 
+                        className="max-w-full max-h-full object-contain shadow-2xl rounded-lg"
+                        onClick={(e) => e.stopPropagation()} 
+                    />
+                )}
             </div>
         </div>
     );
@@ -306,7 +320,7 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
 };
 
 // Memoized Message Item to prevent re-renders of the whole list
-const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onReact, onReply, onImagePreview }: { 
+const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onReact, onReply, onPreview }: { 
     msg: Message; 
     isMe: boolean; 
     currentUid: string; 
@@ -314,7 +328,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
     onDelete: (msgId: string) => void;
     onReact: (msg: Message, emoji: string) => void; 
     onReply: (msg: Message) => void;
-    onImagePreview: (url: string, name: string) => void;
+    onPreview: (url: string, name: string, type: string) => void;
 }) => {
   const [showReactions, setShowReactions] = useState(false);
 
@@ -447,8 +461,6 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
   };
 
   const getFileIcon = (mimeType: string) => {
-    // Audio is now handled separately in renderAttachment, so removed from here
-    if (mimeType.startsWith('video/')) return <FileVideo size={20} />;
     if (mimeType.includes('pdf')) return <FileText size={20} />;
     if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('tar') || mimeType.includes('7z') || mimeType.includes('compressed')) return <FileArchive size={20} />;
     if (mimeType.includes('json') || mimeType.includes('javascript') || mimeType.includes('html') || mimeType.includes('css') || mimeType.includes('xml')) return <FileCode size={20} />;
@@ -468,7 +480,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
             <div className="mt-2 mb-1 group/image relative inline-block">
                 <div 
                     className="relative overflow-hidden rounded-xl border border-white/10 bg-black/5 dark:bg-white/5 cursor-pointer"
-                    onClick={() => onImagePreview(url, name)}
+                    onClick={() => onPreview(url, name, type)}
                 >
                     <img 
                         src={url} 
@@ -484,7 +496,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
                             onClick={(e) => e.stopPropagation()} 
                         >
                             <button 
-                                onClick={() => onImagePreview(url, name)}
+                                onClick={() => onPreview(url, name, type)}
                                 className="p-2 text-white hover:bg-white/20 rounded-full transition-colors active:scale-95"
                                 title="Preview"
                             >
@@ -507,7 +519,51 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
         );
     }
 
-    // 2. Audio/Voice Message Handler
+    // 2. Video Handler - Similar to Image but with Video features
+    if (type.startsWith('video/')) {
+        return (
+            <div className="mt-2 mb-1 group/video relative inline-block">
+                <div 
+                    className="relative overflow-hidden rounded-xl border border-white/10 bg-black dark:bg-black/90 cursor-pointer"
+                    onClick={() => onPreview(url, name, type)}
+                >
+                    <video 
+                        src={url} 
+                        preload="metadata"
+                        className="max-w-full max-h-[300px] w-auto object-contain block pointer-events-none" 
+                    />
+                    
+                    {/* Centered Glassmorphism Control Pill */}
+                    <div className="absolute inset-0 flex items-center justify-center transition-all duration-200 bg-black/10">
+                        <div 
+                            className="flex items-center gap-2 p-2 bg-black/60 backdrop-blur-md rounded-full shadow-xl border border-white/20 transform scale-100 hover:scale-105 transition-transform opacity-100 md:opacity-0 md:group-hover/video:opacity-100"
+                            onClick={(e) => e.stopPropagation()} 
+                        >
+                            <button 
+                                onClick={() => onPreview(url, name, type)}
+                                className="p-2 text-white hover:bg-white/20 rounded-full transition-colors active:scale-95"
+                                title="Play Video"
+                            >
+                                <Play size={20} fill="currentColor" />
+                            </button>
+                            
+                            <div className="w-px h-5 bg-white/30"></div>
+
+                            <button 
+                                onClick={(e) => handleFileDownload(e, url, name)}
+                                className="p-2 text-white hover:bg-white/20 rounded-full transition-colors active:scale-95"
+                                title="Download"
+                            >
+                                <Download size={20} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // 3. Audio/Voice Message Handler
     if (type.startsWith('audio/')) {
         return (
             <div className="mt-2 mb-1 w-full max-w-full">
@@ -518,7 +574,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
         );
     }
 
-    // 3. Generic File Handler
+    // 4. Generic File Handler
     return (
         <a 
             href={url} 
@@ -798,20 +854,21 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
 });
 
 const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply }) => {
-  const [previewImage, setPreviewImage] = useState<{url: string; name: string} | null>(null);
+  const [previewMedia, setPreviewMedia] = useState<{url: string; name: string; type: string} | null>(null);
 
-  const handleImagePreview = useCallback((url: string, name: string) => {
-      setPreviewImage({ url, name });
+  const handleMediaPreview = useCallback((url: string, name: string, type: string) => {
+      setPreviewMedia({ url, name, type });
   }, []);
 
-  const closePreview = () => setPreviewImage(null);
+  const closePreview = () => setPreviewMedia(null);
 
   return (
     <>
-        {previewImage && (
-            <ImagePreviewModal 
-                src={previewImage.url} 
-                alt={previewImage.name} 
+        {previewMedia && (
+            <MediaPreviewModal 
+                src={previewMedia.url} 
+                alt={previewMedia.name} 
+                type={previewMedia.type}
                 onClose={closePreview} 
             />
         )}
@@ -832,7 +889,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
                 onDelete={onDelete}
                 onReact={onReact}
                 onReply={onReply}
-                onImagePreview={handleImagePreview}
+                onPreview={handleMediaPreview}
             />
             ))
         )}
