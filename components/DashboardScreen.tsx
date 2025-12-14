@@ -8,6 +8,7 @@ import {
   Upload, RotateCcw,
   RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface DashboardScreenProps {
   user: User;
@@ -194,7 +195,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
   const handleSaveProfile = async () => {
       if (!displayName.trim()) {
-          alert("Display name cannot be empty");
+          toast.error("Display name cannot be empty");
           return;
       }
       setIsSavingProfile(true);
@@ -221,7 +222,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           setShowLinkInput(false);
       } catch (e: any) {
           console.error("Profile update failed", e);
-          alert("Failed to update profile: " + e.message);
+          toast.error("Failed to update profile: " + e.message);
       } finally {
           setIsSavingProfile(false);
       }
@@ -269,7 +270,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           setTempAvatarUrl(publicUrl);
       } catch (err: any) {
           console.error("Avatar upload failed", err);
-          alert("Failed to upload image.");
+          toast.error("Failed to upload image.");
       }
   };
 
@@ -338,7 +339,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         setRooms(rooms.filter(r => r.room_key !== roomKey));
     } catch (e: any) {
         console.error("Delete/Leave room failed:", e);
-        alert('Operation failed: ' + (e.message || "Unknown error"));
+        toast.error('Operation failed: ' + (e.message || "Unknown error"));
     }
   };
 
@@ -409,7 +410,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
            }
       } catch (e: any) {
           console.error("Operation failed", e);
-          alert("Failed to create or join room: " + e.message);
+          toast.error("Failed to create or join room: " + e.message);
       } finally {
           setCreating(false);
       }
