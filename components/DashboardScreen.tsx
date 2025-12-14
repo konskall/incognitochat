@@ -1,8 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { LogOut, Plus, Trash2, MessageSquare, Loader2, Shield, User as UserIcon, RefreshCw } from 'lucide-react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
-import { Room, User, ChatConfig } from '../types';
-import { generateRoomKey } from '../utils/helpers';
+import { User, ChatConfig, Room } from '../types';
+import { generateRoomKey, compressImage } from '../utils/helpers';
+import { 
+  LogOut, Trash2, ArrowRight, Loader2, 
+  Upload, RotateCcw,
+  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon
+} from 'lucide-react';
 
 interface DashboardScreenProps {
   user: User;
@@ -11,40 +16,113 @@ interface DashboardScreenProps {
 }
 
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onLogout }) => {
+  // Room State
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingRooms, setLoadingRooms] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newRoomName, setNewRoomName] = useState('');
+  const [newRoomPin, setNewRoomPin] = useState('');
+  const [creating, setCreating] = useState(false);
+  
+  // Notification State
   const [unreadRooms, setUnreadRooms] = useState<Set<string>>(new Set());
-  
-  // Join/Create State
-  const [isJoining, setIsJoining] = useState(false);
-  const [roomName, setRoomName] = useState('');
-  const [pin, setPin] = useState('');
-  
-  // User Profile State
-  const [username, setUsername] = useState(localStorage.getItem('chatUsername') || user.email?.split('@')[0] || 'User');
-  const [avatarURL, setAvatarURL] = useState(localStorage.getItem('chatAvatarURL') || `https://api.dicebear.com/9.x/bottts/svg?seed=${user.uid}`);
 
-  // Fetch Rooms
+  // Profile State
+  const [displayName, setDisplayName] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [googleAvatarUrl, setGoogleAvatarUrl] = useState(''); // Store original google/provider image
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  
+  // Avatar Editing State
+  const [tempAvatarUrl, setTempAvatarUrl] = useState('');
+  const [linkInput, setLinkInput] = useState('');
+  const [showLinkInput, setShowLinkInput] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load User Data & Rooms
   useEffect(() => {
-    const fetchRooms = async () => {
-      // Fetch rooms created by the user
-      const { data, error } = await supabase
-        .from('rooms')
-        .select('*')
-        .eq('created_by', user.uid)
-        .order('created_at', { ascending: false });
+    const initData = async () => {
+      // 1. Fetch latest user metadata from Supabase
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      
+      if (authUser) {
+          const meta = authUser.user_metadata || {};
+          
+          const finalName = meta.display_name || meta.full_name || meta.name || localStorage.getItem('chatUsername') || user.email?.split('@')[0] || 'User';
+          
+          // Determine the "original" avatar (from Google/Provider)
+          const original = meta.picture || meta.avatar_url || `https://ui-avatars.com/api/?name=${finalName}&background=random`;
+          setGoogleAvatarUrl(original);
 
-      if (data) {
-        setRooms(data);
-        checkUnreadMessages(data);
+          // Determine current display avatar
+          const finalAvatar = meta.custom_avatar || localStorage.getItem('chatAvatarURL') || original;
+          
+          setDisplayName(finalName);
+          setAvatarUrl(finalAvatar);
+          setTempAvatarUrl(finalAvatar);
+
+          localStorage.setItem('chatUsername', finalName);
+          localStorage.setItem('chatAvatarURL', finalAvatar);
       }
-      setLoading(false);
+
+      // 2. Fetch Rooms (Created AND Joined)
+      try {
+        // A. Fetch Created Rooms
+        const { data: createdRooms, error: createdError } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('created_by', user.uid);
+
+        if (createdError) throw createdError;
+
+        // B. Fetch Joined Rooms (via subscribers table)
+        const { data: subscriptions, error: subError } = await supabase
+          .from('subscribers')
+          .select('room_key')
+          .eq('uid', user.uid);
+        
+        if (subError) throw subError;
+
+        let joinedRooms: Room[] = [];
+        if (subscriptions && subscriptions.length > 0) {
+            const keys = subscriptions.map(s => s.room_key);
+            // Fetch room details for these keys (this automatically filters out deleted rooms)
+            const { data: foundJoinedRooms, error: joinedRoomsError } = await supabase
+                .from('rooms')
+                .select('*')
+                .in('room_key', keys);
+            
+            if (joinedRoomsError) throw joinedRoomsError;
+            joinedRooms = foundJoinedRooms || [];
+        }
+
+        // C. Merge and Deduplicate based on room_key
+        const roomMap = new Map<string, Room>();
+        (createdRooms || []).forEach(r => roomMap.set(r.room_key, r));
+        (joinedRooms || []).forEach(r => roomMap.set(r.room_key, r));
+        
+        const allRooms = Array.from(roomMap.values());
+
+        // D. Sort by created_at descending
+        allRooms.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+        setRooms(allRooms);
+        
+        // E. Check for unread messages
+        checkUnreadMessages(allRooms);
+
+      } catch (error) {
+        console.error('Error fetching rooms:', error);
+      } finally {
+        setLoadingRooms(false);
+      }
     };
 
-    fetchRooms();
-  }, [user.uid]);
+    initData();
+  }, [user.uid, user.email]);
 
-  // Realtime subscription
+  // Realtime subscription for new messages to update badges live
   useEffect(() => {
     const channel = supabase.channel('dashboard-notifications')
         .on(
@@ -58,21 +136,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                 // Check if we have this room in our list
                 const hasRoom = rooms.some(r => r.room_key === newMsg.room_key);
                 if (hasRoom) {
-                    setUnreadRooms(prev => {
-                        const newSet = new Set(prev);
-                        newSet.add(newMsg.room_key);
-                        return newSet;
-                    });
+                    setUnreadRooms(prev => new Set(prev).add(newMsg.room_key));
                 }
-            }
-        )
-        .on(
-            'postgres_changes',
-            { event: 'DELETE', schema: 'public', table: 'rooms' },
-            (payload) => {
-                // Immediately remove the deleted room from the list
-                const deletedRoomId = payload.old.id;
-                setRooms(prevRooms => prevRooms.filter(room => room.id !== deletedRoomId));
             }
         )
         .subscribe();
@@ -83,202 +148,568 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   }, [rooms, user.uid]);
 
   const checkUnreadMessages = async (currentRooms: Room[]) => {
-      // For now, we don't persist "last read" so we just start fresh on reload.
-      // Realtime updates will handle new messages while on dashboard.
+      if (currentRooms.length === 0) return;
+
+      const newUnreadSet = new Set<string>();
+      
+      // We process checks in parallel
+      await Promise.all(currentRooms.map(async (room) => {
+          try {
+              // 1. Get the last time the user opened this room from LocalStorage
+              const lastReadTimestamp = localStorage.getItem(`lastRead_${room.room_key}`);
+              
+              // FIX: If no timestamp exists (fresh login/new device), default to current time 
+              // instead of 0 (1970). This prevents marking all historic messages as unread 
+              // on a fresh login, solving the "ghost notification" issue.
+              const lastReadTime = lastReadTimestamp ? parseInt(lastReadTimestamp) : Date.now();
+
+              // 2. Fetch the MOST RECENT message for this room from Supabase
+              // CRITICAL FIX: Ignore system messages (type != 'system')
+              const { data: latestMsg, error } = await supabase
+                  .from('messages')
+                  .select('created_at')
+                  .eq('room_key', room.room_key)
+                  .neq('type', 'system') // Ignore join/leave messages
+                  .order('created_at', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+              
+              if (!error && latestMsg) {
+                  const msgTime = new Date(latestMsg.created_at).getTime();
+                  // 3. Compare: If message is newer than last read time, mark unread
+                  if (msgTime > lastReadTime) {
+                      newUnreadSet.add(room.room_key);
+                  }
+              }
+          } catch (err) {
+              console.error(`Error checking unread for ${room.room_name}`, err);
+          }
+      }));
+
+      setUnreadRooms(newUnreadSet);
   };
 
-  const handleJoinSubmit = (e: React.FormEvent) => {
+
+  // --- Profile Management Functions ---
+
+  const handleSaveProfile = async () => {
+      if (!displayName.trim()) {
+          alert("Display name cannot be empty");
+          return;
+      }
+      setIsSavingProfile(true);
+
+      try {
+          const updates = {
+              display_name: displayName,
+              full_name: displayName, 
+              custom_avatar: tempAvatarUrl,
+              avatar_url: tempAvatarUrl
+          };
+
+          const { error } = await supabase.auth.updateUser({
+              data: updates
+          });
+
+          if (error) throw error;
+
+          setAvatarUrl(tempAvatarUrl);
+          localStorage.setItem('chatUsername', displayName);
+          localStorage.setItem('chatAvatarURL', tempAvatarUrl);
+          
+          setIsEditingProfile(false);
+          setShowLinkInput(false);
+      } catch (e: any) {
+          console.error("Profile update failed", e);
+          alert("Failed to update profile: " + e.message);
+      } finally {
+          setIsSavingProfile(false);
+      }
+  };
+
+  const handleGenerateRandomAvatar = () => {
+      const seed = Math.random().toString(36).substring(7);
+      const randomUrl = `https://api.dicebear.com/9.x/bottts/svg?seed=${seed}`;
+      setTempAvatarUrl(randomUrl);
+  };
+
+  const handleRestoreGoogleAvatar = () => {
+      if (googleAvatarUrl) {
+          setTempAvatarUrl(googleAvatarUrl);
+      }
+  };
+
+  const handleLinkAvatar = () => {
+      if (linkInput.trim().startsWith('http')) {
+          setTempAvatarUrl(linkInput.trim());
+          setShowLinkInput(false);
+      }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!e.target.files || !e.target.files[0]) return;
+      
+      const file = e.target.files[0];
+      try {
+          const compressed = await compressImage(file);
+          const fileExt = compressed.name.split('.').pop();
+          const fileName = `avatar_${Date.now()}.${fileExt}`;
+          const filePath = `profiles/${user.uid}/${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+              .from('attachments') 
+              .upload(filePath, compressed);
+
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage
+              .from('attachments')
+              .getPublicUrl(filePath);
+
+          setTempAvatarUrl(publicUrl);
+      } catch (err: any) {
+          console.error("Avatar upload failed", err);
+          alert("Failed to upload image.");
+      }
+  };
+
+  // --- Room Management Functions ---
+
+  const handleJoin = (room: Room) => {
+    // Mark room as read by updating the timestamp in localStorage
+    localStorage.setItem(`lastRead_${room.room_key}`, Date.now().toString());
+    
+    // Update local state to remove the red dot immediately
+    const newUnread = new Set(unreadRooms);
+    newUnread.delete(room.room_key);
+    setUnreadRooms(newUnread);
+
+    const config: ChatConfig = {
+        username: displayName,
+        avatarURL: avatarUrl,
+        roomName: room.room_name,
+        pin: room.pin,
+        roomKey: room.room_key
+    };
+    onJoinRoom(config);
+  };
+
+  const handleDeleteRoom = async (roomId: string, roomName: string) => {
+    const room = rooms.find(r => r.id === roomId || r.room_name === roomName);
+    if (!room) return;
+
+    // Check if the current user is the creator
+    const isOwner = room.created_by === user.uid;
+    const message = isOwner 
+        ? `Are you sure you want to delete "${roomName}"? This will remove it for everyone and cannot be undone.`
+        : `Are you sure you want to remove "${roomName}" from your history?`;
+
+    if (!window.confirm(message)) return;
+
+    try {
+        if (!isOwner) {
+             // If not creator, just remove subscription (leave room)
+             await supabase.from('subscribers')
+                .delete()
+                .eq('room_key', room.room_key)
+                .eq('uid', user.uid);
+             
+             // Remove from local list
+             setRooms(rooms.filter(r => r.room_key !== room.room_key));
+             return;
+        }
+
+        // If creator, perform full delete
+        const roomKey = room.room_key;
+
+        // Cleanup associated data
+        await supabase.from('messages').delete().eq('room_key', roomKey);
+        await supabase.from('subscribers').delete().eq('room_key', roomKey);
+
+        const { data: files } = await supabase.storage.from('attachments').list(roomKey);
+        if (files && files.length > 0) {
+            const filesToRemove = files.map(x => `${roomKey}/${x.name}`);
+            await supabase.storage.from('attachments').remove(filesToRemove);
+        }
+
+        const { error } = await supabase.from('rooms').delete().eq('room_key', roomKey);
+        
+        if (error) throw error;
+        setRooms(rooms.filter(r => r.room_key !== roomKey));
+    } catch (e: any) {
+        console.error("Delete/Leave room failed:", e);
+        alert('Operation failed: ' + (e.message || "Unknown error"));
+    }
+  };
+
+  const handleCreateOrJoinRoom = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!roomName || !pin) return;
+      if (!newRoomName || !newRoomPin) return;
+
+      setCreating(true);
+      const roomKey = generateRoomKey(newRoomPin, newRoomName);
       
-      const roomKey = generateRoomKey(pin, roomName);
-      
-      // Save profile
-      localStorage.setItem('chatUsername', username);
-      localStorage.setItem('chatAvatarURL', avatarURL);
+      try {
+           // 1. Check if room exists
+           const { data: existingRoom, error: fetchError } = await supabase
+            .from('rooms')
+            .select('*')
+            .eq('room_key', roomKey)
+            .maybeSingle();
 
-      onJoinRoom({
-          username,
-          avatarURL,
-          roomName,
-          pin,
-          roomKey
-      });
-  };
+           if (fetchError) throw fetchError;
+            
+           if (existingRoom) {
+               // --- JOIN EXISTING ROOM ---
+               // Auto-subscribe user to this room (for Dashboard list) BUT DO NOT enable email alerts automatically.
+               // We explicitly pass an empty string for email, so notification logic skips this user until they opt-in.
+               const { error: subError } = await supabase.from('subscribers').upsert({
+                   room_key: roomKey,
+                   uid: user.uid,
+                   username: displayName,
+                   email: '' // FORCE EMPTY EMAIL to prevent auto-notifications
+               }, { onConflict: 'room_key, uid' });
 
-  const handleQuickJoin = (room: Room) => {
-      // For created rooms, we have the pin.
-      // Save profile
-      localStorage.setItem('chatUsername', username);
-      localStorage.setItem('chatAvatarURL', avatarURL);
+               if (subError) console.error("Subscription warning:", subError);
 
-      onJoinRoom({
-          username,
-          avatarURL,
-          roomName: room.room_name,
-          pin: room.pin,
-          roomKey: room.room_key
-      });
-  };
+               // Mark as read immediately on join
+               localStorage.setItem(`lastRead_${existingRoom.room_key}`, Date.now().toString());
 
-  const handleDeleteRoom = async (e: React.MouseEvent, roomId: string) => {
-      e.stopPropagation();
-      if (window.confirm("Are you sure you want to delete this room? This cannot be undone.")) {
-          await supabase.from('rooms').delete().eq('id', roomId);
-          // UI update handled by realtime subscription usually, but we can optimistically update too
-          setRooms(prev => prev.filter(r => r.id !== roomId));
+               const config: ChatConfig = {
+                   username: displayName,
+                   avatarURL: avatarUrl,
+                   roomName: existingRoom.room_name,
+                   pin: existingRoom.pin,
+                   roomKey: existingRoom.room_key
+               };
+               onJoinRoom(config);
+           } else {
+               // --- CREATE NEW ROOM ---
+               const { data, error } = await supabase.from('rooms').insert({
+                   room_key: roomKey,
+                   room_name: newRoomName,
+                   pin: newRoomPin,
+                   created_by: user.uid
+               }).select().single();
+
+               if (error) throw error;
+               
+               if (data) {
+                   // Mark as read immediately on creation
+                   localStorage.setItem(`lastRead_${data.room_key}`, Date.now().toString());
+
+                   // Add new room to list if it's not there
+                   if (!rooms.find(r => r.room_key === data.room_key)) {
+                        setRooms([data, ...rooms]);
+                   }
+                   setNewRoomName('');
+                   setNewRoomPin('');
+                   setShowCreate(false);
+               }
+           }
+      } catch (e: any) {
+          console.error("Operation failed", e);
+          alert("Failed to create or join room: " + e.message);
+      } finally {
+          setCreating(false);
       }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 p-4 md:p-8 transition-colors">
-        <div className="max-w-5xl mx-auto">
-            {/* Header */}
-            <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-                <div>
-                    <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Dashboard</h1>
-                    <p className="text-slate-500 dark:text-slate-400">Welcome back, <span className="font-semibold">{username}</span></p>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300">
+        <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+            
+            {/* Header / Top Bar */}
+            <header className="flex justify-between items-center mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                    <img 
+                        src="https://konskall.github.io/incognitochat/favicon-96x96.png" 
+                        alt="Incognito Chat" 
+                        className="w-10 h-10 rounded-xl shadow-lg shadow-blue-500/20"
+                    />
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Welcome back to your secure space</p>
+                    </div>
                 </div>
                 <button 
-                    onClick={onLogout}
-                    className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition shadow-sm text-sm font-medium"
+                    onClick={onLogout} 
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
                 >
                     <LogOut size={16} />
-                    Sign Out
+                    <span className="hidden sm:inline">Logout</span>
                 </button>
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left Column: Rooms List */}
-                <div className="lg:col-span-2 space-y-6">
-                    <div className="flex items-center justify-between">
-                        <h2 className="text-xl font-bold flex items-center gap-2">
-                            <Shield size={20} className="text-blue-500" />
-                            Your Secure Rooms
-                        </h2>
-                        {loading && <Loader2 size={16} className="animate-spin text-slate-400" />}
-                    </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                
+                {/* Left Column: Profile Card - Redesigned for Pro Look */}
+                <div className="lg:col-span-4 xl:col-span-3 space-y-6">
+                    <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-900 dark:to-slate-950 rounded-2xl shadow-lg shadow-slate-200/50 dark:shadow-none border border-slate-200/60 dark:border-slate-800 p-5 transition-all duration-300 relative overflow-hidden group">
+                        
+                        {/* Subtle decorative background blur */}
+                        <div className="absolute -top-10 -right-10 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl pointer-events-none group-hover:bg-blue-500/20 transition-all duration-500"></div>
 
-                    {rooms.length === 0 && !loading ? (
-                        <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 text-center border border-slate-200 dark:border-slate-700 border-dashed">
-                            <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center text-blue-500 mx-auto mb-4">
-                                <MessageSquare size={32} />
-                            </div>
-                            <h3 className="text-lg font-semibold mb-2">No rooms yet</h3>
-                            <p className="text-slate-500 dark:text-slate-400 mb-6">Create a secure room to start chatting.</p>
-                            <button 
-                                onClick={() => setIsJoining(true)}
-                                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition shadow-lg shadow-blue-500/20"
-                            >
-                                Create New Room
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {rooms.map(room => (
-                                <div 
-                                    key={room.id}
-                                    onClick={() => handleQuickJoin(room)}
-                                    className="group relative bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-500 transition-all cursor-pointer shadow-sm hover:shadow-md"
-                                >
-                                    <div className="flex justify-between items-start mb-3">
-                                        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-md">
-                                            {room.room_name.substring(0, 2).toUpperCase()}
+                        {isEditingProfile ? (
+                            // --- EDIT MODE ---
+                            <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-300 relative z-10">
+                                <div className="flex flex-col items-center gap-4">
+                                    <div className="relative group/edit-avatar">
+                                        <img 
+                                            src={tempAvatarUrl} 
+                                            alt="Preview" 
+                                            className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-slate-800 shadow-md ring-1 ring-slate-100 dark:ring-slate-700"
+                                        />
+                                        <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/edit-avatar:opacity-100 transition-opacity">
+                                            <span className="text-white text-xs font-bold">Preview</span>
                                         </div>
-                                        {unreadRooms.has(room.room_key) && (
-                                            <span className="flex h-3 w-3">
-                                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                                              <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-                                            </span>
-                                        )}
                                     </div>
                                     
-                                    <h3 className="font-bold text-lg mb-1 truncate pr-8">{room.room_name}</h3>
-                                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-700/50 px-2 py-1 rounded w-fit">
-                                        <span>PIN: ••••</span>
-                                    </div>
+                                    <input 
+                                        type="text" 
+                                        value={displayName} 
+                                        onChange={(e) => setDisplayName(e.target.value)}
+                                        className="w-full text-center px-3 py-2 border-b-2 border-slate-200 dark:border-slate-700 bg-transparent focus:border-blue-500 outline-none transition-all font-bold text-lg text-slate-800 dark:text-white placeholder:font-normal"
+                                        placeholder="Display Name"
+                                    />
+                                </div>
 
-                                    <button 
-                                        onClick={(e) => handleDeleteRoom(e, room.id)}
-                                        className="absolute top-4 right-4 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition opacity-0 group-hover:opacity-100"
-                                        title="Delete Room"
-                                    >
-                                        <Trash2 size={16} />
+                                {/* Avatar Action Grid */}
+                                <div className="grid grid-cols-4 gap-2">
+                                    <label className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Upload Photo">
+                                        <Upload size={18} className="text-blue-600 dark:text-blue-400" />
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Upload</span>
+                                        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
+                                    </label>
+
+                                    <button onClick={handleGenerateRandomAvatar} className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Random Avatar">
+                                        <RefreshCw size={18} className="text-purple-600 dark:text-purple-400" />
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Random</span>
+                                    </button>
+                                    
+                                    <button onClick={() => setShowLinkInput(!showLinkInput)} className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Link URL">
+                                        <LinkIcon size={18} className="text-orange-600 dark:text-orange-400" />
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Link</span>
+                                    </button>
+
+                                    <button onClick={handleRestoreGoogleAvatar} className="flex flex-col items-center justify-center gap-1 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Restore Original">
+                                        <RotateCcw size={18} className="text-green-600 dark:text-green-400" />
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase">Reset</span>
                                     </button>
                                 </div>
-                            ))}
-                        </div>
-                    )}
+
+                                {showLinkInput && (
+                                    <div className="flex relative animate-in slide-in-from-top-2 fade-in">
+                                        <input 
+                                            type="text" 
+                                            value={linkInput}
+                                            onChange={(e) => setLinkInput(e.target.value)}
+                                            placeholder="https://image-url.png"
+                                            className="w-full pl-3 pr-9 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
+                                        />
+                                        <button 
+                                            onClick={handleLinkAvatar} 
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 p-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-200 transition"
+                                        >
+                                            <ArrowRight size={12} />
+                                        </button>
+                                    </div>
+                                )}
+                                
+                                <div className="flex gap-3 pt-2">
+                                    <button 
+                                        onClick={() => { setIsEditingProfile(false); setShowLinkInput(false); }}
+                                        className="flex-1 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button 
+                                        onClick={handleSaveProfile}
+                                        disabled={isSavingProfile}
+                                        className="flex-1 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg shadow-md hover:bg-blue-700 transition flex items-center justify-center gap-2"
+                                    >
+                                        {isSavingProfile ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                                        Save Changes
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            // --- VIEW MODE (Compact Horizontal Professional) ---
+                            <div className="flex items-center gap-5 animate-in fade-in zoom-in-95 duration-300 relative z-10">
+                                <div className="relative flex-shrink-0 group/avatar">
+                                    <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full opacity-0 group-hover/avatar:opacity-100 transition duration-500 blur-sm"></div>
+                                    <img 
+                                        src={avatarUrl} 
+                                        alt="Profile" 
+                                        className="relative w-20 h-20 rounded-full object-cover border-4 border-white dark:border-slate-900 shadow-lg"
+                                    />
+                                    <button 
+                                        onClick={() => {
+                                            setTempAvatarUrl(avatarUrl);
+                                            setIsEditingProfile(true);
+                                        }}
+                                        className="absolute bottom-0 right-0 p-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-full shadow-md border border-slate-100 dark:border-slate-700 hover:text-blue-600 hover:scale-110 transition-all z-20"
+                                        title="Edit Profile"
+                                    >
+                                        <Edit2 size={12} />
+                                    </button>
+                                </div>
+                                
+                                <div className="flex-1 min-w-0 flex flex-col justify-center h-20">
+                                    <h3 className="text-xl font-bold text-slate-900 dark:text-white truncate tracking-tight" title={displayName}>
+                                        {displayName}
+                                    </h3>
+                                    <div className="flex items-center gap-2 mt-1 text-slate-500 dark:text-slate-400">
+                                        <div className="p-1 bg-slate-100 dark:bg-slate-800 rounded-md">
+                                            <Mail size={10} className="flex-shrink-0" />
+                                        </div>
+                                        <span className="text-xs font-medium truncate opacity-80" title={user.email}>{user.email}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
-                {/* Right Column: Profile & Join */}
-                <div className="space-y-6">
-                    {/* Identity Card */}
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
-                        <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
-                            <UserIcon size={18} /> Identity
-                        </h3>
-                        <div className="flex items-center gap-4 mb-4">
-                            <div className="relative group">
-                                <img 
-                                    src={avatarURL} 
-                                    alt="Avatar" 
-                                    className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 object-cover border-2 border-slate-200 dark:border-slate-600"
-                                />
-                                <button 
-                                    onClick={() => setAvatarURL(`https://api.dicebear.com/9.x/bottts/svg?seed=${Math.random()}`)}
-                                    className="absolute bottom-0 right-0 bg-blue-600 text-white p-1 rounded-full shadow-lg hover:bg-blue-700 transition"
-                                    title="New Avatar"
-                                >
-                                    <RefreshCw size={12} />
-                                </button>
-                            </div>
-                            <div className="flex-1">
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Display Name</label>
-                                <input 
-                                    type="text" 
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-semibold focus:border-blue-500 outline-none transition"
-                                />
-                            </div>
-                        </div>
+                {/* Right Column: Room Management */}
+                <div className="lg:col-span-8 xl:col-span-9 space-y-6">
+                    
+                    {/* Create Room Card */}
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+                         <div className="p-6">
+                            {!showCreate ? (
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-slate-800 dark:text-white">Join or Create Room</h3>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">Enter a room name and PIN to connect</p>
+                                    </div>
+                                    <button 
+                                        onClick={() => setShowCreate(true)}
+                                        className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <LogIn size={20} />
+                                        Enter / Create Room
+                                    </button>
+                                </div>
+                            ) : (
+                                <form onSubmit={handleCreateOrJoinRoom} className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                    <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-4">
+                                        <h3 className="font-semibold text-lg">Room Access</h3>
+                                        <button type="button" onClick={() => setShowCreate(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                            <X size={20} />
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Room Name</label>
+                                            <input 
+                                                type="text" 
+                                                value={newRoomName}
+                                                onChange={e => setNewRoomName(e.target.value)}
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none transition"
+                                                placeholder="e.g. Project Alpha"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Access PIN</label>
+                                            <input 
+                                                type="text" 
+                                                value={newRoomPin}
+                                                onChange={e => setNewRoomPin(e.target.value)}
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none transition"
+                                                placeholder="Secret Key"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center pt-2">
+                                        <p className="text-xs text-slate-500 italic">If the room exists, you will join it. Otherwise, a new room will be created.</p>
+                                        <button 
+                                            type="submit" 
+                                            disabled={creating}
+                                            className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {creating ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}
+                                            Enter Room
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+                         </div>
                     </div>
 
-                    {/* Join/Create Card */}
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
-                        <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
-                            <Plus size={18} /> Join or Create
-                        </h3>
-                        <form onSubmit={handleJoinSubmit} className="space-y-4">
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Room Name</label>
-                                <input 
-                                    type="text" 
-                                    value={roomName}
-                                    onChange={(e) => setRoomName(e.target.value)}
-                                    placeholder="e.g. secretbase"
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3 focus:border-blue-500 outline-none transition"
-                                />
+                    {/* Rooms List */}
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4 px-1">Your Rooms</h3>
+                        
+                        {loadingRooms ? (
+                            <div className="flex justify-center py-12">
+                                <Loader2 className="animate-spin text-slate-400" size={32} />
                             </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Room PIN</label>
-                                <input 
-                                    type="password" 
-                                    value={pin}
-                                    onChange={(e) => setPin(e.target.value)}
-                                    placeholder="••••"
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3 focus:border-blue-500 outline-none transition"
-                                />
+                        ) : rooms.length === 0 ? (
+                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800">
+                                <p className="text-slate-500 dark:text-slate-400">You haven't created or joined any rooms yet.</p>
+                                <button onClick={() => setShowCreate(true)} className="text-blue-500 font-semibold mt-2 hover:underline">Create or Join one now</button>
                             </div>
-                            <button 
-                                type="submit"
-                                disabled={!roomName || !pin}
-                                className="w-full py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Enter Room
-                            </button>
-                        </form>
+                        ) : (
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+                                {rooms.map(room => (
+                                    <div key={room.id} className="group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
+                                        <div className="mb-4 relative z-10">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 truncate pr-2 flex items-center gap-2">
+                                                    {room.room_name}
+                                                    {unreadRooms.has(room.room_key) && (
+                                                        <span className="flex h-2.5 w-2.5 relative">
+                                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                                                        </span>
+                                                    )}
+                                                </h4>
+                                                <button 
+                                                    onClick={() => handleDeleteRoom(room.id, room.room_name)}
+                                                    className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-0 group-hover:opacity-100"
+                                                    title={room.created_by === user.uid ? "Delete Room" : "Remove from History"}
+                                                >
+                                                    {room.created_by === user.uid ? <Trash2 size={16} /> : <X size={16} />}
+                                                </button>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                                <span className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono border border-slate-200 dark:border-slate-700">PIN: {room.pin}</span>
+                                                {room.created_by === user.uid && (
+                                                    <>
+                                                        <span>•</span>
+                                                        <span className="text-blue-500 font-medium">Owner</span>
+                                                    </>
+                                                )}
+                                                <span>•</span>
+                                                <span>{new Date(room.created_at).toLocaleDateString()}</span>
+                                            </div>
+                                            
+                                            {/* Unread Message Indicator Text */}
+                                            {unreadRooms.has(room.room_key) && (
+                                                <div className="mt-3 flex items-center gap-1.5 text-xs font-bold text-red-500 dark:text-red-400 animate-pulse">
+                                                    <BellRing size={14} />
+                                                    <span>New messages</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        <button 
+                                            onClick={() => handleJoin(room)}
+                                            className={`w-full py-2.5 font-semibold rounded-xl transition flex items-center justify-center gap-2 z-10 
+                                                ${unreadRooms.has(room.room_key) 
+                                                    ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/30 group-hover:bg-red-500 group-hover:text-white group-hover:border-red-500' 
+                                                    : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 group-hover:bg-blue-600 group-hover:text-white dark:group-hover:bg-blue-600 dark:group-hover:text-white'
+                                                }`}
+                                        >
+                                            Enter Room <ArrowRight size={16} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
