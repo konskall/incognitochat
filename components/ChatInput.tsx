@@ -4,6 +4,7 @@ import { Send, Paperclip, MapPin, Smile, Mic, Trash2, X, Image as ImageIcon, Fil
 import EmojiPicker from './EmojiPicker';
 import { compressImage } from '../utils/helpers';
 import { Message } from '../types';
+import { toast } from 'sonner';
 
 interface ChatInputProps {
   inputText: string;
@@ -93,14 +94,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 try {
                     const compressed = await compressImage(file);
                     if (compressed.size > MAX_FILE_SIZE) {
-                         alert(`Still too large after compression (${(compressed.size/1024/1024).toFixed(1)}MB). Please choose a smaller image.`);
+                         toast.error(`Still too large after compression (${(compressed.size/1024/1024).toFixed(1)}MB). Please choose a smaller image.`);
                          if (fileInputRef.current) fileInputRef.current.value = '';
                          return;
                     }
                     file = compressed;
                 } catch (error) {
                     console.error("Compression failed:", error);
-                    alert("Failed to compress image.");
+                    toast.error("Failed to compress image.");
                     if (fileInputRef.current) fileInputRef.current.value = '';
                     return;
                 }
@@ -109,7 +110,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 return;
             }
         } else {
-            alert(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is 40MB.`);
+            toast.error(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is 40MB.`);
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
