@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { ChatConfig, Message, User, Subscriber } from '../types';
 import MessageList from './MessageList';
@@ -548,68 +548,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
   };
 
-  // --- OPTIMIZED BACKGROUND STYLE ---
-  // Memoize the background style object so it doesn't get recreated on every render/keystroke.
-  // This prevents React from constantly checking/updating the style prop of the background div.
-  const backgroundStyle = useMemo(() => {
-      if (!config.backgroundImage) {
-          // Fallback pattern if no image/pattern is set
-          return {
-              backgroundImage: `radial-gradient(${isDarkMode ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`, 
-              backgroundSize: '20px 20px',
-              opacity: 1
-          };
-      }
-      
-      const isSvgPattern = config.backgroundImage.includes('image/svg+xml');
-      const isUrl = config.backgroundImage.includes('url(') || config.backgroundImage.startsWith('http') || config.backgroundImage.startsWith('data:');
-
-      // Check if it looks like a URL (basic check) or a gradient string
-      if (isUrl) {
-           const urlValue = (config.backgroundImage.startsWith('http') || config.backgroundImage.startsWith('data:')) 
-              ? `url("${config.backgroundImage}")` 
-              : config.backgroundImage;
-
-           return {
-               backgroundImage: urlValue,
-               backgroundSize: isSvgPattern ? 'auto' : 'cover',
-               backgroundRepeat: isSvgPattern ? 'repeat' : 'no-repeat',
-               backgroundPosition: 'center',
-               opacity: isSvgPattern ? 1 : 0.6 // Slightly dim large images, keep patterns clear
-           };
-      }
-      
-      // Assume CSS gradient string
-      return {
-          background: config.backgroundImage,
-          opacity: 1
-      };
-  }, [config.backgroundImage, isDarkMode]);
-
-  // Memoize overlay style for readability if it's a full image
-  const showOverlay = useMemo(() => {
-      return config.backgroundImage && (config.backgroundImage.startsWith('http') || (config.backgroundImage.includes('url') && !config.backgroundImage.includes('svg+xml')));
-  }, [config.backgroundImage]);
-
   return (
     <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
-      
-      {/* --- BACKGROUND LAYER --- */}
-      {/* 
-         Optimization: The background is now in a separate absolute div instead of being part of the 'main' container style.
-         It creates a stacking context and prevents the background property from causing repaints on the scrolling container.
-         We removed 'backgroundAttachment: fixed' which is performance-heavy on mobile. 'absolute inset-0' achieves a similar visual result in this layout.
-      */}
-      <div 
-        className="absolute inset-0 z-0 pointer-events-none transition-all duration-500"
-        style={backgroundStyle}
-      />
-      
-      {/* Readability Overlay for Photos */}
-      {showOverlay && (
-         <div className="absolute inset-0 z-0 bg-white/40 dark:bg-black/50 pointer-events-none backdrop-blur-[2px]" />
-      )}
-      
       {/* Offline Indicator */}
       {isOffline && (
         <div className="absolute top-20 left-0 right-0 flex justify-center z-40 pointer-events-none animate-in slide-in-from-top-4 fade-in duration-300">
@@ -656,19 +596,22 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onExit={handleExitChat}
       />
 
-      {/* Main Content Area - Transparent so background shows through */}
-      <main className="flex-1 overflow-y-auto overscroll-contain p-4 pb-20 relative z-10 scroll-smooth">
-        <div className="min-h-full flex flex-col justify-end">
-            <MessageList 
-                messages={messages} 
-                currentUserUid={user?.uid || ''} 
-                onEdit={handleEditMessage}
-                onDelete={deleteMessage}
-                onReply={handleReply}
-                onReact={reactToMessage}
-            />
-            <div ref={messagesEndRef} />
-        </div>
+      <main 
+        className="flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50 dark:bg-slate-950/50" 
+        style={{
+            backgroundImage: `radial-gradient(${isDarkMode ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`, 
+            backgroundSize: '20px 20px'
+        }}
+      >
+        <MessageList 
+            messages={messages} 
+            currentUserUid={user?.uid || ''} 
+            onEdit={handleEditMessage}
+            onDelete={deleteMessage}
+            onReply={handleReply}
+            onReact={reactToMessage}
+        />
+        <div ref={messagesEndRef} />
       </main>
 
       <ChatInput
