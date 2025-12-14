@@ -311,7 +311,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                  <button 
                     type="button" 
                     onClick={toggleCustomUrl}
-                    className="text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline"
+                    className="text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline py-1 px-2 -mr-2 rounded-lg hover:bg-blue-50 dark:hover:bg-slate-700/50 transition-colors"
                  >
                      {useCustomUrl ? 'Use Generator' : 'Use Custom URL'}
                  </button>
@@ -347,7 +347,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                         <button 
                             type="button"
                             onClick={regenerateAvatar}
-                            className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 py-1.5 rounded-lg font-bold hover:bg-blue-200 dark:hover:bg-blue-900/60 transition"
+                            className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 py-2 px-3 rounded-lg font-bold hover:bg-blue-200 dark:hover:bg-blue-900/60 transition"
                         >
                             🔀 Shuffle Look
                         </button>
@@ -388,7 +388,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                                      </div>
                                      <button 
                                         onClick={(e) => deleteFromHistory(e, room)}
-                                        className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-all opacity-0 group-hover:opacity-100"
+                                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-all opacity-0 group-hover:opacity-100"
                                         title="Remove from history"
                                      >
                                          <X size={14} />
@@ -399,7 +399,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                          <div className="border-t border-slate-100 dark:border-slate-700/50 p-1 bg-slate-50/50 dark:bg-slate-900/50">
                             <button 
                                 onClick={clearHistory}
-                                className="w-full py-1.5 text-xs text-slate-500 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400 flex items-center justify-center gap-1 transition-colors"
+                                className="w-full py-2.5 text-xs text-slate-500 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400 flex items-center justify-center gap-1 transition-colors"
                             >
                                 <Trash2 size={12} />
                                 Clear History
@@ -417,12 +417,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
                   value={pin}
                   onChange={(e) => setPin(e.target.value)}
                   maxLength={12}
-                  className="w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-base pr-10"
+                  className="w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-base pr-14"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPin(!showPin)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-2.5 text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
                   aria-label={showPin ? "Hide PIN" : "Show PIN"}
                 >
                   {showPin ? <EyeOff size={20} /> : <Eye size={20} />}
