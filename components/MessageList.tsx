@@ -219,6 +219,7 @@ const MediaPreviewModal: React.FC<{
                         src={src} 
                         controls 
                         autoPlay 
+                        playsInline
                         className="max-w-full max-h-full shadow-2xl rounded-lg outline-none"
                         onClick={(e) => e.stopPropagation()} 
                     />
@@ -529,8 +530,10 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onDelete, onRea
                     onClick={() => onPreview(url, name, type)}
                 >
                     <video 
-                        src={url} 
+                        src={`${url}#t=0.001`} 
                         preload="metadata"
+                        playsInline
+                        muted
                         className="max-w-full max-h-[300px] w-auto object-contain block pointer-events-none" 
                     />
                     
