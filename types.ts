@@ -73,6 +73,7 @@ export interface Subscriber {
     username: string;
     email: string;
     created_at?: string;
+    last_notified_at?: string; // Track last email time
 }
 
 // New Interface for Room Dashboard
