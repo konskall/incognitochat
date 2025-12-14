@@ -26,6 +26,9 @@ const EMAILJS_SERVICE_ID: string = "service_cnerkn6";
 const EMAILJS_TEMPLATE_ID: string = "template_zr9v8bp";
 const EMAILJS_PUBLIC_KEY: string = "cSDU4HLqgylnmX957";
 
+// Notification Cooldown in Minutes
+const NOTIFICATION_COOLDOWN_MINUTES = 30;
+
 const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
   const [inputText, setInputText] = useState('');
@@ -168,6 +171,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   const notifySubscribers = async (action: 'message' | 'deleted' | 'joined', details: string) => {
       if (!config.roomKey || !user) return;
+      
+      // RULE 1: Do not send emails for 'joined' events to reduce noise
+      if (action === 'joined') return;
+
       try {
           const { data, error } = await supabase
             .from('subscribers')
@@ -178,20 +185,45 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           const subscribers = data as Subscriber[];
           if (!subscribers || subscribers.length === 0) return;
 
-          const recipients: string[] = [];
+          // RULE 2: Get IDs of currently ONLINE participants (to exclude them from emails)
+          // We assume 'participants' from useRoomPresence contains active users.
+          const onlineUserIds = new Set(participants.map(p => p.uid));
+          
+          // Filter subscribers who need to be notified
+          const recipientsToEmail: string[] = [];
+          const subscriberIdsToUpdate: string[] = [];
+          const now = new Date();
+
           subscribers.forEach(sub => {
-              if (sub.uid !== user.uid && sub.email) {
-                  recipients.push(sub.email);
+              // Skip self
+              if (sub.uid === user.uid) return;
+              
+              // Skip if they are currently online in the room (Presence Check)
+              if (onlineUserIds.has(sub.uid)) return;
+
+              // RULE 3: Cooldown Check
+              // Check if we sent them an email recently
+              if (sub.last_notified_at) {
+                  const lastNotified = new Date(sub.last_notified_at);
+                  const diffInMinutes = (now.getTime() - lastNotified.getTime()) / 60000;
+                  // If notified recently, skip (unless it's a critical 'deleted' event)
+                  if (diffInMinutes < NOTIFICATION_COOLDOWN_MINUTES && action !== 'deleted') {
+                      return;
+                  }
+              }
+
+              if (sub.email) {
+                  recipientsToEmail.push(sub.email);
+                  if (sub.id) subscriberIdsToUpdate.push(sub.uid); // Track by UID for update
               }
           });
 
-          if (recipients.length > 0) {
+          if (recipientsToEmail.length > 0) {
               let actionLabel = 'New Message';
               if (action === 'deleted') actionLabel = 'Room Deleted';
-              if (action === 'joined') actionLabel = 'New Participant';
 
               const emailParams = {
-                  to_email: recipients.join(','), // Fixed: join requires comma
+                  to_email: recipientsToEmail.join(','), 
                   room_name: config.roomName,
                   action_type: actionLabel,
                   sender_name: config.username, 
@@ -205,6 +237,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                   emailParams,
                   EMAILJS_PUBLIC_KEY
               );
+
+              // Update the last_notified_at timestamp for these users
+              if (subscriberIdsToUpdate.length > 0) {
+                  await supabase
+                      .from('subscribers')
+                      .update({ last_notified_at: new Date().toISOString() })
+                      .in('uid', subscriberIdsToUpdate)
+                      .eq('room_key', config.roomKey);
+              }
           }
       } catch (e) {
           console.error("EmailJS Failed", e);
@@ -300,6 +341,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           const sessionKey = `joined_${config.roomKey}`;
           if (!sessionStorage.getItem(sessionKey)) {
               sendMessage(`${config.username} joined the room`, config, null, null, null, 'system');
+              // We pass 'joined' here, but inside notifySubscribers it is ignored for email, 
+              // keeping it for future extensibility or other notification types.
               notifySubscribers('joined', `${config.username} has entered the room.`);
               sessionStorage.setItem(sessionKey, 'true');
           }
@@ -467,7 +510,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
               room_key: config.roomKey,
               uid: user.uid,
               username: config.username,
-              email: emailAddress
+              email: emailAddress,
+              last_notified_at: new Date().toISOString() // Initialize with current time to start cooldown immediately
           });
           setEmailAlertsEnabled(true);
           setShowEmailModal(false);
