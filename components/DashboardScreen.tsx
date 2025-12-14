@@ -6,7 +6,7 @@ import { generateRoomKey, compressImage } from '../utils/helpers';
 import { 
   LogOut, Trash2, ArrowRight, Loader2, 
   Upload, RotateCcw,
-  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon
+  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon, AlertCircle
 } from 'lucide-react';
 
 interface DashboardScreenProps {
@@ -14,6 +14,57 @@ interface DashboardScreenProps {
   onJoinRoom: (config: ChatConfig) => void;
   onLogout: () => void;
 }
+
+// -- Custom Room Delete Toast (Glassmorphism) --
+const RoomDeleteToast: React.FC<{ 
+    roomName: string; 
+    isOwner: boolean; 
+    onConfirm: () => void; 
+    onCancel: () => void; 
+    isDeleting: boolean;
+}> = ({ roomName, isOwner, onConfirm, onCancel, isDeleting }) => {
+    return (
+        <div className="fixed bottom-6 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto z-[100] animate-in slide-in-from-bottom-4 fade-in duration-300">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-slate-900/95 dark:bg-white/10 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-2xl text-white ring-1 ring-black/10">
+                
+                {/* Text Section */}
+                <div className="flex flex-col items-center sm:items-start text-center sm:text-left w-full sm:w-auto min-w-[200px]">
+                    <span className="text-sm font-bold flex items-center justify-center sm:justify-start gap-2 text-white">
+                        <AlertCircle size={18} className="text-red-400 shrink-0" />
+                        <span>{isOwner ? 'Διαγραφή Δωματίου;' : 'Αφαίρεση από Ιστορικό;'}</span>
+                    </span>
+                    <span className="text-[11px] text-white/60 mt-1">
+                        {isOwner 
+                            ? `Το "${roomName}" θα διαγραφεί μόνιμα για όλους.` 
+                            : `Το "${roomName}" θα αφαιρεθεί από τη λίστα σας.`}
+                    </span>
+                </div>
+
+                {/* Divider - Hidden on mobile */}
+                <div className="hidden sm:block h-10 w-px bg-white/10"></div>
+
+                {/* Buttons Section */}
+                <div className="flex gap-3 w-full sm:w-auto">
+                    <button 
+                        onClick={onCancel}
+                        disabled={isDeleting}
+                        className="flex-1 sm:flex-none px-4 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-white rounded-xl transition-colors text-center border border-white/5"
+                    >
+                        Ακύρωση
+                    </button>
+                    <button 
+                        onClick={onConfirm}
+                        disabled={isDeleting}
+                        className="flex-1 sm:flex-none px-4 py-2 text-xs font-bold bg-red-500 hover:bg-red-600 text-white rounded-xl shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+                    >
+                        {isDeleting ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14} />}
+                        <span>{isOwner ? 'Διαγραφή' : 'Αφαίρεση'}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onLogout }) => {
   // Room State
@@ -39,6 +90,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const [linkInput, setLinkInput] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Delete Room State
+  const [roomToDelete, setRoomToDelete] = useState<{id: string, name: string, key: string, isOwner: boolean} | null>(null);
+  const [isDeletingRoom, setIsDeletingRoom] = useState(false);
 
   // Load User Data & Rooms
   useEffect(() => {
@@ -294,51 +349,55 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     onJoinRoom(config);
   };
 
-  const handleDeleteRoom = async (roomId: string, roomName: string) => {
-    const room = rooms.find(r => r.id === roomId || r.room_name === roomName);
-    if (!room) return;
+  // 1. Request Deletion (Opens Toast)
+  const onRequestDeleteRoom = (roomId: string, roomName: string, roomKey: string, createdBy: string) => {
+      setRoomToDelete({
+          id: roomId,
+          name: roomName,
+          key: roomKey,
+          isOwner: createdBy === user.uid
+      });
+  };
 
-    // Check if the current user is the creator
-    const isOwner = room.created_by === user.uid;
-    const message = isOwner 
-        ? `Are you sure you want to delete "${roomName}"? This will remove it for everyone and cannot be undone.`
-        : `Are you sure you want to remove "${roomName}" from your history?`;
+  // 2. Execute Deletion (Called by Toast)
+  const handleConfirmDeleteRoom = async () => {
+    if (!roomToDelete) return;
 
-    if (!window.confirm(message)) return;
+    setIsDeletingRoom(true);
+    const { id, key, isOwner } = roomToDelete;
 
     try {
         if (!isOwner) {
              // If not creator, just remove subscription (leave room)
              await supabase.from('subscribers')
                 .delete()
-                .eq('room_key', room.room_key)
+                .eq('room_key', key)
                 .eq('uid', user.uid);
              
              // Remove from local list
-             setRooms(rooms.filter(r => r.room_key !== room.room_key));
-             return;
+             setRooms(rooms.filter(r => r.room_key !== key));
+        } else {
+             // If creator, perform full delete
+             await supabase.from('messages').delete().eq('room_key', key);
+             await supabase.from('subscribers').delete().eq('room_key', key);
+
+             const { data: files } = await supabase.storage.from('attachments').list(key);
+             if (files && files.length > 0) {
+                 const filesToRemove = files.map(x => `${key}/${x.name}`);
+                 await supabase.storage.from('attachments').remove(filesToRemove);
+             }
+
+             const { error } = await supabase.from('rooms').delete().eq('room_key', key);
+             if (error) throw error;
+             
+             setRooms(rooms.filter(r => r.room_key !== key));
         }
-
-        // If creator, perform full delete
-        const roomKey = room.room_key;
-
-        // Cleanup associated data
-        await supabase.from('messages').delete().eq('room_key', roomKey);
-        await supabase.from('subscribers').delete().eq('room_key', roomKey);
-
-        const { data: files } = await supabase.storage.from('attachments').list(roomKey);
-        if (files && files.length > 0) {
-            const filesToRemove = files.map(x => `${roomKey}/${x.name}`);
-            await supabase.storage.from('attachments').remove(filesToRemove);
-        }
-
-        const { error } = await supabase.from('rooms').delete().eq('room_key', roomKey);
-        
-        if (error) throw error;
-        setRooms(rooms.filter(r => r.room_key !== roomKey));
     } catch (e: any) {
         console.error("Delete/Leave room failed:", e);
         alert('Operation failed: ' + (e.message || "Unknown error"));
+    } finally {
+        setIsDeletingRoom(false);
+        setRoomToDelete(null);
     }
   };
 
@@ -416,6 +475,17 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   };
 
   return (
+    <>
+    {roomToDelete && (
+        <RoomDeleteToast
+            roomName={roomToDelete.name}
+            isOwner={roomToDelete.isOwner}
+            onConfirm={handleConfirmDeleteRoom}
+            onCancel={() => setRoomToDelete(null)}
+            isDeleting={isDeletingRoom}
+        />
+    )}
+
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300">
         <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
             
@@ -668,7 +738,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                                     )}
                                                 </h4>
                                                 <button 
-                                                    onClick={() => handleDeleteRoom(room.id, room.room_name)}
+                                                    onClick={() => onRequestDeleteRoom(room.id, room.room_name, room.room_key, room.created_by)}
                                                     className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-0 group-hover:opacity-100"
                                                     title={room.created_by === user.uid ? "Delete Room" : "Remove from History"}
                                                 >
@@ -715,6 +785,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             </div>
         </div>
     </div>
+    </>
   );
 };
 
