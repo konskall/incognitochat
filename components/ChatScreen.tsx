@@ -257,7 +257,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     const checkUser = async () => {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-             setUser({ uid: session.user.id, isAnonymous: true });
+             // Correctly identify if user is anonymous or authenticated (e.g. Google)
+             // and store email if available.
+             setUser({ 
+                 uid: session.user.id, 
+                 isAnonymous: session.user.is_anonymous ?? true,
+                 email: session.user.email 
+             });
         } else {
              const { data: anonData } = await supabase.auth.signInAnonymously();
              if (anonData.user) {
@@ -326,10 +332,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 .eq('uid', user.uid)
                 .maybeSingle();
 
-              // Only enable alerts if email is actually present (not empty string)
               if (data && data.email) {
+                  // User has set an email for this room specifically
                   setEmailAlertsEnabled(true);
                   setEmailAddress(data.email);
+              } else if (user.email) {
+                  // If no subscription exists (or email is empty in DB), 
+                  // but user has a Google Account email, pre-fill the input
+                  // so they don't have to type it.
+                  setEmailAddress(user.email);
               }
           };
           checkSubscription();
@@ -502,6 +513,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           setEmailAddress('');
           setShowEmailModal(false);
       } else {
+          // If turning ON, pre-fill with Google email if available and field is empty
+          if (!emailAddress && user.email) {
+              setEmailAddress(user.email);
+          }
           setShowEmailModal(true);
       }
   };
