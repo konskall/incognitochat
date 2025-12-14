@@ -283,7 +283,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                          />
                      </div>
                      
-                     {(!inputText.trim() && !selectedFile && !editingMessageId) ? (
+                     {(!inputText.trim() && !selectedFile && !editingMessageId && !isUploading) ? (
                         <button 
                              onClick={startRecording}
                              className="w-10 h-10 text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full flex items-center justify-center transition flex-shrink-0"
