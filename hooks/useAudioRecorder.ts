@@ -1,5 +1,6 @@
 
 import { useState, useRef } from 'react';
+import { toast } from 'sonner';
 
 export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: string) => void) => {
   const [isRecording, setIsRecording] = useState(false);
@@ -48,7 +49,7 @@ export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: str
 
     } catch (e) {
       console.error("Microphone error", e);
-      alert("Could not access microphone.");
+      toast.error("Could not access microphone.");
     }
   };
 
