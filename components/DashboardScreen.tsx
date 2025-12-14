@@ -7,7 +7,7 @@ import { generateRoomKey, compressImage } from '../utils/helpers';
 import { 
   LogOut, Trash2, ArrowRight, Loader2, 
   Upload, RotateCcw,
-  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon, AlertCircle
+  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon, AlertCircle, ImageIcon
 } from 'lucide-react';
 
 interface DashboardScreenProps {
@@ -15,6 +15,15 @@ interface DashboardScreenProps {
   onJoinRoom: (config: ChatConfig) => void;
   onLogout: () => void;
 }
+
+// Background Presets
+const BACKGROUND_PRESETS = [
+    { id: 'default', value: '', label: 'Default' },
+    { id: 'gradient-1', value: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', label: 'Twilight' },
+    { id: 'gradient-2', value: 'linear-gradient(120deg, #84fab0 0%, #8fd3f4 100%)', label: 'Ocean' },
+    { id: 'gradient-3', value: 'linear-gradient(to top, #cfd9df 0%, #e2ebf0 100%)', label: 'Cloud' },
+    { id: 'gradient-4', value: 'linear-gradient(to right, #f83600 0%, #f9d423 100%)', label: 'Sunset' },
+];
 
 // -- Custom Room Delete Toast (Glassmorphism) --
 const RoomDeleteToast: React.FC<{ 
@@ -84,6 +93,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const [displayName, setDisplayName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [googleAvatarUrl, setGoogleAvatarUrl] = useState(''); // Store original google/provider image
+  const [chatBackground, setChatBackground] = useState(''); // Store background preference
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   
@@ -92,6 +102,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const [linkInput, setLinkInput] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Background Upload State
+  const backgroundInputRef = useRef<HTMLInputElement>(null);
 
   // Delete Room State
   const [roomToDelete, setRoomToDelete] = useState<{name: string, key: string, isOwner: boolean} | null>(null);
@@ -115,12 +128,17 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           // Determine current display avatar
           const finalAvatar = meta.custom_avatar || localStorage.getItem('chatAvatarURL') || original;
           
+          // Determine background preference
+          const background = meta.chat_background || localStorage.getItem('chatBackground') || '';
+
           setDisplayName(finalName);
           setAvatarUrl(finalAvatar);
           setTempAvatarUrl(finalAvatar);
+          setChatBackground(background);
 
           localStorage.setItem('chatUsername', finalName);
           localStorage.setItem('chatAvatarURL', finalAvatar);
+          if (background) localStorage.setItem('chatBackground', background);
       }
 
       // 2. Fetch Rooms (Created AND Joined)
@@ -215,13 +233,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
               // 1. Get the last time the user opened this room from LocalStorage
               const lastReadTimestamp = localStorage.getItem(`lastRead_${room.room_key}`);
               
-              // FIX: If no timestamp exists (fresh login/new device), default to current time 
-              // instead of 0 (1970). This prevents marking all historic messages as unread 
-              // on a fresh login, solving the "ghost notification" issue.
               const lastReadTime = lastReadTimestamp ? parseInt(lastReadTimestamp) : Date.now();
 
               // 2. Fetch the MOST RECENT message for this room from Supabase
-              // CRITICAL FIX: Ignore system messages (type != 'system')
               const { data: latestMsg, error } = await supabase
                   .from('messages')
                   .select('created_at')
@@ -261,7 +275,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
               display_name: displayName,
               full_name: displayName, 
               custom_avatar: tempAvatarUrl,
-              avatar_url: tempAvatarUrl
+              avatar_url: tempAvatarUrl,
+              chat_background: chatBackground // Save background preference
           };
 
           const { error } = await supabase.auth.updateUser({
@@ -273,6 +288,11 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           setAvatarUrl(tempAvatarUrl);
           localStorage.setItem('chatUsername', displayName);
           localStorage.setItem('chatAvatarURL', tempAvatarUrl);
+          if (chatBackground) {
+              localStorage.setItem('chatBackground', chatBackground);
+          } else {
+              localStorage.removeItem('chatBackground');
+          }
           
           setIsEditingProfile(false);
           setShowLinkInput(false);
@@ -330,6 +350,34 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       }
   };
 
+  const handleBackgroundUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!e.target.files || !e.target.files[0]) return;
+      const file = e.target.files[0];
+      
+      try {
+          // Compress but allow slightly higher quality for backgrounds
+          const compressed = await compressImage(file);
+          const fileExt = compressed.name.split('.').pop();
+          const fileName = `bg_${Date.now()}.${fileExt}`;
+          const filePath = `profiles/${user.uid}/backgrounds/${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+              .from('attachments')
+              .upload(filePath, compressed);
+            
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage
+              .from('attachments')
+              .getPublicUrl(filePath);
+          
+          setChatBackground(publicUrl);
+      } catch (err: any) {
+          console.error("Background upload failed", err);
+          alert("Failed to upload background.");
+      }
+  };
+
   // --- Room Management Functions ---
 
   const handleJoin = (room: Room) => {
@@ -346,7 +394,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         avatarURL: avatarUrl,
         roomName: room.room_name,
         pin: room.pin,
-        roomKey: room.room_key
+        roomKey: room.room_key,
+        backgroundImage: chatBackground // Pass background preference
     };
     onJoinRoom(config);
   };
@@ -440,7 +489,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                    avatarURL: avatarUrl,
                    roomName: existingRoom.room_name,
                    pin: existingRoom.pin,
-                   roomKey: existingRoom.room_key
+                   roomKey: existingRoom.room_key,
+                   backgroundImage: chatBackground
                };
                onJoinRoom(config);
            } else {
@@ -586,6 +636,39 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         </button>
                                     </div>
                                 )}
+
+                                {/* Chat Background Customization */}
+                                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Chat Background</label>
+                                    <div className="grid grid-cols-5 gap-2">
+                                        {BACKGROUND_PRESETS.map((preset) => (
+                                            <button
+                                                key={preset.id}
+                                                onClick={() => setChatBackground(preset.value)}
+                                                className={`w-full aspect-square rounded-lg border-2 transition-all overflow-hidden ${chatBackground === preset.value ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700'}`}
+                                                style={{ background: preset.value || 'transparent' }}
+                                                title={preset.label}
+                                            >
+                                                {!preset.value && <span className="text-[9px] font-bold text-slate-400">DEF</span>}
+                                            </button>
+                                        ))}
+                                        {/* Image Background Upload Button */}
+                                        <label className={`w-full aspect-square rounded-lg border-2 flex items-center justify-center cursor-pointer transition-all ${chatBackground && !BACKGROUND_PRESETS.find(p => p.value === chatBackground) ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700 hover:border-blue-400'}`}>
+                                            {chatBackground && !BACKGROUND_PRESETS.find(p => p.value === chatBackground) ? (
+                                                 <img src={chatBackground} className="w-full h-full object-cover" alt="Custom" />
+                                            ) : (
+                                                 <ImageIcon size={14} className="text-slate-400" />
+                                            )}
+                                            <input 
+                                                type="file" 
+                                                ref={backgroundInputRef} 
+                                                className="hidden" 
+                                                accept="image/*"
+                                                onChange={handleBackgroundUpload} 
+                                            />
+                                        </label>
+                                    </div>
+                                </div>
                                 
                                 <div className="flex gap-3 pt-2">
                                     <button 
@@ -600,7 +683,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         className="flex-1 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg shadow-md hover:bg-blue-700 transition flex items-center justify-center gap-2"
                                     >
                                         {isSavingProfile ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
-                                        Save Changes
+                                        Save
                                     </button>
                                 </div>
                             </div>
