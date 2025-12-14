@@ -326,7 +326,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                 .eq('uid', user.uid)
                 .maybeSingle();
 
-              if (data) {
+              // Only enable alerts if email is actually present (not empty string)
+              if (data && data.email) {
                   setEmailAlertsEnabled(true);
                   setEmailAddress(data.email);
               }
@@ -490,7 +491,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const handleEmailToggle = async () => {
       if (!user || !config.roomKey) return;
       if (emailAlertsEnabled) {
-          await supabase.from('subscribers').delete().eq('room_key', config.roomKey).eq('uid', user.uid);
+          // Instead of deleting the row (which would remove the room from dashboard),
+          // we just clear the email field to stop notifications.
+          await supabase.from('subscribers')
+            .update({ email: '' })
+            .eq('room_key', config.roomKey)
+            .eq('uid', user.uid);
+
           setEmailAlertsEnabled(false);
           setEmailAddress('');
           setShowEmailModal(false);
@@ -506,13 +513,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
       setIsSavingEmail(true);
       try {
-          await supabase.from('subscribers').insert({
+          // Upsert to ensure we update existing record if present
+          await supabase.from('subscribers').upsert({
               room_key: config.roomKey,
               uid: user.uid,
               username: config.username,
               email: emailAddress,
               last_notified_at: new Date().toISOString() // Initialize with current time to start cooldown immediately
-          });
+          }, { onConflict: 'room_key, uid' });
+
           setEmailAlertsEnabled(true);
           setShowEmailModal(false);
           setShowSettingsMenu(false);
