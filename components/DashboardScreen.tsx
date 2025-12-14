@@ -8,7 +8,7 @@ import {
   LogOut, Trash2, ArrowRight, Loader2, 
   Upload, RotateCcw,
   RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon, AlertCircle, ImageIcon,
-  Palette, LayoutGrid, CircleDot, Activity, Hexagon
+  Palette, Box, Grip, Zap, Circle
 } from 'lucide-react';
 
 interface DashboardScreenProps {
@@ -17,33 +17,33 @@ interface DashboardScreenProps {
   onLogout: () => void;
 }
 
-// -- Professional SVG Pattern Generator --
-// Dynamically constructs SVG data URIs with user-selected colors
+// -- Professional SVG Pattern Generator (Bolder & Fixed Color) --
 const getPattern = (type: string, colorHex: string) => {
-    // URL-encode the hex color (e.g., # is %23)
-    const color = encodeURIComponent(colorHex);
-    // Fixed opacity for text readability assurance
-    const opacity = "0.08"; 
+    // Manually replace # with %23 for SVG data URI compatibility
+    const color = colorHex.replace('#', '%23');
+    // Increased opacity for better visibility
+    const opacity = "0.3"; 
+    const strokeWidth = "2";
 
     switch (type) {
-        case 'graph':
-            return `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h40v40H0V0zm1 1h38v38H1V1z' fill='none' stroke='${color}' stroke-width='1' stroke-opacity='${opacity}'/%3E%3Cpath d='M0 39h40M0 19h40M19 0v40M39 0v40' fill='none' stroke='${color}' stroke-width='0.5' stroke-opacity='${opacity}'/%3E%3C/svg%3E")`;
-        case 'polka':
-            return `url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='2' cy='2' r='1.5' fill='${color}' fill-opacity='${opacity}'/%3E%3C/svg%3E")`;
-        case 'waves':
-             return `url("data:image/svg+xml,%3Csvg width='100' height='20' viewBox='0 0 100 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M21.184 20c.357-.13.72-.264 1.088-.402l1.768-.661C33.64 15.347 39.647 14 50 14c10.271 0 15.362 1.222 24.629 4.928.955.383 1.869.74 2.75 1.072h6.225c-2.51-.73-5.139-1.691-8.233-2.928C65.888 13.278 60.562 12 50 12c-10.626 0-16.855 1.397-26.66 5.063l-1.767.662c-2.475.923-4.66 1.674-6.724 2.275h6.335zm0-20C13.258 2.892 8.077 4 0 4V2c5.744 0 9.951-.574 14.85-2h6.334zM77.38 0C85.239 2.966 90.502 4 100 4V2c-6.842 0-11.386-.542-16.396-2h-6.225zM0 14c8.44 0 13.718-1.21 22.272-4.402l1.768-.661C33.64 5.347 39.647 4 50 4c10.271 0 15.362 1.222 24.629 4.928C84.112 12.722 89.438 14 100 14v-2c-10.271 0-15.362-1.222-24.629-4.928C65.888 3.278 60.562 2 50 2 39.374 2 33.145 3.397 23.34 7.063l-1.767.662C13.223 10.84 8.163 12 0 12v2z' fill='${color}' fill-opacity='${opacity}' fill-rule='evenodd'/%3E%3C/svg%3E")`;
-        case 'hex':
-            return `url("data:image/svg+xml,%3Csvg width='24' height='40' viewBox='0 0 24 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 40c5.523 0 10-4.477 10-10V10C10 4.477 5.523 0 0 0h24c-5.523 0-10 4.477-10 10v20c0 5.523 4.477 10 10 10H0z' fill='${color}' fill-opacity='${opacity}' fill-rule='evenodd'/%3E%3C/svg%3E")`;
+        case 'cubes': // 3D Isometric Cubes
+            return `url("data:image/svg+xml,%3Csvg width='30' height='30' viewBox='0 0 30 30' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='${color}' stroke-opacity='${opacity}' stroke-width='${strokeWidth}'%3E%3Cpath d='M15 0 L30 8 L30 23 L15 30 L0 23 L0 8 Z' /%3E%3Cpath d='M15 0 L15 15 L30 23' /%3E%3Cpath d='M0 8 L15 15' /%3E%3C/g%3E%3C/svg%3E")`;
+        case 'rhombus': // Geometric Diamond Grid
+            return `url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='${color}' stroke-opacity='${opacity}' stroke-width='${strokeWidth}'%3E%3Cpath d='M0 10 L10 0 L20 10 L10 20 Z' /%3E%3C/g%3E%3C/svg%3E")`;
+        case 'zigzag': // Sharp ZigZag Lines
+            return `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='${color}' stroke-opacity='${opacity}' stroke-width='${strokeWidth}'%3E%3Cpath d='M0 20 L10 10 L20 20 L30 10 L40 20' /%3E%3Cpath d='M0 40 L10 30 L20 40 L30 30 L40 40' /%3E%3Cpath d='M0 0 L10 -10 L20 0 L30 -10 L40 0' /%3E%3C/g%3E%3C/svg%3E")`;
+        case 'circles': // Overlapping Circles
+            return `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='${color}' stroke-opacity='${opacity}' stroke-width='${strokeWidth}'%3E%3Ccircle cx='20' cy='20' r='10' /%3E%3Ccircle cx='0' cy='0' r='10' /%3E%3Ccircle cx='40' cy='0' r='10' /%3E%3Ccircle cx='0' cy='40' r='10' /%3E%3Ccircle cx='40' cy='40' r='10' /%3E%3C/g%3E%3C/svg%3E")`;
         default:
             return '';
     }
 };
 
 const PATTERN_OPTIONS = [
-    { id: 'graph', label: 'Graph', icon: LayoutGrid },
-    { id: 'polka', label: 'Polka', icon: CircleDot },
-    { id: 'waves', label: 'Waves', icon: Activity },
-    { id: 'hex', label: 'Hex', icon: Hexagon },
+    { id: 'cubes', label: 'Cubes', icon: Box },
+    { id: 'rhombus', label: 'Rhombus', icon: Grip },
+    { id: 'zigzag', label: 'ZigZag', icon: Zap },
+    { id: 'circles', label: 'Circles', icon: Circle },
 ];
 
 // -- Custom Room Delete Toast (Glassmorphism) --
@@ -111,7 +111,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   
   // Theme State
   const [selectedTargetRoom, setSelectedTargetRoom] = useState<string>('global'); // 'global' or roomKey
-  const [themeColor, setThemeColor] = useState('#64748b'); // Default Slate-500
+  const [themeColor, setThemeColor] = useState('#3b82f6'); // Default Blue
   const [themePattern, setThemePattern] = useState<string>('none');
   const [customBgImage, setCustomBgImage] = useState<string>('');
   
@@ -649,7 +649,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
                                     {/* Preview Box */}
                                     <div 
-                                        className="h-20 w-full rounded-xl border border-slate-200 dark:border-slate-700 mb-4 flex items-center justify-center relative overflow-hidden transition-all duration-300"
+                                        className="h-24 w-full rounded-xl border border-slate-200 dark:border-slate-700 mb-4 flex items-center justify-center relative overflow-hidden transition-all duration-300 shadow-inner"
                                         style={{ 
                                             background: (themePattern === 'image' && customBgImage) 
                                                 ? `url(${customBgImage}) center/cover no-repeat fixed` 
@@ -657,8 +657,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         }}
                                     >
                                         <div className="absolute inset-0 bg-slate-50 dark:bg-slate-900 -z-10"></div>
-                                        <div className="bg-white/80 dark:bg-black/60 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] font-bold shadow-sm">
-                                            Preview {selectedTargetRoom === 'global' ? '(Global)' : '(Room)'}
+                                        <div className="bg-white/80 dark:bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full text-xs font-bold shadow-lg flex flex-col items-center">
+                                           <span>Preview {selectedTargetRoom === 'global' ? '(Global)' : '(Room)'}</span>
+                                           <span className="text-[10px] font-normal opacity-70 mt-1">Background will look like this</span>
                                         </div>
                                     </div>
 
@@ -670,7 +671,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                             {/* No Pattern */}
                                             <button 
                                                 onClick={() => { setThemePattern('none'); setCustomBgImage(''); }}
-                                                className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${themePattern === 'none' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700'}`}
+                                                className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${themePattern === 'none' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}
                                                 title="No Pattern"
                                             >
                                                 <span className="text-[10px] font-bold text-slate-400">NONE</span>
@@ -684,24 +685,27 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                                     className={`aspect-square rounded-lg border-2 transition-all overflow-hidden relative group/pattern flex items-center justify-center ${themePattern === p.id ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}
                                                     title={p.label}
                                                 >
-                                                    <div className="absolute inset-0 opacity-50" style={{background: getPattern(p.id, isEditingProfile ? '#64748b' : themeColor)}}></div>
-                                                    <p.icon size={14} className="relative z-10 text-slate-500 opacity-60 group-hover/pattern:opacity-100" />
+                                                    <div className="absolute inset-0 opacity-100" style={{background: getPattern(p.id, themeColor)}}></div>
+                                                    <div className="absolute inset-0 bg-white/50 dark:bg-black/50 opacity-0 group-hover/pattern:opacity-100 transition-opacity flex items-center justify-center">
+                                                        <p.icon size={16} className="text-slate-800 dark:text-white" />
+                                                    </div>
                                                 </button>
                                             ))}
                                         </div>
 
                                         {/* Additional Tools Row: Color + Upload */}
                                         <div className="flex gap-2">
-                                            <div className="flex-1 flex items-center gap-2 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+                                            <div className="flex-1 flex items-center gap-2 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 relative group/color">
                                                 <input 
                                                     type="color" 
                                                     value={themeColor} 
                                                     onChange={(e) => setThemeColor(e.target.value)}
-                                                    className="w-8 h-8 rounded cursor-pointer border-none bg-transparent p-0"
+                                                    className="w-8 h-8 rounded cursor-pointer border-none bg-transparent p-0 absolute inset-0 opacity-0 z-10 w-full h-full"
                                                     disabled={themePattern === 'image'}
                                                     title="Pattern Color"
                                                 />
-                                                <span className="text-[10px] font-bold text-slate-500 uppercase">Tint</span>
+                                                <div className="w-6 h-6 rounded-full border border-slate-300 dark:border-slate-600 shadow-sm" style={{ backgroundColor: themeColor }}></div>
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase">Pick Color</span>
                                             </div>
 
                                             <label className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-xl border cursor-pointer transition-all ${themePattern === 'image' ? 'bg-blue-50 border-blue-500 text-blue-600' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-200'}`}>
