@@ -39,6 +39,8 @@ const App: React.FC = () => {
         // fallback to session metadata for Google users if storage is empty.
         const storedUsername = localStorage.getItem('chatUsername') || session?.user?.user_metadata?.full_name;
         const storedAvatar = localStorage.getItem('chatAvatarURL') || session?.user?.user_metadata?.avatar_url;
+        // Retrieve background preference
+        const storedBackground = localStorage.getItem('chatBackground') || session?.user?.user_metadata?.chat_background;
         
         if (storedPin && storedRoomName && storedUsername) {
             const roomKey = generateRoomKey(storedPin, storedRoomName);
@@ -47,7 +49,8 @@ const App: React.FC = () => {
                 avatarURL: storedAvatar || '',
                 roomName: storedRoomName,
                 pin: storedPin,
-                roomKey: roomKey
+                roomKey: roomKey,
+                backgroundImage: storedBackground
             });
             setCurrentView('chat');
         } else if (isGoogleUser) {
@@ -88,6 +91,11 @@ const App: React.FC = () => {
     localStorage.setItem('chatRoomName', config.roomName);
     localStorage.setItem('chatUsername', config.username);
     localStorage.setItem('chatAvatarURL', config.avatarURL);
+    if (config.backgroundImage) {
+        localStorage.setItem('chatBackground', config.backgroundImage);
+    } else {
+        localStorage.removeItem('chatBackground');
+    }
 
     setChatConfig(config);
     setCurrentView('chat');
@@ -100,6 +108,7 @@ const App: React.FC = () => {
     localStorage.removeItem('chatPin');
     localStorage.removeItem('chatRoomName');
     localStorage.removeItem('chatAvatarURL'); 
+    localStorage.removeItem('chatBackground');
 
     setCurrentUser(null);
     setCurrentView('login');
