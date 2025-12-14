@@ -10,6 +10,7 @@ import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
 import { WifiOff } from 'lucide-react';
+import { toast } from 'sonner';
 
 // Hooks
 import { useChatMessages } from '../hooks/useChatMessages';
@@ -383,7 +384,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         table: 'rooms',
         filter: `room_key=eq.${config.roomKey}`
       }, () => {
-        alert("This room has been deleted by the host.");
+        toast.error("This room has been deleted by the host.");
         onExit();
       })
       .subscribe();
@@ -523,7 +524,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   const saveEmailSubscription = async () => {
       if (!user || !config.roomKey || !emailAddress.includes('@')) {
-          alert("Please enter a valid email.");
+          toast.error("Please enter a valid email.");
           return;
       }
       setIsSavingEmail(true);
@@ -542,7 +543,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           setShowSettingsMenu(false);
       } catch (e: any) {
           console.error("Error saving email:", e);
-          alert("Failed to subscribe.");
+          toast.error("Failed to subscribe.");
       } finally {
           setIsSavingEmail(false);
       }
