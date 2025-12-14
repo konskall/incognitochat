@@ -17,34 +17,38 @@ interface MessageListProps {
   onReply: (msg: Message) => void;
 }
 
-// -- Custom Delete Toast Component (Glassmorphism) --
+// -- Custom Delete Toast Component (Responsive Glassmorphism) --
 const DeleteToast: React.FC<{ onConfirm: () => void; onCancel: () => void }> = ({ onConfirm, onCancel }) => {
     return createPortal(
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] w-auto max-w-[90vw] animate-in slide-in-from-bottom-4 fade-in duration-300">
-            <div className="flex items-center gap-4 px-6 py-4 bg-slate-900/90 dark:bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-2xl text-white">
-                <div className="flex flex-col">
-                    <span className="text-sm font-bold flex items-center gap-2">
-                        <AlertCircle size={16} className="text-red-400" />
-                        Διαγραφή μηνύματος;
+        <div className="fixed bottom-20 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto z-[100] animate-in slide-in-from-bottom-4 fade-in duration-300">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-6 p-4 bg-slate-900/95 dark:bg-white/10 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-2xl text-white ring-1 ring-black/5">
+                
+                {/* Text Section */}
+                <div className="flex flex-col items-center sm:items-start text-center sm:text-left w-full sm:w-auto">
+                    <span className="text-sm font-bold flex items-center justify-center sm:justify-start gap-2 text-white">
+                        <AlertCircle size={18} className="text-red-400 shrink-0" />
+                        <span>Διαγραφή μηνύματος;</span>
                     </span>
-                    <span className="text-[10px] text-white/60">Η ενέργεια δεν αναιρείται.</span>
+                    <span className="text-[11px] text-white/60 mt-0.5">Η ενέργεια δεν αναιρείται.</span>
                 </div>
 
-                <div className="h-8 w-px bg-white/10 mx-1"></div>
+                {/* Divider - Hidden on mobile */}
+                <div className="hidden sm:block h-8 w-px bg-white/10"></div>
 
-                <div className="flex gap-2">
+                {/* Buttons Section - Full width on mobile */}
+                <div className="flex gap-3 w-full sm:w-auto">
                     <button 
                         onClick={onCancel}
-                        className="px-3 py-1.5 text-xs font-medium text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                        className="flex-1 sm:flex-none px-4 py-2.5 sm:py-1.5 text-xs font-medium bg-white/5 hover:bg-white/10 text-white rounded-xl transition-colors text-center border border-white/5"
                     >
                         Ακύρωση
                     </button>
                     <button 
                         onClick={onConfirm}
-                        className="px-4 py-1.5 text-xs font-bold bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center gap-1.5"
+                        className="flex-1 sm:flex-none px-4 py-2.5 sm:py-1.5 text-xs font-bold bg-red-500 hover:bg-red-600 text-white rounded-xl shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
                     >
                         <Trash2 size={14} />
-                        Διαγραφή
+                        <span>Διαγραφή</span>
                     </button>
                 </div>
             </div>
