@@ -97,7 +97,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   };
 
   return (
-    <header className="glass-panel px-4 py-3 flex items-center justify-between z-10 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
+    <header className="glass-panel px-4 py-3 flex items-center justify-between z-30 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
         {/* Room Info Section - Static Div */}
         <div className="flex items-center gap-3 overflow-hidden">
              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
