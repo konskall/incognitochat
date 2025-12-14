@@ -59,7 +59,16 @@
         rel="stylesheet"
       >
     </noscript>
-
+    <!-- Prevent White Flash on Load by Defaulting to Dark Mode -->
+    <script>
+      if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage))) {
+        document.documentElement.classList.add('dark');
+        document.querySelector("meta[name='theme-color']").setAttribute("content", "#020617");
+      } else {
+        document.documentElement.classList.remove('dark');
+        document.querySelector("meta[name='theme-color']").setAttribute("content", "#f8fafc");
+      }
+    </script>
 <script type="importmap">
 {
   "imports": {
@@ -83,4 +92,5 @@
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>
+
 
