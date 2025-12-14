@@ -64,10 +64,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   typingUsers
 }) => {
   const [showEmoji, setShowEmoji] = useState(false);
-  
-  // Simple boolean state for stacking: False = Horizontal (Row), True = Vertical (Stack)
-  const [isStacked, setIsStacked] = useState(false);
-  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -92,6 +88,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
             );
             
             if (confirmCompress) {
+                // Ideally, parent should handle "isUploading" state during compression too, 
+                // but for UI simplicity we just await here.
                 try {
                     const compressed = await compressImage(file);
                     if (compressed.size > MAX_FILE_SIZE) {
@@ -125,42 +123,30 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // Focus textarea when editing/replying
   useEffect(() => {
      if (textareaRef.current && (editingMessageId || replyingTo)) {
          textareaRef.current.focus();
      }
   }, [editingMessageId, replyingTo]);
 
-  // Layout Logic:
-  // 1 line ~ 48px
-  // 4 lines ~ 120px
-  // 5 lines ~ 144px
-  // We want to trigger vertical stack ONLY when we hit the 5th line.
+  // Auto-resize textarea
   useEffect(() => {
     const textarea = textareaRef.current;
     if (textarea) {
+      // We reset the height to 'auto' to correctly calculate the new scrollHeight
+      // This allows the textarea to shrink when text is deleted
       textarea.style.height = 'auto'; 
       
-      const maxHeight = 200; 
-      const scrollHeight = textarea.scrollHeight;
-      const newHeight = Math.min(scrollHeight, maxHeight);
+      const maxHeight = 300; // Allow up to 300px height (approx 15 lines) before scrolling
+      const newHeight = Math.min(textarea.scrollHeight, maxHeight);
       
       textarea.style.height = `${newHeight}px`;
-      textarea.style.overflowY = scrollHeight > maxHeight ? 'auto' : 'hidden';
-
-      // Threshold set to 130px.
-      // This ensures we stay horizontal for 1, 2, 3, 4 lines (<= 120px)
-      // And switch to vertical only when we enter the 5th line (>= 144px)
-      const threshold = 130;
-
-      if (!isStacked) {
-          if (newHeight > threshold) setIsStacked(true);
-      } else {
-          // Hysteresis: switch back to row only if we drop cleanly below the threshold
-          if (newHeight < (threshold - 10)) setIsStacked(false);
-      }
+      
+      // Show scrollbar only if we hit the max height
+      textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
     }
-  }, [inputText, isStacked]);
+  }, [inputText]);
 
   const getFileIcon = (type: string) => {
       if (type.startsWith('image/')) return <ImageIcon size={20}/>;
@@ -170,10 +156,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   return (
-      <footer className="bg-white dark:bg-slate-950 p-2 sm:p-3 border-t border-slate-200 dark:border-slate-800 shadow-lg z-20 relative pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex flex-col items-center justify-center transition-colors">
-         {/* Typing Indicator */}
+      <footer className="bg-white dark:bg-slate-900 p-1.5 border-t border-slate-200 dark:border-slate-800 shadow-lg z-20 relative pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex flex-col items-center justify-center transition-colors">
          {typingUsers.length > 0 && (
-             <div className="absolute -top-7 left-6 text-xs text-slate-500 dark:text-slate-400 bg-white/90 dark:bg-slate-900/90 backdrop-blur px-3 py-1 rounded-full shadow-sm animate-pulse flex items-center gap-1.5 border border-slate-100 dark:border-slate-800">
+             <div className="absolute -top-6 left-6 text-xs text-slate-500 dark:text-slate-400 bg-white/80 dark:bg-slate-900/80 backdrop-blur px-2 py-0.5 rounded-t-lg animate-pulse flex items-center gap-1">
                  <span className="flex gap-0.5">
                     <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
                     <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
@@ -215,10 +200,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
             </div>
          )}
 
-         <div className="relative flex flex-col items-center w-full max-w-5xl mx-auto gap-2">
-             {/* File Preview Bubble */}
+         <div className="relative flex flex-col items-center w-full max-w-4xl mx-auto">
              {selectedFile && !editingMessageId && (
-               <div className="flex items-center gap-3 p-2 bg-blue-50 dark:bg-slate-800 border border-blue-100 dark:border-slate-700 rounded-xl w-fit animate-in slide-in-from-bottom-2 self-start mb-1">
+               <div className="flex items-center gap-3 p-2 bg-blue-50 dark:bg-slate-800 border border-blue-100 dark:border-slate-700 rounded-xl w-fit animate-in slide-in-from-bottom-2 mb-2 self-start">
                   <div className="w-10 h-10 bg-blue-100 dark:bg-slate-700 rounded-lg flex items-center justify-center text-blue-500 dark:text-blue-400">
                     {getFileIcon(selectedFile.type)}
                   </div>
@@ -233,34 +217,30 @@ const ChatInput: React.FC<ChatInputProps> = ({
              )}
 
             {isRecording ? (
-                 // --- RECORDING STATE ---
-                 <div className="flex items-center justify-between w-full px-2 py-2 gap-3 animate-in fade-in duration-200 bg-slate-100 dark:bg-slate-900 rounded-full">
-                     <div className="flex items-center gap-3 flex-1 pl-2">
-                        <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse"></div>
-                        <span className="text-red-500 font-mono font-medium">{formatDuration(recordingDuration)}</span>
-                        <span className="text-slate-400 text-xs hidden sm:inline">Recording audio...</span>
-                     </div>
+                 <div className="flex items-center justify-between w-full px-2 py-1 gap-2 animate-in fade-in duration-200">
+                     <button
+                        onClick={cancelRecording}
+                        className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition"
+                        title="Cancel Recording"
+                     >
+                         <Trash2 size={24} />
+                     </button>
                      
-                     <div className="flex items-center gap-2">
-                         <button
-                            onClick={cancelRecording}
-                            className="p-2 text-slate-500 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition"
-                            title="Cancel"
-                         >
-                             <Trash2 size={20} />
-                         </button>
-                         <button
-                            onClick={stopRecording}
-                            className="w-10 h-10 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-red-500/30 transition transform active:scale-95"
-                            title="Send"
-                         >
-                             <Send size={18} className="ml-0.5" />
-                         </button>
+                     <div className="flex items-center gap-2 text-red-500 font-mono text-sm bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-full animate-pulse">
+                         <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                         <span>{formatDuration(recordingDuration)}</span>
                      </div>
+
+                     <button
+                        onClick={stopRecording}
+                        className="w-10 h-10 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-red-500/30 transition transform active:scale-95"
+                        title="Send Voice Message"
+                     >
+                         <Send size={20} className="ml-0.5" />
+                     </button>
                  </div>
             ) : (
-                // --- DEFAULT INPUT STATE ---
-                <div className="flex items-end gap-2 w-full">
+                <div className="flex items-center gap-1.5 sm:gap-2 w-full">
                      {showEmoji && <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmoji(false)} />}
                      
                      <input 
@@ -270,87 +250,68 @@ const ChatInput: React.FC<ChatInputProps> = ({
                         className="hidden"
                         accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip,.rar,.7z,.tar"
                      />
+                     {!editingMessageId && (
+                        <>
+                            <button 
+                                onClick={() => fileInputRef.current?.click()}
+                                className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${selectedFile ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
+                                title="Attach File"
+                            >
+                                <Paperclip size={22} />
+                            </button>
+                            <button 
+                                onClick={handleSendLocation}
+                                disabled={isGettingLocation}
+                                className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${isGettingLocation ? 'animate-pulse text-red-400' : 'text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
+                                title="Share Location"
+                            >
+                                <MapPin size={22} />
+                            </button>
+                        </>
+                     )}
 
-                     {/* The Input Bar Container */}
-                     <div className="flex-1 relative flex items-end bg-slate-100 dark:bg-slate-800/80 rounded-[24px] border border-transparent focus-within:border-blue-500/30 focus-within:bg-white dark:focus-within:bg-slate-900 transition-all duration-200">
-                         
+                     <button 
+                        onClick={() => setShowEmoji(!showEmoji)}
+                        className="w-10 h-10 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full flex items-center justify-center transition flex-shrink-0"
+                     >
+                         <Smile size={22} />
+                     </button>
+
+                     <div className="flex-1 relative min-w-0 flex items-center">
                          <textarea
                             ref={textareaRef}
                             value={inputText}
                             onChange={handleInputChange}
                             onKeyDown={handleKeyDown}
                             rows={1}
-                            placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit message..." : "Message...")}
-                            className={`w-full bg-transparent border-0 rounded-[24px] pl-4 py-3 text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:ring-0 resize-none leading-6 text-base max-h-[200px] min-h-[48px] transition-[padding] duration-300 ease-out ${
-                                editingMessageId ? 'pr-[44px]' : (isStacked ? 'pr-[44px]' : 'pr-[110px]')
-                            }`}
+                            placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
+                            className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none leading-6 text-base block"
+                            style={{ minHeight: '44px' }}
                          />
-
-                         {/* Icons Container */}
-                         <div 
-                            className={`absolute right-1 bottom-1 pb-1 transition-all duration-300 ease-out flex gap-0.5 ${
-                                isStacked 
-                                    ? 'flex-col-reverse w-[40px] items-center' 
-                                    : 'flex-row-reverse w-[110px] items-end'
-                            }`}
-                         >
-                             {/* 1. Emoji (Always Visible - Bottom/Right) */}
-                             <button 
-                                onClick={() => setShowEmoji(!showEmoji)}
-                                className={`p-2 rounded-full transition-colors flex-shrink-0 ${showEmoji ? 'text-blue-500' : 'text-slate-400 hover:text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                             >
-                                 <Smile size={20} />
-                             </button>
-
-                             {/* 2. & 3. Location & Attachment (Hidden when editing) */}
-                             {!editingMessageId && (
-                                <>
-                                    <button 
-                                        onClick={handleSendLocation}
-                                        disabled={isGettingLocation}
-                                        className={`p-2 rounded-full transition-colors flex-shrink-0 ${isGettingLocation ? 'animate-pulse text-red-400' : 'text-slate-400 hover:text-red-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                                        title="Location"
-                                    >
-                                        <MapPin size={20} />
-                                    </button>
-
-                                    <button 
-                                        onClick={() => fileInputRef.current?.click()}
-                                        className={`p-2 rounded-full transition-colors flex-shrink-0 ${selectedFile ? 'text-blue-500' : 'text-slate-400 hover:text-blue-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                                        title="Attach File"
-                                    >
-                                        <Paperclip size={20} />
-                                    </button>
-                                </>
-                             )}
-                         </div>
                      </div>
                      
-                     {/* Send/Mic Button Outside */}
-                     <div className="flex-shrink-0 pb-0.5">
-                         {(!inputText.trim() && !selectedFile && !editingMessageId && !isUploading) ? (
-                            <button 
-                                 onClick={startRecording}
-                                 className="w-11 h-11 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full flex items-center justify-center transition-all"
-                                 title="Record"
-                            >
-                                 <Mic size={24} />
-                            </button>
-                         ) : (
-                             <button 
-                                onClick={() => handleSend()}
-                                disabled={isOffline || isUploading || !isRoomReady}
-                                className="w-11 h-11 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center"
-                             >
-                                 {isUploading ? (
-                                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                 ) : (
-                                     <Send size={20} className="ml-0.5" />
-                                 )}
-                             </button>
-                         )}
-                     </div>
-                </div>
+                     {(!inputText.trim() && !selectedFile && !editingMessageId && !isUploading) ? (
+                        <button 
+                             onClick={startRecording}
+                             className="w-10 h-10 text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full flex items-center justify-center transition flex-shrink-0"
+                             title="Record Voice Message"
+                        >
+                             <Mic size={22} />
+                        </button>
+                     ) : (
+                         <button 
+                            onClick={() => handleSend()}
+                            disabled={isOffline || isUploading || !isRoomReady}
+                            className="w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
+                         >
+                             {isUploading ? (
+                                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                             ) : (
+                                 <Send size={20} className="ml-0.5" />
+                             )}
+                         </button>
+                     )}
+                 </div>
             )}
          </div>
       </footer>
