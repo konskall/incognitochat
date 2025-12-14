@@ -6,6 +6,7 @@ import DashboardScreen from './components/DashboardScreen';
 import { ChatConfig, User } from './types';
 import { generateRoomKey } from './utils/helpers';
 import { supabase } from './services/supabase';
+import { Toaster } from 'sonner';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'login' | 'dashboard' | 'chat'>('login');
@@ -122,6 +123,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-[100dvh] w-full">
+      <Toaster position="top-center" richColors />
       {currentView === 'chat' && chatConfig ? (
         <ChatScreen config={chatConfig} onExit={handleExitChat} />
       ) : currentView === 'dashboard' && currentUser ? (
