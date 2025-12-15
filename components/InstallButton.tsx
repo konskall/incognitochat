@@ -3,13 +3,8 @@ import { Download } from 'lucide-react';
 
 const InstallButton: React.FC = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isIOS, setIsIOS] = useState(false);
 
   useEffect(() => {
-    // Check if device is iOS (since iOS doesn't support beforeinstallprompt)
-    const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    setIsIOS(isIosDevice);
-
     const handler = (e: any) => {
       // Prevent the mini-infobar from appearing on mobile
       e.preventDefault();
