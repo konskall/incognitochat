@@ -53,7 +53,7 @@ const RoomDeletedToast: React.FC<{ onExit: () => void }> = ({ onExit }) => {
                         className="w-full py-3.5 px-6 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl shadow-lg shadow-red-900/20 transition-all transform active:scale-95 flex items-center justify-center gap-2"
                     >
                         <Home size={18} />
-                        Return to Dashboard
+                        Return to Home
                     </button>
                 </div>
             </div>
