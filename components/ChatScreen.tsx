@@ -1,5 +1,6 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../services/supabase';
 import { ChatConfig, Message, User, Subscriber } from '../types';
 import MessageList from './MessageList';
@@ -9,7 +10,7 @@ import emailjs from '@emailjs/browser';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
-import { WifiOff } from 'lucide-react';
+import { WifiOff, Trash2 } from 'lucide-react';
 
 // Hooks
 import { useChatMessages } from '../hooks/useChatMessages';
@@ -29,6 +30,42 @@ const EMAILJS_PUBLIC_KEY: string = "cSDU4HLqgylnmX957";
 // Notification Cooldown in Minutes
 const NOTIFICATION_COOLDOWN_MINUTES = 30;
 
+// -- Custom Room Deleted Toast --
+const RoomDeletedToast: React.FC = () => {
+    return createPortal(
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md animate-in fade-in duration-500">
+            <div className="relative bg-white/10 dark:bg-slate-900/60 backdrop-blur-2xl border border-white/20 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center overflow-hidden ring-1 ring-white/10">
+                {/* Glow effect */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-1 bg-red-500 rounded-b-full shadow-[0_0_40px_rgba(239,68,68,0.6)]"></div>
+                
+                <div className="flex flex-col items-center gap-5">
+                    <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-orange-600 rounded-full flex items-center justify-center shadow-lg shadow-red-500/20 animate-pulse ring-4 ring-white/5">
+                         <Trash2 size={36} className="text-white drop-shadow-md" />
+                    </div>
+                    
+                    <div className="space-y-2">
+                        <h2 className="text-2xl font-bold text-white tracking-tight drop-shadow-sm">Room Dissolved</h2>
+                        <p className="text-white/80 text-sm font-medium leading-relaxed">
+                            This session has been terminated by the host. You are being redirected.
+                        </p>
+                    </div>
+
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">
+                         <div className="h-full bg-gradient-to-r from-red-500 to-orange-500 w-full animate-[shrink_3s_linear_forwards] origin-left"></div>
+                    </div>
+                </div>
+            </div>
+            <style>{`
+                @keyframes shrink {
+                    from { width: 100%; }
+                    to { width: 0%; }
+                }
+            `}</style>
+        </div>,
+        document.body
+    );
+};
+
 const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
   const [inputText, setInputText] = useState('');
@@ -39,6 +76,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showParticipantsList, setShowParticipantsList] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  
+  // Room Status
+  const [roomDeleted, setRoomDeleted] = useState(false);
   
   // Room & Creator State
   const [isRoomReady, setIsRoomReady] = useState(false);
@@ -383,8 +423,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         table: 'rooms',
         filter: `room_key=eq.${config.roomKey}`
       }, () => {
-        alert("This room has been deleted by the host.");
-        onExit();
+        setRoomDeleted(true);
+        // Wait 3 seconds then exit
+        setTimeout(() => {
+            onExit();
+        }, 3000);
       })
       .subscribe();
     return () => { supabase.removeChannel(roomStatusChannel); };
@@ -480,10 +523,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
            }
            
            await supabase.from('rooms').delete().eq('room_key', config.roomKey);
+           // Room deleted event will trigger onExit via listener, but we can call it here too to be safe/fast for the deleter
            onExit();
       } catch(e) {
           console.error("Delete failed", e);
-      } finally {
           setIsDeleting(false);
       }
   };
@@ -550,6 +593,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   return (
     <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
+      
+      {/* Room Deleted Toast - Rendered via Portal */}
+      {roomDeleted && <RoomDeletedToast />}
+
       {/* Offline Indicator */}
       {isOffline && (
         <div className="absolute top-20 left-0 right-0 flex justify-center z-40 pointer-events-none animate-in slide-in-from-top-4 fade-in duration-300">
