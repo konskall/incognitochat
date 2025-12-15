@@ -10,7 +10,7 @@ import emailjs from '@emailjs/browser';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
-import { WifiOff, Trash2 } from 'lucide-react';
+import { WifiOff, Trash2, Home } from 'lucide-react';
 
 // Hooks
 import { useChatMessages } from '../hooks/useChatMessages';
@@ -30,37 +30,33 @@ const EMAILJS_PUBLIC_KEY: string = "cSDU4HLqgylnmX957";
 // Notification Cooldown in Minutes
 const NOTIFICATION_COOLDOWN_MINUTES = 30;
 
-// -- Custom Room Deleted Toast --
-const RoomDeletedToast: React.FC = () => {
+// -- Custom Room Deleted Toast (Persistent) --
+const RoomDeletedToast: React.FC<{ onExit: () => void }> = ({ onExit }) => {
     return createPortal(
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md animate-in fade-in duration-500">
-            <div className="relative bg-white/10 dark:bg-slate-900/60 backdrop-blur-2xl border border-white/20 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center overflow-hidden ring-1 ring-white/10">
-                {/* Glow effect */}
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-1 bg-red-500 rounded-b-full shadow-[0_0_40px_rgba(239,68,68,0.6)]"></div>
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-500">
+            <div className="relative bg-slate-900/90 dark:bg-slate-900/90 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center overflow-hidden ring-1 ring-white/10">
                 
-                <div className="flex flex-col items-center gap-5">
-                    <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-orange-600 rounded-full flex items-center justify-center shadow-lg shadow-red-500/20 animate-pulse ring-4 ring-white/5">
-                         <Trash2 size={36} className="text-white drop-shadow-md" />
+                <div className="flex flex-col items-center gap-6">
+                    <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(239,68,68,0.3)] ring-1 ring-red-500/50">
+                         <Trash2 size={40} className="text-red-500" />
                     </div>
                     
-                    <div className="space-y-2">
-                        <h2 className="text-2xl font-bold text-white tracking-tight drop-shadow-sm">Room Dissolved</h2>
-                        <p className="text-white/80 text-sm font-medium leading-relaxed">
-                            This session has been terminated by the host. You are being redirected.
+                    <div className="space-y-3">
+                        <h2 className="text-2xl font-bold text-white tracking-tight">Room Dissolved</h2>
+                        <p className="text-slate-300 text-sm font-medium leading-relaxed">
+                            This chat room has been permanently deleted by the host.
                         </p>
                     </div>
 
-                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">
-                         <div className="h-full bg-gradient-to-r from-red-500 to-orange-500 w-full animate-[shrink_3s_linear_forwards] origin-left"></div>
-                    </div>
+                    <button 
+                        onClick={onExit}
+                        className="w-full py-3.5 px-6 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl shadow-lg shadow-red-900/20 transition-all transform active:scale-95 flex items-center justify-center gap-2"
+                    >
+                        <Home size={18} />
+                        Return to Dashboard
+                    </button>
                 </div>
             </div>
-            <style>{`
-                @keyframes shrink {
-                    from { width: 100%; }
-                    to { width: 0%; }
-                }
-            `}</style>
         </div>,
         document.body
     );
@@ -424,10 +420,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         filter: `room_key=eq.${config.roomKey}`
       }, () => {
         setRoomDeleted(true);
-        // Wait 3 seconds then exit
-        setTimeout(() => {
-            onExit();
-        }, 3000);
+        // Removed auto-redirect timeout. Now waits for user action in toast.
       })
       .subscribe();
     return () => { supabase.removeChannel(roomStatusChannel); };
@@ -595,7 +588,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
       
       {/* Room Deleted Toast - Rendered via Portal */}
-      {roomDeleted && <RoomDeletedToast />}
+      {roomDeleted && <RoomDeletedToast onExit={onExit} />}
 
       {/* Offline Indicator */}
       {isOffline && (
