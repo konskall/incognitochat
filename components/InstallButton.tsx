@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { Download, Share, PlusSquare, X, MonitorDown } from 'lucide-react';
+import { Share, PlusSquare, X, MonitorDown } from 'lucide-react';
 
 const InstallButton: React.FC = () => {
   const [isInstallable, setIsInstallable] = useState(false);
