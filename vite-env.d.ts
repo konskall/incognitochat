@@ -8,3 +8,8 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+// Add global window type for PWA prompt
+interface Window {
+  deferredPrompt: any;
+}
