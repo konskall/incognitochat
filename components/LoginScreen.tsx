@@ -1,9 +1,9 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatConfig } from '../types';
 import { generateRoomKey, initAudio } from '../utils/helpers';
 import { Info, ChevronDown, ChevronUp, Eye, EyeOff, Moon, Sun, History, X, Trash2, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import InstallButton from './InstallButton';
 
 interface LoginScreenProps {
   onJoin: (config: ChatConfig) => void;
@@ -290,6 +290,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
           <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Incognito Chat</h1>
           <p className="text-slate-600 dark:text-slate-400 text-sm">Secure, anonymous, real-time.</p>
         </div>
+
+        {/* PWA Install Button - Will only show if installable */}
+        <InstallButton />
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
