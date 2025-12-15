@@ -32,12 +32,12 @@ const RoomDeleteToast: React.FC<{
                 <div className="flex flex-col items-center sm:items-start text-center sm:text-left w-full sm:w-auto min-w-[200px]">
                     <span className="text-sm font-bold flex items-center justify-center sm:justify-start gap-2 text-white">
                         <AlertCircle size={18} className="text-red-400 shrink-0" />
-                        <span>{isOwner ? 'Διαγραφή Δωματίου;' : 'Αφαίρεση από Ιστορικό;'}</span>
+                        <span>{isOwner ? 'Delete Room;' : 'Remove from History;'}</span>
                     </span>
                     <span className="text-[11px] text-white/60 mt-0.5">
                         {isOwner 
-                            ? `Το "${roomName}" θα διαγραφεί μόνιμα.` 
-                            : `Αφαίρεση του "${roomName}" από τη λίστα.`}
+                            ? `The "${roomName}" will be permanently deleted.` 
+                            : `Removing "${roomName}" from the list.`}
                     </span>
                 </div>
 
@@ -51,7 +51,7 @@ const RoomDeleteToast: React.FC<{
                         disabled={isDeleting}
                         className="flex-1 sm:flex-none px-3 py-1.5 text-xs font-medium bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors text-center border border-white/5"
                     >
-                        Ακύρωση
+                        Cancel
                     </button>
                     <button 
                         onClick={onConfirm}
@@ -59,7 +59,7 @@ const RoomDeleteToast: React.FC<{
                         className="flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center justify-center gap-1.5"
                     >
                         {isDeleting ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14} />}
-                        <span>{isOwner ? 'Διαγραφή' : 'Αφαίρεση'}</span>
+                        <span>{isOwner ? 'Delete' : 'Remove'}</span>
                     </button>
                 </div>
             </div>
