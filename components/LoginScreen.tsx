@@ -275,11 +275,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
 
       <main className="relative bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-blue-500/40 dark:shadow-blue-900/40 w-full p-8 border border-white/50 dark:border-slate-800 transition-colors">
         
-        {/* Top Right Controls (Theme + Install) */}
-        <div className="absolute top-6 right-6 flex items-center gap-2 z-10">
-            {/* PWA Install Icon */}
+        {/* Top Left Control (PWA Install) */}
+        <div className="absolute top-6 left-6 z-10">
             <InstallButton />
-            
+        </div>
+
+        {/* Top Right Control (Theme) */}
+        <div className="absolute top-6 right-6 z-10">
             <button 
                 onClick={toggleTheme}
                 className="p-2 rounded-full text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
