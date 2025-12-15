@@ -27,9 +27,9 @@ const DeleteToast: React.FC<{ onConfirm: () => void; onCancel: () => void }> = (
                 <div className="flex flex-col items-center sm:items-start text-center sm:text-left w-full sm:w-auto">
                     <span className="text-sm font-bold flex items-center justify-center sm:justify-start gap-2 text-white">
                         <AlertCircle size={18} className="text-red-400 shrink-0" />
-                        <span>Διαγραφή μηνύματος;</span>
+                        <span>Delete message;</span>
                     </span>
-                    <span className="text-[11px] text-white/60 mt-0.5">Η ενέργεια δεν αναιρείται.</span>
+                    <span className="text-[11px] text-white/60 mt-0.5">This action cannot be undone.</span>
                 </div>
 
                 {/* Divider - Hidden on mobile */}
@@ -41,14 +41,14 @@ const DeleteToast: React.FC<{ onConfirm: () => void; onCancel: () => void }> = (
                         onClick={onCancel}
                         className="flex-1 sm:flex-none px-4 py-2.5 sm:py-1.5 text-xs font-medium bg-white/5 hover:bg-white/10 text-white rounded-xl transition-colors text-center border border-white/5"
                     >
-                        Ακύρωση
+                        Cancel
                     </button>
                     <button 
                         onClick={onConfirm}
                         className="flex-1 sm:flex-none px-4 py-2.5 sm:py-1.5 text-xs font-bold bg-red-500 hover:bg-red-600 text-white rounded-xl shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
                     >
                         <Trash2 size={14} />
-                        <span>Διαγραφή</span>
+                        <span>Delete</span>
                     </button>
                 </div>
             </div>
