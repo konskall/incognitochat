@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatConfig } from '../types';
 import { generateRoomKey, initAudio } from '../utils/helpers';
@@ -273,13 +274,20 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
       )}
 
       <main className="relative bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-blue-500/40 dark:shadow-blue-900/40 w-full p-8 border border-white/50 dark:border-slate-800 transition-colors">
-        <button 
-            onClick={toggleTheme}
-            className="absolute top-6 right-6 p-2 rounded-full text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-10"
-            title="Toggle Theme"
-        >
-            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-        </button>
+        
+        {/* Top Right Controls (Theme + Install) */}
+        <div className="absolute top-6 right-6 flex items-center gap-2 z-10">
+            {/* PWA Install Icon */}
+            <InstallButton />
+            
+            <button 
+                onClick={toggleTheme}
+                className="p-2 rounded-full text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title="Toggle Theme"
+            >
+                {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+        </div>
 
         <div className="flex flex-col items-center mb-6">
            <img 
@@ -290,9 +298,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
           <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Incognito Chat</h1>
           <p className="text-slate-600 dark:text-slate-400 text-sm">Secure, anonymous, real-time.</p>
         </div>
-
-        {/* PWA Install Button - Will only show if installable */}
-        <InstallButton />
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
