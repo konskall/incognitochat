@@ -272,7 +272,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
         </div>
       )}
 
-      <main className="relative bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-blue-500/10 dark:shadow-blue-900/10 w-full p-8 border border-white/50 dark:border-slate-800 transition-colors">
+      <main className="relative bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-blue-500/40 dark:shadow-blue-900/40 w-full p-8 border border-white/50 dark:border-slate-800 transition-colors">
         <button 
             onClick={toggleTheme}
             className="absolute top-6 right-6 p-2 rounded-full text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-10"
