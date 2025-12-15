@@ -81,7 +81,7 @@ const InstallButton: React.FC = () => {
 
   // Helper to render modals at the document body level to avoid z-index stacking context issues
   const IOSModal = () => (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-xl animate-in fade-in duration-300 pb-32" onClick={() => setShowIOSInstructions(false)}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-xl animate-in fade-in duration-300 pb-25" onClick={() => setShowIOSInstructions(false)}>
         <div 
             className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl relative animate-in zoom-in-95 slide-in-from-bottom-8 duration-300 border border-white/20 dark:border-slate-700 ring-1 ring-black/5" 
             onClick={(e) => e.stopPropagation()}
