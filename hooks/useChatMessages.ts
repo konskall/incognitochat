@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { Message, Attachment } from '../types';
 import { decryptMessage, encryptMessage } from '../utils/helpers';
@@ -12,6 +12,13 @@ export const useChatMessages = (
 ) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Use a ref to keep track of the latest callback function without triggering re-subscriptions
+  const onNewMessageRef = useRef(onNewMessage);
+
+  useEffect(() => {
+    onNewMessageRef.current = onNewMessage;
+  }, [onNewMessage]);
 
   // Load initial messages
   useEffect(() => {
@@ -78,7 +85,12 @@ export const useChatMessages = (
               if (prev.some((m) => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
             });
-            if (onNewMessage) onNewMessage(newMsg);
+            
+            // Use the ref to call the latest version of the callback
+            if (onNewMessageRef.current) {
+                onNewMessageRef.current(newMsg);
+            }
+
           } else if (payload.eventType === 'UPDATE') {
             const d = payload.new;
             setMessages((prev) =>
