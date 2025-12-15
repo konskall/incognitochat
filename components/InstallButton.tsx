@@ -93,10 +93,10 @@ const InstallButton: React.FC = () => {
             {appState === 'installed' ? <Trash2 size={20} /> : <MonitorDown size={20} />}
         </button>
 
-        {/* iOS Install Instructions Modal */}
+        {/* iOS Install Instructions Modal - Centered */}
         {showIOSInstructions && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowIOSInstructions(false)}>
-                <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-sm p-6 shadow-2xl relative animate-in slide-in-from-bottom-10 duration-300 border border-white/10 dark:border-slate-800" onClick={(e) => e.stopPropagation()}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowIOSInstructions(false)}>
+                <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-sm p-6 shadow-2xl relative animate-in zoom-in-95 duration-300 border border-white/10 dark:border-slate-800" onClick={(e) => e.stopPropagation()}>
                     <button 
                         onClick={() => setShowIOSInstructions(false)}
                         className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
@@ -125,10 +125,10 @@ const InstallButton: React.FC = () => {
             </div>
         )}
 
-        {/* Uninstall Instructions Modal */}
+        {/* Uninstall Instructions Modal - Centered */}
         {showUninstallInstructions && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowUninstallInstructions(false)}>
-                <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-sm p-6 shadow-2xl relative animate-in slide-in-from-bottom-10 duration-300 border border-white/10 dark:border-slate-800" onClick={(e) => e.stopPropagation()}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowUninstallInstructions(false)}>
+                <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-sm p-6 shadow-2xl relative animate-in zoom-in-95 duration-300 border border-white/10 dark:border-slate-800" onClick={(e) => e.stopPropagation()}>
                     <button 
                         onClick={() => setShowUninstallInstructions(false)}
                         className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
