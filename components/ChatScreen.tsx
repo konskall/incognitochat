@@ -91,7 +91,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         if (document.hidden && notificationsEnabled) {
             new Notification(`New message from ${msg.username}`, {
                 body: msg.text || 'Sent an attachment',
-                icon: '/favicon-96x96.png'
+                icon: 'https://konskall.github.io/incognitochat/favicon-96x96.png'
             });
         }
     }
