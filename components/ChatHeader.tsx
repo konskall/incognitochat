@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect } from 'react';
-import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut } from 'lucide-react';
+import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut, Wand2 } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
 
 interface ChatHeaderProps {
@@ -24,6 +24,9 @@ interface ChatHeaderProps {
   toggleTheme: () => void;
   setShowDeleteModal: (show: boolean) => void;
   onExit: () => void;
+  isOwner: boolean;
+  aiEnabled: boolean;
+  onToggleAI: () => void;
 }
 
 const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -46,7 +49,10 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   isDarkMode,
   toggleTheme,
   setShowDeleteModal,
-  onExit
+  onExit,
+  isOwner,
+  aiEnabled,
+  onToggleAI
 }) => {
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -126,6 +132,16 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         </div>
 
         <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center relative">
+            {isOwner && (
+                <button
+                    onClick={onToggleAI}
+                    className={`p-2 rounded-lg transition ${aiEnabled ? 'text-purple-500 bg-purple-50 dark:bg-purple-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                    title={aiEnabled ? "Disable Inco AI" : "Enable Inco AI"}
+                >
+                    <Wand2 size={20} />
+                </button>
+            )}
+
             <button
                 onClick={handleShare}
                 className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
