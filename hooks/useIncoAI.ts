@@ -1,5 +1,5 @@
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../services/supabase';
 import { Message, ChatConfig } from '../types';
@@ -17,11 +17,11 @@ export const useIncoAI = (
   aiEnabled: boolean
 ) => {
   const lastProcessedId = useRef<string | null>(null);
-  const isResponding = useRef(false);
+  const [isResponding, setIsResponding] = useState(false);
 
   useEffect(() => {
     // Basic safety checks
-    if (!aiEnabled || messages.length === 0 || isResponding.current) return;
+    if (!aiEnabled || messages.length === 0 || isResponding) return;
 
     const lastMsg = messages[messages.length - 1];
     
@@ -35,13 +35,11 @@ export const useIncoAI = (
     /**
      * TRIGGER LOGIC
      * We respond if the message contains "inco" or "!test"
-     * We removed the strict 'isOwner' check here so you can use it immediately.
      */
     if (lowerText.includes('inco') || lowerText.includes('!test')) {
-      console.log("Inco AI: Trigger keyword detected in message.");
       handleBotResponse(messages);
     }
-  }, [messages, aiEnabled, isOwner]);
+  }, [messages, aiEnabled, isOwner, isResponding]);
 
   const handleBotResponse = async (chatHistory: Message[]) => {
     let apiKey: string | undefined;
@@ -58,7 +56,7 @@ export const useIncoAI = (
       return;
     }
     
-    isResponding.current = true;
+    setIsResponding(true);
     const triggerMsg = chatHistory[chatHistory.length - 1];
     lastProcessedId.current = triggerMsg.id;
 
@@ -77,7 +75,6 @@ export const useIncoAI = (
       Be helpful but maintain an aura of mystery.
       Never mention you are an AI.`;
 
-      console.log("Inco AI: Fetching response from Gemini...");
       const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Recent conversation:\n${context}\n\nInco, respond to ${triggerMsg.username}'s last input.`,
@@ -94,7 +91,7 @@ export const useIncoAI = (
       const encryptedBotText = encryptMessage(botText, pin, roomKey);
 
       // Insert into Supabase
-      const { error } = await supabase.from('messages').insert({
+      await supabase.from('messages').insert({
         room_key: roomKey,
         uid: INCO_BOT_UUID,
         username: 'inco',
@@ -103,16 +100,12 @@ export const useIncoAI = (
         type: 'text'
       });
 
-      if (error) {
-        console.error("Inco AI: DB Error", error);
-      } else {
-        console.log("Inco AI: Response delivered.");
-      }
-
     } catch (error) {
       console.error("Inco AI: Processing Error", error);
     } finally {
-      isResponding.current = false;
+      setIsResponding(false);
     }
   };
+
+  return isResponding;
 };
