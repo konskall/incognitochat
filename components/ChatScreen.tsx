@@ -172,7 +172,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   // 4. Inco AI Bot Hook (Host only)
   const isOwner = user?.uid === roomCreatorId;
-  useIncoAI(config.roomKey, config.pin, isOwner, messages, config, aiEnabled);
+  const isBotResponding = useIncoAI(config.roomKey, config.pin, isOwner, messages, config, aiEnabled);
+
+  // Combine real typing users with bot typing status
+  const combinedTypingUsers = isBotResponding ? [...typingUsers, 'inco'] : typingUsers;
 
   // --- SIDE EFFECTS ---
 
@@ -668,7 +671,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         cancelReply={() => setReplyingTo(null)}
         isOffline={isOffline}
         isRoomReady={isRoomReady}
-        typingUsers={typingUsers}
+        typingUsers={combinedTypingUsers}
       />
 
       <DeleteChatModal 
