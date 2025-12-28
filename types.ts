@@ -84,4 +84,5 @@ export interface Room {
   pin: string; // Stored to allow auto-join for creator
   created_at: string;
   created_by: string;
+  ai_enabled?: boolean;
 }
