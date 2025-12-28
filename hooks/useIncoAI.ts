@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../services/supabase';
@@ -11,7 +10,6 @@ const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 export const useIncoAI = (
   roomKey: string,
   pin: string,
-  isOwner: boolean,
   messages: Message[],
   config: ChatConfig,
   aiEnabled: boolean
