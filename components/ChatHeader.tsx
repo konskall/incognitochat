@@ -25,6 +25,7 @@ interface ChatHeaderProps {
   setShowDeleteModal: (show: boolean) => void;
   onExit: () => void;
   isOwner: boolean;
+  isGoogleUser: boolean; // Νέο prop
   aiEnabled: boolean;
   onToggleAI: () => void;
 }
@@ -51,6 +52,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   setShowDeleteModal,
   onExit,
   isOwner,
+  isGoogleUser,
   aiEnabled,
   onToggleAI
 }) => {
@@ -132,7 +134,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         </div>
 
         <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center relative">
-            {isOwner && (
+            {/* Εμφάνιση ραβδιού μόνο αν είναι Owner ΚΑΙ Google User */}
+            {isOwner && isGoogleUser && (
                 <button
                     onClick={onToggleAI}
                     className={`p-2 rounded-lg transition ${aiEnabled ? 'text-purple-500 bg-purple-50 dark:bg-purple-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
