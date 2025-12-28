@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Shield, Lock, Zap, Smartphone, ArrowRight, MessageSquare, Video, Github } from 'lucide-react';
+import { Shield, Lock, Zap, Smartphone, ArrowRight, Video } from 'lucide-react';
 
 interface LandingPageProps {
   onStart: () => void;
