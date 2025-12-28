@@ -8,6 +8,7 @@ import InstallButton from './InstallButton';
 
 interface LoginScreenProps {
   onJoin: (config: ChatConfig) => void;
+  onShowLanding: () => void;
 }
 
 type NotificationType = 'error' | 'success' | 'info';
@@ -18,7 +19,7 @@ interface NotificationState {
   visible: boolean;
 }
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
+const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
   const [username, setUsername] = useState(localStorage.getItem('chatUsername') || '');
   const [avatar, setAvatar] = useState(localStorage.getItem('chatAvatarURL') || '');
   const [roomName, setRoomName] = useState(localStorage.getItem('chatRoomName') || '');
@@ -291,15 +292,20 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin }) => {
             </button>
         </div>
 
-        <div className="flex flex-col items-center mb-6">
+        <button 
+            type="button"
+            onClick={onShowLanding}
+            className="w-full flex flex-col items-center mb-6 group transition-all hover:scale-105"
+            title="Back to info page"
+        >
            <img 
             src="https://konskall.github.io/incognitochat/favicon-96x96.png" 
             alt="Logo"
-            className="w-16 h-16 rounded-2xl shadow-lg mb-4"
+            className="w-16 h-16 rounded-2xl shadow-lg mb-4 ring-0 group-hover:ring-4 ring-blue-500/20 transition-all"
           />
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Incognito Chat</h1>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">Incognito Chat</h1>
           <p className="text-slate-600 dark:text-slate-400 text-sm">Secure, anonymous, real-time.</p>
-        </div>
+        </button>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
