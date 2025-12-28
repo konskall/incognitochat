@@ -17,11 +17,15 @@ export const useIncoAI = (
   const isResponding = useRef(false);
 
   useEffect(() => {
+    // Only the host handles the AI responses to avoid duplicate messages
     if (!isOwner || !aiEnabled || messages.length === 0 || isResponding.current) return;
 
     const lastMsg = messages[messages.length - 1];
+    
+    // Ignore own bot messages, system messages, or already processed messages
     if (lastMsg.id === lastProcessedId.current || lastMsg.uid === 'inco-bot' || lastMsg.type === 'system') return;
 
+    // Trigger AI if "inco" is mentioned
     const lowerText = lastMsg.text.toLowerCase();
     if (lowerText.includes('inco')) {
       handleBotResponse(messages);
@@ -29,11 +33,15 @@ export const useIncoAI = (
   }, [messages, aiEnabled, isOwner]);
 
   const handleBotResponse = async (chatHistory: Message[]) => {
+    // API KEY is strictly handled via environment variable
+    if (!process.env.API_KEY) return;
+    
     isResponding.current = true;
     lastProcessedId.current = chatHistory[chatHistory.length - 1].id;
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      // Create new instance right before use to ensure latest API key from env is used
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       // Prepare context - take last 10 messages for better understanding
       const context = chatHistory
@@ -41,29 +49,32 @@ export const useIncoAI = (
         .map(m => `${m.username}: ${m.text}`)
         .join('\n');
 
-      const prompt = `You are "inco", an intelligent AI assistant in an anonymous encrypted chat room called "${config.roomName}". 
-      The following is the recent conversation context:
-      ${context}
-      
-      Please respond to the last message or provide a helpful suggestion/comment. 
-      Keep your response short, friendly, and respectful. Do not mention technical details about encryption or keys. 
-      Respond as if you are a member of this private space.`;
+      const systemInstruction = `You are "inco", the silent sentinel of this private encrypted room "${config.roomName}". 
+      You are brief, mysterious, and highly intelligent. 
+      Respond to users as an anonymous peer. 
+      Keep answers to 1-2 sentences max. 
+      Never reveal you are an AI or mention encryption keys.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: prompt,
+        contents: `Recent conversation:\n${context}\n\nInco, what is your response?`,
+        config: {
+          systemInstruction,
+          temperature: 0.8,
+          topP: 0.95,
+        }
       });
 
-      const botText = response.text || "I'm listening...";
+      const botText = response.text || "...";
       
-      // Encrypt bot message
+      // Encrypt the bot message so other users can decrypt it with the room PIN
       const encryptedBotText = encryptMessage(botText, pin, roomKey);
 
       await supabase.from('messages').insert({
         room_key: roomKey,
         uid: 'inco-bot',
         username: 'inco',
-        avatar_url: 'https://api.dicebear.com/9.x/bottts/svg?seed=inco',
+        avatar_url: 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1',
         text: encryptedBotText,
         type: 'text'
       });
