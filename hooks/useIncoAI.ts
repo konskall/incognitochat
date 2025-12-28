@@ -34,35 +34,42 @@ export const useIncoAI = (
     
     /**
      * TRIGGER LOGIC
-     * We respond if the message contains "inco" or "!test"
      */
     if (lowerText.includes('inco') || lowerText.includes('!test')) {
-      // CRITICAL: Set typing indicator immediately here for the build version
+      // Set processed ID early to prevent double triggers
+      lastProcessedId.current = lastMsg.id;
+      
+      // CRITICAL: Set responding to true immediately
       setIsResponding(true);
-      handleBotResponse(messages);
+      
+      // Use setTimeout to ensure the state update is committed to the DOM 
+      // before starting the heavy async API work
+      setTimeout(() => {
+        handleBotResponse(messages);
+      }, 100);
     }
-  }, [messages, aiEnabled, isOwner, isResponding]);
+  }, [messages, aiEnabled, isResponding]);
 
   const handleBotResponse = async (chatHistory: Message[]) => {
     let apiKey: string | undefined;
     
-    try {
-      // Compatibility for different environments
-      apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
-    } catch (e) {
-      console.error("Inco AI: Env access error", e);
-    }
-    
-    if (!apiKey) {
-      console.error("Inco AI: API_KEY is missing!");
-      setIsResponding(false); // Reset if key is missing
-      return;
-    }
-    
-    const triggerMsg = chatHistory[chatHistory.length - 1];
-    lastProcessedId.current = triggerMsg.id;
+    // Record start time to ensure a minimum typing duration
+    const startTime = Date.now();
+    const minTypingDuration = 1500; // 1.5 seconds minimum
 
     try {
+      // Compatibility for different environments
+      try {
+        apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
+      } catch (e) {
+        console.error("Inco AI: Env access error", e);
+      }
+      
+      if (!apiKey) {
+        throw new Error("API_KEY is missing!");
+      }
+      
+      const triggerMsg = chatHistory[chatHistory.length - 1];
       const ai = new GoogleGenAI({ apiKey });
       
       // Send last 10 messages for context
@@ -105,7 +112,13 @@ export const useIncoAI = (
     } catch (error) {
       console.error("Inco AI: Processing Error", error);
     } finally {
-      setIsResponding(false);
+      // Ensure we have shown the typing indicator for at least minDuration
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, minTypingDuration - elapsed);
+      
+      setTimeout(() => {
+        setIsResponding(false);
+      }, remaining);
     }
   };
 
