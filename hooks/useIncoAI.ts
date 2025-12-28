@@ -37,6 +37,8 @@ export const useIncoAI = (
      * We respond if the message contains "inco" or "!test"
      */
     if (lowerText.includes('inco') || lowerText.includes('!test')) {
+      // CRITICAL: Set typing indicator immediately here for the build version
+      setIsResponding(true);
       handleBotResponse(messages);
     }
   }, [messages, aiEnabled, isOwner, isResponding]);
@@ -53,10 +55,10 @@ export const useIncoAI = (
     
     if (!apiKey) {
       console.error("Inco AI: API_KEY is missing!");
+      setIsResponding(false); // Reset if key is missing
       return;
     }
     
-    setIsResponding(true);
     const triggerMsg = chatHistory[chatHistory.length - 1];
     lastProcessedId.current = triggerMsg.id;
 
