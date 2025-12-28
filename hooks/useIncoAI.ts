@@ -25,21 +25,23 @@ export const useIncoAI = (
 
     const lastMsg = messages[messages.length - 1];
     
-    // Safety checks
-    if (!lastMsg || !lastMsg.text) return;
+    // Basic checks
+    if (!lastMsg || !lastMsg.text || lastMsg.type === 'system') return;
     if (lastMsg.id === lastProcessedId.current) return;
-    if (lastMsg.uid === INCO_BOT_UUID || lastMsg.type === 'system') return;
+    if (lastMsg.uid === INCO_BOT_UUID) return;
 
-    // The bot triggers if the message contains its name
+    // Trigger if "inco" is mentioned (case insensitive)
     const lowerText = lastMsg.text.toLowerCase();
     if (lowerText.includes('inco')) {
+      console.log("Inco AI: Trigger detected from message:", lastMsg.text);
       handleBotResponse(messages);
     }
   }, [messages, aiEnabled, isOwner]);
 
   const handleBotResponse = async (chatHistory: Message[]) => {
-    if (!process.env.API_KEY) {
-      console.warn("Inco AI: Missing API_KEY in environment variables.");
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      console.error("Inco AI Error: API_KEY is missing from environment variables.");
       return;
     }
     
@@ -48,32 +50,35 @@ export const useIncoAI = (
     lastProcessedId.current = triggerMsg.id;
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       
-      // Get a small window of context for better responses
       const context = chatHistory
-        .slice(-6)
+        .slice(-10)
         .map(m => `${m.username}: ${m.text}`)
         .join('\n');
 
-      const systemInstruction = `You are "inco", the mysterious, wise, and slightly cryptic guardian of this encrypted chat room called "${config.roomName}". 
-      - Speak like a real human, but stay anonymous.
-      - Keep responses short (under 30 words).
-      - Never say you are an AI. 
-      - The person you are talking to is ${triggerMsg.username}.
-      - Respond naturally to their last comment.`;
+      const systemInstruction = `You are "inco", the mysterious and cool guardian of the encrypted chat room "${config.roomName}". 
+      Respond to ${triggerMsg.username}. 
+      Keep it very short and conversational. 
+      Do not mention you are an AI. 
+      If asked who you are, be cryptic but friendly.`;
 
-      const result = await ai.models.generateContent({
+      console.log("Inco AI: Requesting response from Gemini...");
+
+      const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Conversation context:\n${context}\n\nInco, reply to ${triggerMsg.username}:`,
+        contents: `Context:\n${context}\n\nInco, reply to the last message.`,
         config: {
           systemInstruction,
-          temperature: 0.9,
-          topP: 0.8,
+          temperature: 0.8,
         },
       });
 
-      const botText = result.text || "...";
+      const botText = response.text;
+      if (!botText) throw new Error("Empty response from AI");
+
+      console.log("Inco AI: Received response, encrypting and sending to Supabase...");
+      
       const encryptedBotText = encryptMessage(botText, pin, roomKey);
 
       const { error } = await supabase.from('messages').insert({
@@ -85,7 +90,11 @@ export const useIncoAI = (
         type: 'text'
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Inco AI: Database insert error:", error);
+      } else {
+        console.log("Inco AI: Message sent successfully.");
+      }
 
     } catch (error) {
       console.error("Inco AI Critical Error:", error);
