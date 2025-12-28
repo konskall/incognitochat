@@ -20,28 +20,35 @@ export const useIncoAI = (
   const isResponding = useRef(false);
 
   useEffect(() => {
-    // Only the host triggers the AI to prevent duplicate responses
-    if (!isOwner || !aiEnabled || messages.length === 0 || isResponding.current) return;
+    // Debugging logs to see state
+    console.log("Inco AI Status:", { aiEnabled, isOwner, messagesCount: messages.length });
+
+    if (!aiEnabled || messages.length === 0 || isResponding.current) return;
 
     const lastMsg = messages[messages.length - 1];
-    
-    // Basic checks
     if (!lastMsg || !lastMsg.text || lastMsg.type === 'system') return;
     if (lastMsg.id === lastProcessedId.current) return;
     if (lastMsg.uid === INCO_BOT_UUID) return;
 
-    // Trigger if "inco" is mentioned (case insensitive)
     const lowerText = lastMsg.text.toLowerCase();
-    if (lowerText.includes('inco')) {
-      console.log("Inco AI: Trigger detected from message:", lastMsg.text);
+    
+    // Trigger logic
+    // We allow the owner to trigger it with "inco" OR anyone with "!test" for debugging
+    if (lowerText.includes('inco') || lowerText.includes('!test')) {
+      if (!isOwner && !lowerText.includes('!test')) {
+        console.log("Inco AI: Not owner, won't respond to 'inco'. Only host can trigger bot.");
+        return;
+      }
       handleBotResponse(messages);
     }
   }, [messages, aiEnabled, isOwner]);
 
   const handleBotResponse = async (chatHistory: Message[]) => {
     const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      console.error("Inco AI Error: API_KEY is missing from environment variables.");
+    
+    if (!apiKey || apiKey === "undefined" || apiKey === "") {
+      console.error("CRITICAL ERROR: API_KEY is missing! The bot cannot call Google Gemini.");
+      alert("Inco AI: API Key is missing from environment variables!");
       return;
     }
     
@@ -50,34 +57,30 @@ export const useIncoAI = (
     lastProcessedId.current = triggerMsg.id;
 
     try {
+      console.log("Inco AI: Calling Gemini API...");
       const ai = new GoogleGenAI({ apiKey });
       
       const context = chatHistory
-        .slice(-10)
+        .slice(-8)
         .map(m => `${m.username}: ${m.text}`)
         .join('\n');
 
-      const systemInstruction = `You are "inco", the mysterious and cool guardian of the encrypted chat room "${config.roomName}". 
-      Respond to ${triggerMsg.username}. 
-      Keep it very short and conversational. 
-      Do not mention you are an AI. 
-      If asked who you are, be cryptic but friendly.`;
+      const systemInstruction = `You are "inco", the guardian of "${config.roomName}". 
+      Respond to ${triggerMsg.username}. Keep it under 25 words. Be cool and mysterious.`;
 
-      console.log("Inco AI: Requesting response from Gemini...");
-
-      const response = await ai.models.generateContent({
+      const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Context:\n${context}\n\nInco, reply to the last message.`,
         config: {
           systemInstruction,
-          temperature: 0.8,
+          temperature: 0.7,
         },
       });
 
-      const botText = response.text;
-      if (!botText) throw new Error("Empty response from AI");
+      const botText = result.text;
+      if (!botText) throw new Error("Gemini returned empty text");
 
-      console.log("Inco AI: Received response, encrypting and sending to Supabase...");
+      console.log("Inco AI: Got response. Saving to Supabase...");
       
       const encryptedBotText = encryptMessage(botText, pin, roomKey);
 
@@ -91,13 +94,13 @@ export const useIncoAI = (
       });
 
       if (error) {
-        console.error("Inco AI: Database insert error:", error);
+        console.error("Inco AI: Supabase Insert Error:", error);
       } else {
-        console.log("Inco AI: Message sent successfully.");
+        console.log("Inco AI: Done!");
       }
 
     } catch (error) {
-      console.error("Inco AI Critical Error:", error);
+      console.error("Inco AI API Error:", error);
     } finally {
       isResponding.current = false;
     }
