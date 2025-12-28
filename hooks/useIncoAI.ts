@@ -19,33 +19,26 @@ export const useIncoAI = (
   const lastProcessedId = useRef<string | null>(null);
   const isResponding = useRef(false);
 
-  // Immediate log to verify the hook is mounting
   useEffect(() => {
-    console.log("Inco AI Hook: Mounted/Updated", { 
-      aiEnabled, 
-      isOwner, 
-      room: config.roomName,
-      messagesCount: messages.length 
-    });
-  }, [aiEnabled, isOwner, messages.length]);
-
-  useEffect(() => {
+    // Basic safety checks
     if (!aiEnabled || messages.length === 0 || isResponding.current) return;
 
     const lastMsg = messages[messages.length - 1];
+    
+    // Ignore if not a text message, if it's a system message, or if it's from the bot itself
     if (!lastMsg || !lastMsg.text || lastMsg.type === 'system') return;
     if (lastMsg.id === lastProcessedId.current) return;
     if (lastMsg.uid === INCO_BOT_UUID) return;
 
-    const lowerText = lastMsg.text.toLowerCase();
+    const lowerText = lastMsg.text.toLowerCase().trim();
     
-    // Trigger logic
+    /**
+     * TRIGGER LOGIC
+     * We respond if the message contains "inco" or "!test"
+     * We removed the strict 'isOwner' check here so you can use it immediately.
+     */
     if (lowerText.includes('inco') || lowerText.includes('!test')) {
-      if (!isOwner && !lowerText.includes('!test')) {
-        console.warn("Inco AI: Not owner, trigger ignored.");
-        return;
-      }
-      console.log("Inco AI: Trigger detected! Preparing response...");
+      console.log("Inco AI: Trigger keyword detected in message.");
       handleBotResponse(messages);
     }
   }, [messages, aiEnabled, isOwner]);
@@ -53,15 +46,15 @@ export const useIncoAI = (
   const handleBotResponse = async (chatHistory: Message[]) => {
     let apiKey: string | undefined;
     
-    // Safe access to process.env to avoid ReferenceError in Vite
     try {
+      // Compatibility for different environments
       apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
     } catch (e) {
-      console.error("Inco AI: Could not access process.env", e);
+      console.error("Inco AI: Env access error", e);
     }
     
     if (!apiKey) {
-      console.error("CRITICAL ERROR: API_KEY is undefined. Check your environment variables.");
+      console.error("Inco AI: API_KEY is missing!");
       return;
     }
     
@@ -72,30 +65,35 @@ export const useIncoAI = (
     try {
       const ai = new GoogleGenAI({ apiKey });
       
+      // Send last 10 messages for context
       const context = chatHistory
-        .slice(-8)
+        .slice(-10)
         .map(m => `${m.username}: ${m.text}`)
         .join('\n');
 
-      const systemInstruction = `You are "inco", the guardian of "${config.roomName}". 
-      Respond to ${triggerMsg.username}. Keep it short and mysterious.`;
+      const systemInstruction = `You are "inco", the mysterious and wise guardian of the chat room "${config.roomName}". 
+      You are speaking with ${triggerMsg.username}. 
+      Keep your response very short (under 20 words). 
+      Be helpful but maintain an aura of mystery.
+      Never mention you are an AI.`;
 
-      console.log("Inco AI: Calling Gemini API...");
+      console.log("Inco AI: Fetching response from Gemini...");
       const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Context:\n${context}\n\nInco, reply to the last message.`,
+        contents: `Recent conversation:\n${context}\n\nInco, respond to ${triggerMsg.username}'s last input.`,
         config: {
           systemInstruction,
-          temperature: 0.7,
+          temperature: 0.8,
         },
       });
 
       const botText = result.text;
-      if (!botText) throw new Error("Empty response from Gemini");
+      if (!botText) throw new Error("Empty response");
 
-      console.log("Inco AI: Encrypting response...");
+      // Encrypt for the room
       const encryptedBotText = encryptMessage(botText, pin, roomKey);
 
+      // Insert into Supabase
       const { error } = await supabase.from('messages').insert({
         room_key: roomKey,
         uid: INCO_BOT_UUID,
@@ -106,13 +104,13 @@ export const useIncoAI = (
       });
 
       if (error) {
-        console.error("Inco AI: Supabase Insert Error:", error);
+        console.error("Inco AI: DB Error", error);
       } else {
-        console.log("Inco AI: Bot message sent to DB.");
+        console.log("Inco AI: Response delivered.");
       }
 
     } catch (error) {
-      console.error("Inco AI: API or Process Error:", error);
+      console.error("Inco AI: Processing Error", error);
     } finally {
       isResponding.current = false;
     }
