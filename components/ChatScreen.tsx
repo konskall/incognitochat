@@ -627,6 +627,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         setShowDeleteModal={setShowDeleteModal}
         onExit={handleExitChat}
         isOwner={isOwner}
+        isGoogleUser={user ? !user.isAnonymous : false}
         aiEnabled={aiEnabled}
         onToggleAI={handleToggleAI}
       />
