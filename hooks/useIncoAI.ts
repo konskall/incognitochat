@@ -19,10 +19,17 @@ export const useIncoAI = (
   const lastProcessedId = useRef<string | null>(null);
   const isResponding = useRef(false);
 
+  // Immediate log to verify the hook is mounting
   useEffect(() => {
-    // Debugging logs to see state
-    console.log("Inco AI Status:", { aiEnabled, isOwner, messagesCount: messages.length });
+    console.log("Inco AI Hook: Mounted/Updated", { 
+      aiEnabled, 
+      isOwner, 
+      room: config.roomName,
+      messagesCount: messages.length 
+    });
+  }, [aiEnabled, isOwner, messages.length]);
 
+  useEffect(() => {
     if (!aiEnabled || messages.length === 0 || isResponding.current) return;
 
     const lastMsg = messages[messages.length - 1];
@@ -33,22 +40,28 @@ export const useIncoAI = (
     const lowerText = lastMsg.text.toLowerCase();
     
     // Trigger logic
-    // We allow the owner to trigger it with "inco" OR anyone with "!test" for debugging
     if (lowerText.includes('inco') || lowerText.includes('!test')) {
       if (!isOwner && !lowerText.includes('!test')) {
-        console.log("Inco AI: Not owner, won't respond to 'inco'. Only host can trigger bot.");
+        console.warn("Inco AI: Not owner, trigger ignored.");
         return;
       }
+      console.log("Inco AI: Trigger detected! Preparing response...");
       handleBotResponse(messages);
     }
   }, [messages, aiEnabled, isOwner]);
 
   const handleBotResponse = async (chatHistory: Message[]) => {
-    const apiKey = process.env.API_KEY;
+    let apiKey: string | undefined;
     
-    if (!apiKey || apiKey === "undefined" || apiKey === "") {
-      console.error("CRITICAL ERROR: API_KEY is missing! The bot cannot call Google Gemini.");
-      alert("Inco AI: API Key is missing from environment variables!");
+    // Safe access to process.env to avoid ReferenceError in Vite
+    try {
+      apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
+    } catch (e) {
+      console.error("Inco AI: Could not access process.env", e);
+    }
+    
+    if (!apiKey) {
+      console.error("CRITICAL ERROR: API_KEY is undefined. Check your environment variables.");
       return;
     }
     
@@ -57,7 +70,6 @@ export const useIncoAI = (
     lastProcessedId.current = triggerMsg.id;
 
     try {
-      console.log("Inco AI: Calling Gemini API...");
       const ai = new GoogleGenAI({ apiKey });
       
       const context = chatHistory
@@ -66,8 +78,9 @@ export const useIncoAI = (
         .join('\n');
 
       const systemInstruction = `You are "inco", the guardian of "${config.roomName}". 
-      Respond to ${triggerMsg.username}. Keep it under 25 words. Be cool and mysterious.`;
+      Respond to ${triggerMsg.username}. Keep it short and mysterious.`;
 
+      console.log("Inco AI: Calling Gemini API...");
       const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Context:\n${context}\n\nInco, reply to the last message.`,
@@ -78,10 +91,9 @@ export const useIncoAI = (
       });
 
       const botText = result.text;
-      if (!botText) throw new Error("Gemini returned empty text");
+      if (!botText) throw new Error("Empty response from Gemini");
 
-      console.log("Inco AI: Got response. Saving to Supabase...");
-      
+      console.log("Inco AI: Encrypting response...");
       const encryptedBotText = encryptMessage(botText, pin, roomKey);
 
       const { error } = await supabase.from('messages').insert({
@@ -96,11 +108,11 @@ export const useIncoAI = (
       if (error) {
         console.error("Inco AI: Supabase Insert Error:", error);
       } else {
-        console.log("Inco AI: Done!");
+        console.log("Inco AI: Bot message sent to DB.");
       }
 
     } catch (error) {
-      console.error("Inco AI API Error:", error);
+      console.error("Inco AI: API or Process Error:", error);
     } finally {
       isResponding.current = false;
     }
