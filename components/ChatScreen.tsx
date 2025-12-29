@@ -1,7 +1,8 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../services/supabase';
-import { ChatConfig, Message, User, Subscriber } from '../types';
+import { ChatConfig, Message, User, Subscriber, Presence } from '../types';
 import MessageList from './MessageList';
 import CallManager from './CallManager';
 import { initAudio, playBeep } from '../utils/helpers';
@@ -10,6 +11,7 @@ import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
 import AiAvatarModal from './AiAvatarModal';
+import UserProfileModal from './UserProfileModal';
 import { WifiOff, Trash2, Home } from 'lucide-react';
 
 // Hooks
@@ -17,6 +19,8 @@ import { useChatMessages } from '../hooks/useChatMessages';
 import { useRoomPresence } from '../hooks/useRoomPresence';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useIncoAI } from '../hooks/useIncoAI';
+
+const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 
 interface ChatScreenProps {
   config: ChatConfig;
@@ -71,6 +75,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showAiAvatarModal, setShowAiAvatarModal] = useState(false);
+  const [selectedUserPresence, setSelectedUserPresence] = useState<Presence | null>(null);
+  const [selectedUserSubscriber, setSelectedUserSubscriber] = useState<Subscriber | null>(null);
+  
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showParticipantsList, setShowParticipantsList] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -570,6 +577,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     if (!isOwner || !config.roomKey) return;
     const newState = !aiEnabled;
     try {
+      // Fix: roomKey variable was undefined, correctly using config.roomKey
       await supabase
         .from('rooms')
         .update({ ai_enabled: newState })
@@ -580,6 +588,45 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     } catch (e) {
       console.error("Failed to toggle AI", e);
     }
+  };
+
+  const handleUserClick = async (uid: string, username: string, avatar: string) => {
+      if (uid === INCO_BOT_UUID) return;
+      
+      // Look for user in active participants
+      const activeUser = participants.find(p => p.uid === uid);
+      
+      // Initial user object (presence)
+      const userToDisplay: Presence = activeUser || {
+          uid,
+          username,
+          avatar,
+          status: 'inactive',
+          isTyping: false,
+          onlineAt: ''
+      };
+
+      setSelectedUserPresence(userToDisplay);
+      
+      // Fetch subscriber info for this user to get "joined_at" and "last_seen"
+      try {
+          const { data } = await supabase
+            .from('subscribers')
+            .select('*')
+            .eq('room_key', config.roomKey)
+            .eq('uid', uid)
+            .maybeSingle();
+          
+          if (data) {
+              setSelectedUserSubscriber(data as Subscriber);
+              // If user is offline, we use last_notified_at as a fallback for activity
+              if (!activeUser) {
+                  setSelectedUserPresence(prev => prev ? ({...prev, onlineAt: data.last_notified_at || ''}) : null);
+              }
+          }
+      } catch (e) {
+          console.error("Failed to fetch user subscriber info", e);
+      }
   };
 
   return (
@@ -651,6 +698,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             onDelete={deleteMessage}
             onReply={handleReply}
             onReact={reactToMessage}
+            onUserClick={handleUserClick}
         />
         <div ref={messagesEndRef} />
       </main>
@@ -705,6 +753,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         roomKey={config.roomKey}
         onUpdate={(newUrl) => setAiAvatarUrl(newUrl)}
       />
+
+      {selectedUserPresence && (
+          <UserProfileModal
+            user={selectedUserPresence}
+            subscriberInfo={selectedUserSubscriber}
+            isRoomOwner={selectedUserPresence.uid === roomCreatorId}
+            onClose={() => { setSelectedUserPresence(null); setSelectedUserSubscriber(null); }}
+          />
+      )}
     </div>
   );
 };
