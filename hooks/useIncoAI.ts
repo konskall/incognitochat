@@ -33,9 +33,16 @@ export const useIncoAI = (
     
     /**
      * TRIGGER LOGIC
-     * We respond if the message contains "inco" or "@inco"
+     * 1. Check if text contains "inco"
+     * 2. Check if the message is a reply to an Inco bot message
      */
-    if (lowerText.includes('inco')) {
+    const mentionsInco = lowerText.includes('inco');
+    
+    // Find if the message being replied to was sent by the bot
+    const isReplyToBot = lastMsg.replyTo && 
+      messages.find(m => m.id === lastMsg.replyTo?.id)?.uid === INCO_BOT_UUID;
+
+    if (mentionsInco || isReplyToBot) {
       setIsResponding(true);
       handleBotResponse(messages);
     }
@@ -58,22 +65,21 @@ export const useIncoAI = (
       // Create a new GoogleGenAI instance right before making an API call to ensure it uses current key
       const ai = new GoogleGenAI({ apiKey });
       
-      // Send last 10 messages for context
+      // Send last 15 messages for better context in replies
       const context = chatHistory
-        .slice(-10)
+        .slice(-15)
         .map(m => `${m.username}: ${m.text}`)
         .join('\n');
 
-      // FIXED: Use 'config.roomName' as 'config.name' is not a property of ChatConfig
       const systemInstruction = `You are "inco", a helpful assistant on chat room "${config.roomName}". 
-      You are speaking with ${triggerMsg.username}. 
+      You are currently speaking with ${triggerMsg.username}. 
       Keep your responses short and direct (under 20 words). 
-      Be helpful and useful. Focus on helping with questions.
-      Never mention you are an AI.`;
+      Be helpful and useful. Focus on helping with questions. If the user is replying to you, continue the conversation naturally.
+      Never mention you are an AI or a bot.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Recent conversation:\n${context}\n\nInco, respond to ${triggerMsg.username}'s last input.`,
+        contents: `Recent conversation context:\n${context}\n\nInco, respond to ${triggerMsg.username}'s last message.`,
         config: {
           systemInstruction,
           temperature: 0.8,
@@ -93,7 +99,14 @@ export const useIncoAI = (
         username: 'inco',
         avatar_url: 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1',
         text: encryptedBotText,
-        type: 'text'
+        type: 'text',
+        // We add a reply link back to the user's message to maintain the thread
+        reply_to: {
+            id: triggerMsg.id,
+            username: triggerMsg.username,
+            text: triggerMsg.text,
+            isAttachment: !!triggerMsg.attachment
+        }
       });
 
     } catch (error) {
