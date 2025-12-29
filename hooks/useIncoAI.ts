@@ -17,38 +17,37 @@ export const useIncoAI = (
   aiAvatarUrl?: string
 ) => {
   const lastProcessedId = useRef<string | null>(null);
-  const isBusy = useRef<boolean>(false); // Mutex lock για αποφυγή διπλών κλήσεων
+  const isBusy = useRef<boolean>(false);
   const [isResponding, setIsResponding] = useState(false);
 
   useEffect(() => {
-    // 1. Βασικοί έλεγχοι αν το AI είναι ενεργό
     if (!aiEnabled || messages.length === 0) return;
 
     const lastMsg = messages[messages.length - 1];
     
-    // 2. Έλεγχος αν το μήνυμα είναι έγκυρο για απάντηση
+    // Έλεγχοι εγκυρότητας
     if (!lastMsg || !lastMsg.text || lastMsg.type === 'system') return;
-    if (lastMsg.uid === INCO_BOT_UUID) return; // Το bot δεν απαντά στον εαυτό του
-    if (lastMsg.id === lastProcessedId.current) return; // Έχει ήδη υποβληθεί σε επεξεργασία
-    
-    // ΚΡΙΣΙΜΟ: Αν το bot επεξεργάζεται ήδη απάντηση, αγνόησε το νέο trigger
+    if (lastMsg.uid === INCO_BOT_UUID) return; 
+    if (lastMsg.id === lastProcessedId.current) return;
     if (isBusy.current) return;
 
     const lowerText = lastMsg.text.toLowerCase().trim();
     const mentionsInco = lowerText.includes('inco');
-    
-    // Έλεγχος αν είναι απάντηση σε μήνυμα του bot
     const isReplyToBot = lastMsg.replyTo && 
       messages.find(m => m.id === lastMsg.replyTo?.id)?.uid === INCO_BOT_UUID;
 
     if (mentionsInco || isReplyToBot) {
-      // ΑΚΑΡΙΑΙΟ ΚΛΕΙΔΩΜΑ (Ref update is synchronous)
+      // Άμεσο κλείδωμα
       isBusy.current = true;
       lastProcessedId.current = lastMsg.id;
-      setIsResponding(true);
       
-      // Ξεκινάμε την ασύγχρονη διαδικασία
-      handleBotResponse(messages, lastMsg);
+      // Μικρή καθυστέρηση για αποφυγή race conditions από το React Strict Mode
+      const timer = setTimeout(() => {
+        setIsResponding(true);
+        handleBotResponse(messages, lastMsg);
+      }, 200);
+
+      return () => clearTimeout(timer);
     }
   }, [messages, aiEnabled]);
 
@@ -62,34 +61,28 @@ export const useIncoAI = (
         .map(m => `${m.username}: ${m.text.substring(0, 300)}`)
         .join('\n');
 
-      const systemInstruction = `You are "inco", a helpful chat room assistant in the chat room "${config.roomName}". 
-      User "${triggerMsg.username}" just sent a message or replied to you.
-      CRITICAL RULES:
-      - ALWAYS respond in the language the user is using. If they write in GREEK, you MUST respond in GREEK.
-      - Never say you are an AI or bot.
-      - Keep it short (max 20 words).
-      - Focus on helping with questions.
-      - Be natural, like a human participant.`;
-
-      const safetySettings = [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-      ];
+      const systemInstruction = `You are "inco", a friendly assistant in "${config.roomName}". 
+      User "${triggerMsg.username}" is talking to you.
+      
+      LANG_RULES:
+      - If user writes GREEK, you MUST respond ONLY in GREEK.
+      - If user writes ENGLISH, you MUST respond ONLY in ENGLISH.
+      
+      PERSONALITY:
+      - Short natural answers (max 15 words).
+      - Never say you are an AI.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Context:\n${context}\n\nUser ${triggerMsg.username} said: ${triggerMsg.text}\nRespond directly to them:`,
+        contents: `Context:\n${context}\n\nUser ${triggerMsg.username} said: ${triggerMsg.text}\nRespond directly:`,
         config: {
           systemInstruction,
-          temperature: 0.8,
-          safetySettings,
+          temperature: 0.7,
         },
       });
 
       const botText = response.text;
-      if (!botText) throw new Error("Empty response");
+      if (!botText) return;
 
       const encryptedBotText = encryptMessage(botText, pin, roomKey);
 
@@ -110,27 +103,8 @@ export const useIncoAI = (
 
     } catch (error: any) {
       console.error("Inco AI Error:", error);
-      
-      // Εμφάνιση μηνύματος σφάλματος μόνο αν είναι πραγματικό σφάλμα ορίου (429)
-      if (error.message?.includes('429') || error.message?.includes('quota')) {
-        try {
-          const limitMessage = "Έφτασα το ημερήσιο όριο σκέψης μου! Χρειάζομαι λίγη ξεκούραση για να αναπληρώσω το μυστήριό μου... Δοκίμασε ξανά σε λίγο. ✨";
-          const encryptedLimitText = encryptMessage(limitMessage, pin, roomKey);
-
-          await supabase.from('messages').insert({
-            room_key: roomKey,
-            uid: INCO_BOT_UUID,
-            username: 'inco',
-            avatar_url: aiAvatarUrl || DEFAULT_BOT_AVATAR,
-            text: encryptedLimitText,
-            type: 'text'
-          });
-        } catch (dbError) {
-          console.error("DB error on limit message", dbError);
-        }
-      }
+      // ΔΕΝ δημοσιεύουμε πλέον μήνυμα σφάλματος στο chat για να αποφύγουμε τα διπλά μηνύματα
     } finally {
-      // ΞΕΚΛΕΙΔΩΜΑ (Απελευθέρωση του mutex)
       isBusy.current = false;
       setIsResponding(false);
     }
