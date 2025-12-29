@@ -20,42 +20,36 @@ export const useIncoAI = (
   const [isResponding, setIsResponding] = useState(false);
 
   useEffect(() => {
-    // Basic safety checks
+    // The bot only triggers if AI is enabled and we are not already responding
     if (!aiEnabled || messages.length === 0 || isResponding) return;
 
     const lastMsg = messages[messages.length - 1];
     
-    // Ignore if not a text message, if it's a system message, or if it's from the bot itself
     if (!lastMsg || !lastMsg.text || lastMsg.type === 'system') return;
     if (lastMsg.id === lastProcessedId.current) return;
     if (lastMsg.uid === INCO_BOT_UUID) return;
 
+    // IMPORTANT: In this architecture, only ONE client should handle the bot response
+    // to avoid multiple AI replies. We designate the Room Owner (Host) as the bot handler.
+    if (!isOwner) return;
+
     const lowerText = lastMsg.text.toLowerCase().trim();
     
-    /**
-     * TRIGGER LOGIC
-     * We respond if the message contains "inco" or "!test"
-     */
     if (lowerText.includes('inco') || lowerText.includes('!test')) {
-      // CRITICAL: Set typing indicator immediately here for the build version
       setIsResponding(true);
       handleBotResponse(messages);
     }
   }, [messages, aiEnabled, isOwner, isResponding]);
 
   const handleBotResponse = async (chatHistory: Message[]) => {
-    let apiKey: string | undefined;
-    
-    try {
-      // Compatibility for different environments
-      apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
-    } catch (e) {
-      console.error("Inco AI: Env access error", e);
-    }
+    // Try to get key from process.env (injected during build) or global scope
+    const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) 
+                   ? process.env.API_KEY 
+                   : undefined;
     
     if (!apiKey) {
-      console.error("Inco AI: API_KEY is missing!");
-      setIsResponding(false); // Reset if key is missing
+      console.warn("Inco AI: API_KEY not found in environment.");
+      setIsResponding(false);
       return;
     }
     
@@ -65,7 +59,6 @@ export const useIncoAI = (
     try {
       const ai = new GoogleGenAI({ apiKey });
       
-      // Send last 10 messages for context
       const context = chatHistory
         .slice(-10)
         .map(m => `${m.username}: ${m.text}`)
@@ -89,10 +82,8 @@ export const useIncoAI = (
       const botText = result.text;
       if (!botText) throw new Error("Empty response");
 
-      // Encrypt for the room
       const encryptedBotText = encryptMessage(botText, pin, roomKey);
 
-      // Insert into Supabase
       await supabase.from('messages').insert({
         room_key: roomKey,
         uid: INCO_BOT_UUID,
