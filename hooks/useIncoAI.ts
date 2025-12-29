@@ -1,6 +1,6 @@
 
 import { useEffect, useRef, useState } from 'react';
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../services/supabase';
 import { Message, ChatConfig } from '../types';
 import { encryptMessage } from '../utils/helpers';
