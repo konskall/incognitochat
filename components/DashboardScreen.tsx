@@ -74,6 +74,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   // New States for PIN and Drag
   const [revealedPins, setRevealedPins] = useState<Set<string>>(new Set());
   const [draggedRoomIndex, setDraggedRoomIndex] = useState<number | null>(null);
+  const roomRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
     const initData = async () => {
@@ -302,13 +303,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     });
   };
 
-  // --- Drag and Drop Logic ---
+  // --- Drag and Drop Logic (Mouse) ---
   const onDragStart = (index: number) => {
     setDraggedRoomIndex(index);
   };
 
-  const onDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
+  const onDragOver = (e: React.DragEvent | React.TouchEvent, index: number) => {
+    if ('preventDefault' in e) e.preventDefault();
     if (draggedRoomIndex === null || draggedRoomIndex === index) return;
     
     const newRooms = [...rooms];
@@ -322,9 +323,30 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
   const onDragEnd = () => {
     setDraggedRoomIndex(null);
-    // Save order to localStorage
     const orderKeys = rooms.map(r => r.room_key);
     localStorage.setItem(`roomOrder_${user.uid}`, JSON.stringify(orderKeys));
+  };
+
+  // --- Touch Support for Reordering ---
+  const handleTouchStart = (index: number) => {
+    setDraggedRoomIndex(index);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (draggedRoomIndex === null) return;
+    
+    const touch = e.touches[0];
+    const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (!targetElement) return;
+
+    // Find the room card index from the element under the touch
+    const cardElement = targetElement.closest('.room-card');
+    if (cardElement) {
+        const index = parseInt(cardElement.getAttribute('data-index') || '-1');
+        if (index !== -1 && index !== draggedRoomIndex) {
+            onDragOver(e, index);
+        }
+    }
   };
 
   return (
@@ -457,7 +479,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                          </div>
                     </div>
 
-                    <div>
+                    <div onTouchMove={handleTouchMove} onTouchEnd={onDragEnd}>
                         <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4 px-1">Your Rooms</h3>
                         {loadingRooms ? (
                             <div className="flex justify-center py-12"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
@@ -475,7 +497,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         onDragStart={() => onDragStart(index)}
                                         onDragOver={(e) => onDragOver(e, index)}
                                         onDragEnd={onDragEnd}
-                                        className={`group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 transition-all duration-300 flex flex-col justify-between relative overflow-hidden cursor-grab active:cursor-grabbing ${draggedRoomIndex === index ? 'opacity-40 scale-95 border-blue-500' : ''}`}
+                                        onTouchStart={() => handleTouchStart(index)}
+                                        data-index={index}
+                                        className={`room-card group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 transition-all duration-300 flex flex-col justify-between relative overflow-hidden cursor-grab active:cursor-grabbing touch-none ${draggedRoomIndex === index ? 'opacity-40 scale-95 border-blue-500' : ''}`}
                                     >
                                         <div className="mb-4 relative z-10">
                                             <div className="flex justify-between items-start mb-2">
