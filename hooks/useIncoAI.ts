@@ -20,7 +20,6 @@ export const useIncoAI = (
   const [isResponding, setIsResponding] = useState(false);
 
   useEffect(() => {
-    // The bot only triggers if AI is enabled and we are not already responding
     if (!aiEnabled || messages.length === 0 || isResponding) return;
 
     const lastMsg = messages[messages.length - 1];
@@ -29,12 +28,12 @@ export const useIncoAI = (
     if (lastMsg.id === lastProcessedId.current) return;
     if (lastMsg.uid === INCO_BOT_UUID) return;
 
-    // IMPORTANT: In this architecture, only ONE client should handle the bot response
-    // to avoid multiple AI replies. We designate the Room Owner (Host) as the bot handler.
+    // Only the owner acts as the gateway for the AI to prevent double responses
     if (!isOwner) return;
 
     const lowerText = lastMsg.text.toLowerCase().trim();
     
+    // Trigger keywords
     if (lowerText.includes('inco') || lowerText.includes('!test')) {
       setIsResponding(true);
       handleBotResponse(messages);
@@ -42,22 +41,12 @@ export const useIncoAI = (
   }, [messages, aiEnabled, isOwner, isResponding]);
 
   const handleBotResponse = async (chatHistory: Message[]) => {
-    // Try to get key from process.env (injected during build) or global scope
-    const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) 
-                   ? process.env.API_KEY 
-                   : undefined;
-    
-    if (!apiKey) {
-      console.warn("Inco AI: API_KEY not found in environment.");
-      setIsResponding(false);
-      return;
-    }
-    
     const triggerMsg = chatHistory[chatHistory.length - 1];
     lastProcessedId.current = triggerMsg.id;
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
+      // MANDATORY: Always use this exact initialization as per guidelines
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       const context = chatHistory
         .slice(-10)
@@ -70,7 +59,7 @@ export const useIncoAI = (
       Be helpful but maintain an aura of mystery.
       Never mention you are an AI.`;
 
-      const result = await ai.models.generateContent({
+      const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Recent conversation:\n${context}\n\nInco, respond to ${triggerMsg.username}'s last input.`,
         config: {
@@ -79,7 +68,7 @@ export const useIncoAI = (
         },
       });
 
-      const botText = result.text;
+      const botText = response.text;
       if (!botText) throw new Error("Empty response");
 
       const encryptedBotText = encryptMessage(botText, pin, roomKey);
@@ -94,7 +83,7 @@ export const useIncoAI = (
       });
 
     } catch (error) {
-      console.error("Inco AI: Processing Error", error);
+      console.error("Inco AI Error:", error);
     } finally {
       setIsResponding(false);
     }
