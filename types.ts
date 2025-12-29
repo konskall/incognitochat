@@ -85,4 +85,5 @@ export interface Room {
   created_at: string;
   created_by: string;
   ai_enabled?: boolean;
+  ai_avatar_url?: string;
 }
