@@ -9,6 +9,7 @@ import emailjs from '@emailjs/browser';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
+import AiAvatarModal from './AiAvatarModal';
 import { WifiOff, Trash2, Home } from 'lucide-react';
 
 // Hooks
@@ -69,6 +70,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   // UI States
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showAiAvatarModal, setShowAiAvatarModal] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showParticipantsList, setShowParticipantsList] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -80,6 +82,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [isRoomReady, setIsRoomReady] = useState(false);
   const [roomCreatorId, setRoomCreatorId] = useState<string | null>(null);
   const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiAvatarUrl, setAiAvatarUrl] = useState('');
   
   // Theme State - Default to Dark Mode
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -169,8 +172,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       cancelRecording
   } = useAudioRecorder(handleRecordingComplete);
 
-  // 4. Inco AI Bot Hook (Host only)
-  const isBotResponding = useIncoAI(config.roomKey, config.pin, messages, config, aiEnabled);
+  // 4. Inco AI Bot Hook
+  const isBotResponding = useIncoAI(config.roomKey, config.pin, messages, config, aiEnabled, aiAvatarUrl);
 
   // Combine real typing users with bot typing status
   const combinedTypingUsers = isBotResponding ? [...typingUsers, 'inco'] : typingUsers;
@@ -321,6 +324,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         if (room) {
              setRoomCreatorId(room.created_by);
              setAiEnabled(!!room.ai_enabled);
+             setAiAvatarUrl(room.ai_avatar_url || '');
         } else {
              const { error: insertError } = await supabase
                 .from('rooms')
@@ -405,8 +409,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         table: 'rooms',
         filter: `room_key=eq.${config.roomKey}`
       }, (payload) => {
-        if (payload.new && payload.new.ai_enabled !== undefined) {
-          setAiEnabled(payload.new.ai_enabled);
+        if (payload.new) {
+            if (payload.new.ai_enabled !== undefined) setAiEnabled(payload.new.ai_enabled);
+            if (payload.new.ai_avatar_url !== undefined) setAiAvatarUrl(payload.new.ai_avatar_url || '');
         }
       })
       .subscribe();
@@ -629,6 +634,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         isGoogleUser={user ? !user.isAnonymous : false}
         aiEnabled={aiEnabled}
         onToggleAI={handleToggleAI}
+        onOpenAiAvatar={() => setShowAiAvatarModal(true)}
       />
 
       <main 
@@ -690,6 +696,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onToggleOff={handleEmailToggle} 
         emailAddress={emailAddress} 
         setEmailAddress={setEmailAddress} 
+      />
+
+      <AiAvatarModal
+        show={showAiAvatarModal}
+        onClose={() => setShowAiAvatarModal(false)}
+        currentAvatarUrl={aiAvatarUrl}
+        roomKey={config.roomKey}
+        onUpdate={(newUrl) => setAiAvatarUrl(newUrl)}
       />
     </div>
   );
