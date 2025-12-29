@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../services/supabase';
@@ -171,8 +170,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   } = useAudioRecorder(handleRecordingComplete);
 
   // 4. Inco AI Bot Hook (Host only)
-  const isOwner = user?.uid === roomCreatorId;
-  const isBotResponding = useIncoAI(config.roomKey, config.pin, isOwner, messages, config, aiEnabled);
+  const isBotResponding = useIncoAI(config.roomKey, config.pin, messages, config, aiEnabled);
 
   // Combine real typing users with bot typing status
   const combinedTypingUsers = isBotResponding ? [...typingUsers, 'inco'] : typingUsers;
@@ -563,6 +561,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   };
 
   const handleToggleAI = async () => {
+    const isOwner = user?.uid === roomCreatorId;
     if (!isOwner || !config.roomKey) return;
     const newState = !aiEnabled;
     try {
@@ -626,7 +625,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         toggleTheme={toggleTheme}
         setShowDeleteModal={setShowDeleteModal}
         onExit={handleExitChat}
-        isOwner={isOwner}
+        isOwner={user?.uid === roomCreatorId}
         isGoogleUser={user ? !user.isAnonymous : false}
         aiEnabled={aiEnabled}
         onToggleAI={handleToggleAI}
