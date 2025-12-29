@@ -25,12 +25,10 @@ export const useIncoAI = (
 
     const lastMsg = messages[messages.length - 1];
     
-    // Έλεγχοι εγκυρότητας trigger
+    // Έλεγχοι εγκυρότητας
     if (!lastMsg || !lastMsg.text || lastMsg.type === 'system') return;
     if (lastMsg.uid === INCO_BOT_UUID) return; 
     if (lastMsg.id === lastProcessedId.current) return;
-    
-    // Αν το bot δουλεύει ήδη, αγνόησε το νέο trigger
     if (isBusy.current) return;
 
     const lowerText = lastMsg.text.toLowerCase().trim();
@@ -39,15 +37,15 @@ export const useIncoAI = (
       messages.find(m => m.id === lastMsg.replyTo?.id)?.uid === INCO_BOT_UUID;
 
     if (mentionsInco || isReplyToBot) {
-      // Άμεσο κλείδωμα mutex
+      // Άμεσο κλείδωμα
       isBusy.current = true;
       lastProcessedId.current = lastMsg.id;
       
-      // Debounce για αποφυγή race conditions
+      // Μικρή καθυστέρηση για αποφυγή race conditions από το React Strict Mode
       const timer = setTimeout(() => {
         setIsResponding(true);
         handleBotResponse(messages, lastMsg);
-      }, 250);
+      }, 200);
 
       return () => clearTimeout(timer);
     }
@@ -71,8 +69,7 @@ export const useIncoAI = (
       - If user writes ENGLISH, you MUST respond ONLY in ENGLISH.
       
       PERSONALITY:
-      - Short natural answers (max 20 words).
-      - Focus on helping with questions.
+      - Short, direct natural answers (max 20 words).
       - Never say you are an AI.`;
 
       const response = await ai.models.generateContent({
@@ -106,36 +103,8 @@ export const useIncoAI = (
 
     } catch (error: any) {
       console.error("Inco AI Error:", error);
-      
-      // Έλεγχος αν το σφάλμα είναι λόγω Quota (429)
-      const errorStr = (error.message || "").toLowerCase();
-      if (errorStr.includes('429') || errorStr.includes('quota') || errorStr.includes('limit')) {
-        
-        // Έλεγχος αν έχουμε ήδη στείλει μήνυμα σφάλματος πρόσφατα για να μην σπαμάρουμε
-        const lastMsgIsQuota = messages.length > 0 && 
-                               messages[messages.length-1].uid === INCO_BOT_UUID && 
-                               messages[messages.length-1].text.includes('όριο');
-
-        if (!lastMsgIsQuota) {
-          try {
-            const quotaWarning = "Έφτασα το όριο των δωρεάν ερωτήσεων για σήμερα! Δοκίμασε ξανά σε λίγο. ✨";
-            const encryptedWarning = encryptMessage(quotaWarning, pin, roomKey);
-            
-            await supabase.from('messages').insert({
-              room_key: roomKey,
-              uid: INCO_BOT_UUID,
-              username: 'inco',
-              avatar_url: aiAvatarUrl || DEFAULT_BOT_AVATAR,
-              text: encryptedWarning,
-              type: 'text'
-            });
-          } catch (dbErr) {
-            console.error("Could not send quota warning to DB", dbErr);
-          }
-        }
-      }
+      // ΔΕΝ δημοσιεύουμε πλέον μήνυμα σφάλματος στο chat για να αποφύγουμε τα διπλά μηνύματα
     } finally {
-      // Απελευθέρωση mutex
       isBusy.current = false;
       setIsResponding(false);
     }
