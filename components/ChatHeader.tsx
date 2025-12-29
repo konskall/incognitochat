@@ -1,6 +1,5 @@
-
 import React, { useRef, useEffect } from 'react';
-import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut, Wand2 } from 'lucide-react';
+import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut, Wand2, Palette } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
 
 interface ChatHeaderProps {
@@ -25,9 +24,10 @@ interface ChatHeaderProps {
   setShowDeleteModal: (show: boolean) => void;
   onExit: () => void;
   isOwner: boolean;
-  isGoogleUser: boolean; // Νέο prop
+  isGoogleUser: boolean;
   aiEnabled: boolean;
   onToggleAI: () => void;
+  onOpenAiAvatar: () => void;
 }
 
 const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -54,12 +54,12 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   isOwner,
   isGoogleUser,
   aiEnabled,
-  onToggleAI
+  onToggleAI,
+  onOpenAiAvatar
 }) => {
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Close settings menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
         if (
@@ -106,7 +106,6 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
 
   return (
     <header className="glass-panel px-4 py-3 flex items-center justify-between z-10 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
-        {/* Room Info Section - Static Div */}
         <div className="flex items-center gap-3 overflow-hidden">
              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
                 {config.roomName.substring(0,2).toUpperCase()}
@@ -134,7 +133,6 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         </div>
 
         <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center relative">
-            {/* Εμφάνιση ραβδιού μόνο αν είναι Owner ΚΑΙ Google User */}
             {isOwner && isGoogleUser && (
                 <button
                     onClick={onToggleAI}
@@ -164,54 +162,33 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             <button
                 ref={settingsButtonRef}
                 onClick={() => setShowSettingsMenu(!showSettingsMenu)}
-                className="sm:hidden p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                title="Settings"
             >
                 <Settings size={20} />
             </button>
 
-            {canVibrate && (
-                <button 
-                    onClick={() => setVibrationEnabled(!vibrationEnabled)}
-                    className={`hidden sm:block p-2 rounded-lg transition ${vibrationEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100 dark:hover:bg-slate-100'}`}
-                    title={vibrationEnabled ? "Vibration Enabled" : "Enable Vibration"}
-                >
-                    {vibrationEnabled ? <Vibrate size={20} /> : <VibrateOff size={20} />}
-                </button>
-            )}
             <button 
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`hidden sm:block p-2 rounded-lg transition ${soundEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100 dark:hover:bg-slate-100'}`}
-                title={soundEnabled ? "Mute Sounds" : "Enable Sounds"}
+                onClick={onExit}
+                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
+                title="Exit Room"
             >
-                {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
-            </button>
-            <button 
-                onClick={toggleNotifications}
-                className={`hidden sm:block p-2 rounded-lg transition ${notificationsEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100 dark:hover:bg-slate-100'}`}
-                title={notificationsEnabled ? "Notifications Active" : "Enable Notifications"}
-            >
-                {notificationsEnabled ? <Bell size={20} /> : <BellOff size={20} />}
-            </button>
-            
-            <button 
-                onClick={() => setShowEmailModal(true)}
-                className={`hidden sm:block p-2 rounded-lg transition ${emailAlertsEnabled ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-100'}`}
-                title="Email Alerts"
-            >
-                <Mail size={20} />
-            </button>
-
-            <button 
-                onClick={toggleTheme}
-                className="hidden sm:block p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
-                title="Toggle Theme"
-            >
-                {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+                <LogOut size={20} />
             </button>
 
             {showSettingsMenu && (
                 <>
-                    <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5 sm:hidden" ref={settingsMenuRef}>
+                    <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5" ref={settingsMenuRef}>
+                        {isOwner && isGoogleUser && (
+                            <button 
+                                onClick={() => { onOpenAiAvatar(); setShowSettingsMenu(false); }}
+                                className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition"
+                            >
+                                <Palette size={18} />
+                                <span>Customize AI Look</span>
+                            </button>
+                        )}
+                        
                         {canVibrate && (
                              <button 
                                 onClick={() => { setVibrationEnabled(!vibrationEnabled); setShowSettingsMenu(false); }}
@@ -229,14 +206,14 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                             <span>Sound</span>
                         </button>
                         <button 
-                            onClick={toggleNotifications}
+                            onClick={() => { toggleNotifications(); setShowSettingsMenu(false); }}
                             className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${notificationsEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
                         >
                             {notificationsEnabled ? <Bell size={18} /> : <BellOff size={18} />}
                             <span>Notifications</span>
                         </button>
                         <button 
-                            onClick={toggleTheme}
+                            onClick={() => { toggleTheme(); setShowSettingsMenu(false); }}
                             className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition"
                         >
                             {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
@@ -268,21 +245,6 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                     </div>
                 </>
             )}
-
-            <button 
-                onClick={() => setShowDeleteModal(true)}
-                className="hidden sm:block p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
-                title="Delete Chat"
-            >
-                <Trash2 size={20} />
-            </button>
-            <button 
-                onClick={onExit}
-                className="p-2 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition"
-                title="Exit"
-            >
-                <LogOut size={20} />
-            </button>
         </div>
     </header>
   );
