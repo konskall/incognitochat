@@ -1,7 +1,10 @@
+
 import React, { useState } from 'react';
 import { X, RefreshCw, Upload, Link as LinkIcon, Save, Loader2, Wand2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { compressImage } from '../utils/helpers';
+
+const DEFAULT_BOT_AVATAR = 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1';
 
 interface AiAvatarModalProps {
   show: boolean;
@@ -12,7 +15,7 @@ interface AiAvatarModalProps {
 }
 
 const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAvatarUrl, roomKey, onUpdate }) => {
-  const [tempUrl, setTempUrl] = useState(currentAvatarUrl);
+  const [tempUrl, setTempUrl] = useState(currentAvatarUrl || DEFAULT_BOT_AVATAR);
   const [isSaving, setIsSaving] = useState(false);
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkValue, setLinkValue] = useState('');
@@ -65,7 +68,7 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-white/10 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-sm:p-4 max-w-sm w-full shadow-2xl border border-white/10 dark:border-slate-800 animate-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
             <Wand2 size={24} className="text-purple-500" /> Customize Inco
