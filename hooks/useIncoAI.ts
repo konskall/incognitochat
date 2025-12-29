@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../services/supabase';
@@ -34,28 +33,21 @@ export const useIncoAI = (
     
     /**
      * TRIGGER LOGIC
-     * We respond if the message contains "inco" or "!test"
+     * We respond if the message contains "inco" or "@inco"
      */
-    if (lowerText.includes('inco') || lowerText.includes('!test')) {
-      // CRITICAL: Set typing indicator immediately here for the build version
+    if (lowerText.includes('inco')) {
       setIsResponding(true);
       handleBotResponse(messages);
     }
   }, [messages, aiEnabled, isOwner, isResponding]);
 
   const handleBotResponse = async (chatHistory: Message[]) => {
-    let apiKey: string | undefined;
-    
-    try {
-      // Compatibility for different environments
-      apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
-    } catch (e) {
-      console.error("Inco AI: Env access error", e);
-    }
+    // Access the injected API key
+    const apiKey = process.env.API_KEY;
     
     if (!apiKey) {
-      console.error("Inco AI: API_KEY is missing!");
-      setIsResponding(false); // Reset if key is missing
+      console.error("Inco AI: API_KEY is missing from environment!");
+      setIsResponding(false);
       return;
     }
     
@@ -63,6 +55,7 @@ export const useIncoAI = (
     lastProcessedId.current = triggerMsg.id;
 
     try {
+      // Create a new GoogleGenAI instance right before making an API call to ensure it uses current key
       const ai = new GoogleGenAI({ apiKey });
       
       // Send last 10 messages for context
@@ -71,13 +64,14 @@ export const useIncoAI = (
         .map(m => `${m.username}: ${m.text}`)
         .join('\n');
 
+      // FIXED: Use 'config.roomName' as 'config.name' is not a property of ChatConfig
       const systemInstruction = `You are "inco", the mysterious and wise guardian of the chat room "${config.roomName}". 
       You are speaking with ${triggerMsg.username}. 
       Keep your response very short (under 20 words). 
       Be helpful but maintain an aura of mystery.
       Never mention you are an AI.`;
 
-      const result = await ai.models.generateContent({
+      const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Recent conversation:\n${context}\n\nInco, respond to ${triggerMsg.username}'s last input.`,
         config: {
@@ -86,7 +80,7 @@ export const useIncoAI = (
         },
       });
 
-      const botText = result.text;
+      const botText = response.text;
       if (!botText) throw new Error("Empty response");
 
       // Encrypt for the room
