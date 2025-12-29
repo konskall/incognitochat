@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
 import { supabase } from '../services/supabase';
@@ -38,17 +39,12 @@ export const useIncoAI = (
   }, [messages, aiEnabled, isResponding]);
 
   const handleBotResponse = async (chatHistory: Message[]) => {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      setIsResponding(false);
-      return;
-    }
-    
     const triggerMsg = chatHistory[chatHistory.length - 1];
     lastProcessedId.current = triggerMsg.id;
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
+      // Use process.env.API_KEY directly as per guidelines
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       const context = chatHistory
         .slice(-10)
