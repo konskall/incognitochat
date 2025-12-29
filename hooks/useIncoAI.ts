@@ -65,10 +65,10 @@ export const useIncoAI = (
         .join('\n');
 
       // FIXED: Use 'config.roomName' as 'config.name' is not a property of ChatConfig
-      const systemInstruction = `You are "inco", the mysterious and wise guardian of the chat room "${config.roomName}". 
+      const systemInstruction = `You are "inco", a helpful assistant on chat room "${config.roomName}". 
       You are speaking with ${triggerMsg.username}. 
-      Keep your response very short (under 20 words). 
-      Be helpful but maintain an aura of mystery.
+      Keep your responses short and direct (under 20 words). 
+      Be helpful and useful. Focus on helping with questions.
       Never mention you are an AI.`;
 
       const response = await ai.models.generateContent({
