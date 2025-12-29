@@ -12,7 +12,7 @@ import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
 import AiAvatarModal from './AiAvatarModal';
 import UserProfileModal from './UserProfileModal';
-import { WifiOff, Trash2, Home } from 'lucide-react';
+import { WifiOff, Trash2, Home, RefreshCcw } from 'lucide-react';
 
 // Hooks
 import { useChatMessages } from '../hooks/useChatMessages';
@@ -36,7 +36,7 @@ const EMAILJS_PUBLIC_KEY: string = "cSDU4HLqgylnmX957";
 const NOTIFICATION_COOLDOWN_MINUTES = 30;
 
 // -- Custom Room Deleted Toast (Persistent) --
-const RoomDeletedToast: React.FC<{ onExit: () => void }> = ({ onExit }) => {
+const RoomDeletedToast: React.FC<{ onExit: () => void, onRecreate: () => void }> = ({ onExit, onRecreate }) => {
     return createPortal(
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-500">
             <div className="relative bg-slate-900/90 dark:bg-slate-900/90 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center overflow-hidden ring-1 ring-white/10">
@@ -47,19 +47,29 @@ const RoomDeletedToast: React.FC<{ onExit: () => void }> = ({ onExit }) => {
                     </div>
                     
                     <div className="space-y-3">
-                        <h2 className="text-2xl font-bold text-white tracking-tight">Το δωμάτιο διαγράφηκε</h2>
+                        <h2 className="text-2xl font-bold text-white tracking-tight">The room was deleted</h2>
                         <p className="text-slate-300 text-sm font-medium leading-relaxed">
-                            Αυτό το δωμάτιο δεν υπάρχει πλέον καθώς διαγράφηκε από τον δημιουργό του.
+                            This room no longer exists. You can recreate it now or return to home.
                         </p>
                     </div>
 
-                    <button 
-                        onClick={onExit}
-                        className="w-full py-3.5 px-6 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl shadow-lg shadow-red-900/20 transition-all transform active:scale-95 flex items-center justify-center gap-2"
-                    >
-                        <Home size={18} />
-                        Επιστροφή στην Αρχική
-                    </button>
+                    <div className="flex flex-col gap-3 w-full">
+                        <button 
+                            onClick={onRecreate}
+                            className="w-full py-3.5 px-6 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-900/20 transition-all transform active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            <RefreshCcw size={18} />
+                            Recreate Room
+                        </button>
+
+                        <button 
+                            onClick={onExit}
+                            className="w-full py-3.5 px-6 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all transform active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            <Home size={18} />
+                            Return to Home
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>,
@@ -325,53 +335,52 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   }, [config.roomKey]);
 
-  useEffect(() => {
-    const initRoom = async () => {
-      if (!user || !config.roomKey) return;
-      try {
-        const { data: room } = await supabase
-            .from('rooms')
-            .select('*')
-            .eq('room_key', config.roomKey)
-            .maybeSingle();
+  const initRoom = useCallback(async () => {
+    if (!user || !config.roomKey) return;
+    try {
+      const { data: room } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('room_key', config.roomKey)
+          .maybeSingle();
 
-        if (room) {
-             setRoomCreatorId(room.created_by);
-             setAiEnabled(!!room.ai_enabled);
-             setAiAvatarUrl(room.ai_avatar_url || '');
-             setIsRoomReady(true);
-        } else {
-             // Αν δεν υπάρχει το δωμάτιο, ελέγχουμε αν μόλις μπήκαμε ή αν διαγράφηκε ενώ ήμασταν μέσα
-             const sessionKey = `joined_${config.roomKey}`;
-             if (sessionStorage.getItem(sessionKey)) {
-                 // Ήμασταν ήδη μέσα, άρα διαγράφηκε
-                 setRoomDeleted(true);
-             } else {
-                 // Νέα προσπάθεια εισόδου, το δημιουργούμε
-                 const { error: insertError } = await supabase
-                    .from('rooms')
-                    .insert({
-                        room_key: config.roomKey,
-                        room_name: config.roomName,
-                        pin: config.pin,
-                        created_by: user.uid,
-                        ai_enabled: false
-                    });
-                 if (!insertError) {
-                     setRoomCreatorId(user.uid);
-                     await sendMessage(`Room created by ${config.username}`, config, null, null, null, 'system');
-                 }
-                 setIsRoomReady(true);
-             }
-        }
-      } catch (error) {
-        console.error("Error initializing room:", error);
-        setIsRoomReady(true); 
+      if (room) {
+           setRoomCreatorId(room.created_by);
+           setAiEnabled(!!room.ai_enabled);
+           setAiAvatarUrl(room.ai_avatar_url || '');
+           setIsRoomReady(true);
+           setRoomDeleted(false); // Reset in case we are recreating
+      } else {
+           const sessionKey = `joined_${config.roomKey}`;
+           if (sessionStorage.getItem(sessionKey)) {
+               setRoomDeleted(true);
+           } else {
+               const { error: insertError } = await supabase
+                  .from('rooms')
+                  .insert({
+                      room_key: config.roomKey,
+                      room_name: config.roomName,
+                      pin: config.pin,
+                      created_by: user.uid,
+                      ai_enabled: false
+                  });
+               if (!insertError) {
+                   setRoomCreatorId(user.uid);
+                   await sendMessage(`Room created by ${config.username}`, config, null, null, null, 'system');
+               }
+               setIsRoomReady(true);
+               setRoomDeleted(false);
+           }
       }
-    };
+    } catch (error) {
+      console.error("Error initializing room:", error);
+      setIsRoomReady(true); 
+    }
+  }, [user, config, sendMessage]);
+
+  useEffect(() => {
     initRoom();
 
-    // Listener για mobile background sync
     const handleVisibility = () => {
         if (document.visibilityState === 'visible') {
             checkRoomStatus();
@@ -384,7 +393,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         document.removeEventListener('visibilitychange', handleVisibility);
         window.removeEventListener('focus', checkRoomStatus);
     };
-  }, [user, config.roomKey, config.roomName, config.pin, checkRoomStatus]);
+  }, [user, config.roomKey, config.roomName, config.pin, checkRoomStatus, initRoom]);
+
+  const handleRecreate = () => {
+      // Clear the session flag so initRoom knows this is an intentional new creation
+      sessionStorage.removeItem(`joined_${config.roomKey}`);
+      // Re-run initialization
+      initRoom();
+  };
 
   useEffect(() => {
       if (isRoomReady && user && config.roomKey && !roomDeleted) {
@@ -657,7 +673,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   return (
     <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
       
-      {roomDeleted && <RoomDeletedToast onExit={onExit} />}
+      {roomDeleted && <RoomDeletedToast onExit={handleExitChat} onRecreate={handleRecreate} />}
 
       {isOffline && (
         <div className="absolute top-20 left-0 right-0 flex justify-center z-40 pointer-events-none animate-in slide-in-from-top-4 fade-in duration-300">
