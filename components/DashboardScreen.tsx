@@ -344,8 +344,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
     longPressTimer.current = setTimeout(() => {
         setIsLongPressActive(true);
-        if ('vibrate' in navigator) navigator.vibrate(50); // Haptic feedback
-    }, 500); // 500ms for long press
+        if ('vibrate' in navigator) navigator.vibrate(60); // Stronger haptic for feedback
+    }, 600); // 600ms for long press to ensure it doesn't conflict with scroll
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -357,7 +357,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             Math.pow(touch.clientX - touchStartPos.current.x, 2) + 
             Math.pow(touch.clientY - touchStartPos.current.y, 2)
         );
-        if (dist > 15) { // Threshold for scroll vs hold
+        // Strict threshold: If moved more than 8 pixels, assume it's a scroll attempt
+        if (dist > 8) { 
             if (longPressTimer.current) clearTimeout(longPressTimer.current);
         }
         return;
@@ -522,7 +523,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 {rooms.map((room, index) => (
                                     <div 
                                         key={room.id} 
-                                        draggable
+                                        draggable={!isLongPressActive} // On mobile, disable standard drag until long press
                                         onDragStart={() => onDragStart(index)}
                                         onDragOver={(e) => onDragOver(e, index)}
                                         onDragEnd={onDragEnd}
@@ -530,7 +531,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         data-index={index}
                                         className={`room-card group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border transition-all duration-300 flex flex-col justify-between relative overflow-hidden cursor-grab active:cursor-grabbing select-none
                                             ${isLongPressActive && draggedRoomIndex === index 
-                                                ? 'touch-none opacity-100 scale-[1.02] border-blue-500 z-50 shadow-2xl brightness-125 ring-2 ring-blue-500/50' 
+                                                ? 'touch-none opacity-100 scale-[1.04] border-blue-500 z-50 shadow-2xl brightness-150 ring-2 ring-blue-500/50' 
                                                 : 'border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800'}`}
                                     >
                                         <div className={`mb-4 relative z-10 ${isLongPressActive && draggedRoomIndex === index ? 'pointer-events-none' : ''}`}>
