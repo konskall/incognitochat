@@ -357,14 +357,14 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             Math.pow(touch.clientX - touchStartPos.current.x, 2) + 
             Math.pow(touch.clientY - touchStartPos.current.y, 2)
         );
-        if (dist > 10) {
+        if (dist > 15) { // Threshold for scroll vs hold
             if (longPressTimer.current) clearTimeout(longPressTimer.current);
         }
         return;
     }
 
     // In drag mode, prevent scrolling and perform reordering
-    e.preventDefault(); 
+    if (e.cancelable) e.preventDefault(); 
     
     const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
     if (!targetElement) return;
@@ -528,9 +528,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         onDragEnd={onDragEnd}
                                         onTouchStart={(e) => handleTouchStart(e, index)}
                                         data-index={index}
-                                        className={`room-card group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 transition-all duration-300 flex flex-col justify-between relative overflow-hidden cursor-grab active:cursor-grabbing select-none ${isLongPressActive && draggedRoomIndex === index ? 'touch-none opacity-40 scale-95 border-blue-500 z-50' : ''}`}
+                                        className={`room-card group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border transition-all duration-300 flex flex-col justify-between relative overflow-hidden cursor-grab active:cursor-grabbing select-none
+                                            ${isLongPressActive && draggedRoomIndex === index 
+                                                ? 'touch-none opacity-100 scale-[1.02] border-blue-500 z-50 shadow-2xl brightness-125 ring-2 ring-blue-500/50' 
+                                                : 'border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800'}`}
                                     >
-                                        <div className="mb-4 relative z-10 pointer-events-none">
+                                        <div className={`mb-4 relative z-10 ${isLongPressActive && draggedRoomIndex === index ? 'pointer-events-none' : ''}`}>
                                             <div className="flex justify-between items-start mb-2">
                                                 <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 truncate pr-2 flex items-center gap-2">
                                                     <GripVertical size={16} className="text-slate-300 dark:text-slate-600 shrink-0" />
@@ -542,14 +545,14 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                                         </span>
                                                     )}
                                                 </h4>
-                                                <button onClick={(e) => { e.stopPropagation(); onRequestDeleteRoom(room.room_name, room.room_key, room.created_by); }} className="pointer-events-auto text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-0 group-hover:opacity-100" title={room.created_by === user.uid ? "Delete Room" : "Remove from History"}>
+                                                <button onClick={(e) => { e.stopPropagation(); onRequestDeleteRoom(room.room_name, room.room_key, room.created_by); }} className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-0 group-hover:opacity-100" title={room.created_by === user.uid ? "Delete Room" : "Remove from History"}>
                                                     {room.created_by === user.uid ? <Trash2 size={16} /> : <X size={16} />}
                                                 </button>
                                             </div>
                                             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                                                 <div 
                                                     onClick={(e) => { e.stopPropagation(); togglePinVisibility(e, room.room_key); }}
-                                                    className="pointer-events-auto flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono border border-slate-200 dark:border-slate-700 hover:border-blue-300 transition-colors cursor-pointer select-none"
+                                                    className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono border border-slate-200 dark:border-slate-700 hover:border-blue-300 transition-colors cursor-pointer select-none"
                                                     title="Click to reveal PIN"
                                                 >
                                                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">PIN:</span>
