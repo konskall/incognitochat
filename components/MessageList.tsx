@@ -15,6 +15,7 @@ interface MessageListProps {
   onDelete: (msgId: string) => void; 
   onReact: (msg: Message, emoji: string) => void;
   onReply: (msg: Message) => void;
+  onUserClick?: (uid: string, username: string, avatar: string) => void;
 }
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
@@ -160,8 +161,8 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
     );
 };
 
-const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete, onReact, onReply, onPreview }: { 
-    msg: Message; isMe: boolean; currentUid: string; onEdit: (msg: Message) => void; onRequestDelete: (msgId: string) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; onPreview: (url: string, name: string, type: string) => void;
+const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete, onReact, onReply, onPreview, onUserClick }: { 
+    msg: Message; isMe: boolean; currentUid: string; onEdit: (msg: Message) => void; onRequestDelete: (msgId: string) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; onPreview: (url: string, name: string, type: string) => void; onUserClick?: (uid: string, username: string, avatar: string) => void;
 }) => {
   const [showReactions, setShowReactions] = useState(false);
   const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
@@ -233,7 +234,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
     }
     if (type.startsWith('audio/')) return <div className="mt-2 mb-1 w-full max-w-full"><div className={`rounded-xl p-1 ${isMe ? 'bg-white/10 border border-white/20' : 'bg-slate-100 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600'}`}><AudioPlayer src={url} isMe={isMe} /></div></div>;
     return (
-        <a href={url} download={name} className={`flex items-center gap-3 p-3 mt-2 rounded-xl border transition-all group ${isMe ? 'bg-white/10 border-white/20 hover:bg-white/20 text-white' : 'bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 text-slate-700 dark:text-slate-200'}`}>
+        <a href={url} download={name} className={`flex items-center gap-3 p-3 mt-2 rounded-xl border transition-all group ${isMe ? 'bg-white/10 border border-white/20 hover:bg-white/20 text-white' : 'bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 text-slate-700 dark:text-slate-200'}`}>
             <div className={`p-2.5 rounded-lg flex-shrink-0 ${isMe ? 'bg-white/20 text-blue-100' : 'bg-blue-100 dark:bg-slate-600 text-blue-600 dark:text-blue-300'}`}>{getFileIcon(type)}</div>
             <div className="flex flex-col flex-1 min-w-0"><span className="text-sm font-semibold truncate leading-tight">{name}</span><span className={`text-[10px] uppercase tracking-wider mt-0.5 ${isMe ? 'text-blue-100/70' : 'text-slate-400'}`}>{(size / 1024).toFixed(1)} KB</span></div>
             <div className="p-1.5 rounded-full opacity-70 group-hover:opacity-100"><Download size={18} /></div>
@@ -245,7 +246,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
       if (!msg.location) return null;
       const { lat, lng } = msg.location;
       return (
-          <a href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noopener noreferrer" className={`flex flex-col gap-2 p-1.5 rounded-xl border mt-2 transition-all hover:shadow-md w-full sm:w-auto max-w-full ${isMe ? 'bg-white/10 border-white/20 hover:bg-white/20' : 'bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-700'}`}>
+          <a href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noopener noreferrer" className={`flex flex-col gap-2 p-1.5 rounded-xl border mt-2 transition-all hover:shadow-md w-full sm:w-auto max-w-full ${isMe ? 'bg-white/10 border border-white/20 hover:bg-white/20' : 'bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-700'}`}>
               <div className="relative w-full sm:w-[240px] h-[100px] bg-slate-200 dark:bg-slate-700 rounded-lg overflow-hidden flex items-center justify-center"><div className="absolute inset-0 opacity-20" style={{backgroundImage: 'radial-gradient(circle, #000 1px, transparent 1px)', backgroundSize: '10px 10px'}}></div><div className="z-10 bg-red-500 text-white p-2 rounded-full shadow-lg transform -translate-y-2"><MapPin size={24} fill="currentColor" /></div></div>
               <div className="flex items-center justify-between px-1 pb-1"><div><span className={`text-xs font-bold ${isMe ? 'text-white' : 'text-slate-700 dark:text-slate-200'}`}>Current Location</span></div><ExternalLink size={14} className={isMe ? 'text-white/70' : 'text-slate-400'} /></div>
           </a>
@@ -255,7 +256,12 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
   return (
     <div id={`msg-${msg.id}`} className={`flex w-full mb-4 animate-in slide-in-from-bottom-2 duration-300 group ${isMe ? 'justify-end' : 'justify-start'}`}>
       <div className={`flex max-w-[90%] md:max-w-[70%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 relative`}>
-        <img src={msg.avatarURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMe ? '3b82f6' : '64748b'}&color=fff&rounded=true`} alt={msg.username} className="w-8 h-8 rounded-full shadow-sm object-cover border-2 border-white dark:border-slate-700 select-none bg-slate-200 dark:bg-slate-700" />
+        <img 
+          src={msg.avatarURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMe ? '3b82f6' : '64748b'}&color=fff&rounded=true`} 
+          alt={msg.username} 
+          onClick={() => !isBot && onUserClick?.(msg.uid, msg.username, msg.avatarURL)}
+          className={`w-8 h-8 rounded-full shadow-sm object-cover border-2 border-white dark:border-slate-700 select-none bg-slate-200 dark:bg-slate-700 ${!isBot ? 'cursor-pointer hover:scale-110 transition-transform active:scale-95' : ''}`} 
+        />
         <div className={`flex flex-col gap-1 items-center self-end mb-1 ${isMe ? 'mr-0.5' : 'ml-0.5'}`}>
              <button onClick={() => onReply(msg)} className={`p-1 text-slate-400 hover:text-blue-500 rounded-full transition-all ${showReactions ? 'opacity-0' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'}`} title="Reply"><Reply size={16} /></button>
              <div className="relative">
@@ -265,7 +271,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
              {isMe && <><button onClick={() => onEdit(msg)} className="p-1 text-slate-400 hover:text-blue-500 rounded-full transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100" title="Edit"><Edit2 size={16} /></button><button onClick={() => onRequestDelete(msg.id)} className="p-1 text-slate-400 hover:text-red-500 rounded-full transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100" title="Delete"><Trash2 size={16} /></button></>}
         </div>
         <div className={`chat-bubble relative px-4 py-2.5 rounded-2xl shadow-sm text-sm md:text-base min-w-0 transition-all ${isMe ? 'bg-blue-600 text-white rounded-br-none shadow-blue-500/20' : isBot ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-900 dark:text-indigo-100 rounded-bl-none shadow-indigo-500/10 border border-indigo-200 dark:border-indigo-800 ring-1 ring-indigo-400/20' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-bl-none shadow-slate-200 dark:shadow-none border border-slate-100 dark:border-slate-700'}`}>
-                {!isMe && <p className="text-[10px] font-bold text-slate-400 mb-0.5 tracking-wide select-none flex items-center gap-1">{msg.username} {isBot && <Wand2 size={10} className="text-indigo-400 animate-pulse" />}</p>}
+                {!isMe && <p className={`text-[10px] font-bold text-slate-400 mb-0.5 tracking-wide select-none flex items-center gap-1 ${!isBot ? 'cursor-pointer hover:text-blue-500 transition-colors' : ''}`} onClick={() => !isBot && onUserClick?.(msg.uid, msg.username, msg.avatarURL)}>{msg.username} {isBot && <Wand2 size={10} className="text-indigo-400 animate-pulse" />}</p>}
                 {msg.replyTo && <div onClick={() => {const el = document.getElementById(`msg-${msg.replyTo!.id}`); if(el) el.scrollIntoView({behavior:'smooth',block:'center'});}} className={`mb-2 p-2 rounded cursor-pointer opacity-90 hover:opacity-100 transition border-l-[3px] ${isMe ? 'bg-black/10 border-white/40' : 'bg-slate-100 dark:bg-slate-700 border-blue-400'}`}><span className={`text-xs font-bold block mb-0.5 ${isMe ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'}`}>{msg.replyTo.username}</span><p className="text-xs truncate max-w-[200px] opacity-80">{msg.replyTo.isAttachment ? '📎 Attachment' : msg.replyTo.text}</p></div>}
                 {renderAttachment()}
                 {renderLocation()}
@@ -278,7 +284,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
   );
 });
 
-const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onUserClick }) => {
   const [previewMedia, setPreviewMedia] = useState<{url: string; name: string; type: string} | null>(null);
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
   const handleMediaPreview = useCallback((url: string, name: string, type: string) => setPreviewMedia({ url, name, type }), []);
@@ -287,7 +293,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
         {previewMedia && <MediaPreviewModal src={previewMedia.url} alt={previewMedia.name} type={previewMedia.type} onClose={() => setPreviewMedia(null)} />}
         {deletingMsgId && <DeleteToast onConfirm={() => { onDelete(deletingMsgId); setDeletingMsgId(null); }} onCancel={() => setDeletingMsgId(null)} />}
         <div className="flex flex-col justify-end min-h-full pb-2">
-        {messages.length === 0 ? <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60"><p>No messages yet.</p><p className="text-xs">Say hello! 👋</p></div> : messages.map((msg) => (<MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} onEdit={onEdit} onRequestDelete={(id) => setDeletingMsgId(id)} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} />))}
+        {messages.length === 0 ? <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60"><p>No messages yet.</p><p className="text-xs">Say hello! 👋</p></div> : messages.map((msg) => (<MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} onEdit={onEdit} onRequestDelete={(id) => setDeletingMsgId(id)} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} />))}
         </div>
     </>
   );
