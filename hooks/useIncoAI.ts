@@ -25,10 +25,12 @@ export const useIncoAI = (
 
     const lastMsg = messages[messages.length - 1];
     
-    // Έλεγχοι εγκυρότητας
+    // Έλεγχοι εγκυρότητας trigger
     if (!lastMsg || !lastMsg.text || lastMsg.type === 'system') return;
     if (lastMsg.uid === INCO_BOT_UUID) return; 
     if (lastMsg.id === lastProcessedId.current) return;
+    
+    // Αν το bot δουλεύει ήδη, αγνόησε το νέο trigger
     if (isBusy.current) return;
 
     const lowerText = lastMsg.text.toLowerCase().trim();
@@ -37,15 +39,15 @@ export const useIncoAI = (
       messages.find(m => m.id === lastMsg.replyTo?.id)?.uid === INCO_BOT_UUID;
 
     if (mentionsInco || isReplyToBot) {
-      // Άμεσο κλείδωμα
+      // Άμεσο κλείδωμα mutex
       isBusy.current = true;
       lastProcessedId.current = lastMsg.id;
       
-      // Μικρή καθυστέρηση για αποφυγή race conditions από το React Strict Mode
+      // Debounce για αποφυγή race conditions
       const timer = setTimeout(() => {
         setIsResponding(true);
         handleBotResponse(messages, lastMsg);
-      }, 200);
+      }, 250);
 
       return () => clearTimeout(timer);
     }
@@ -61,7 +63,7 @@ export const useIncoAI = (
         .map(m => `${m.username}: ${m.text.substring(0, 300)}`)
         .join('\n');
 
-      const systemInstruction = `You are "inco", a friendly assistant in "${config.roomName}". 
+      const systemInstruction = `You are "inco", a helpful chat room assistant in "${config.roomName}". 
       User "${triggerMsg.username}" is talking to you.
       
       LANG_RULES:
@@ -69,7 +71,8 @@ export const useIncoAI = (
       - If user writes ENGLISH, you MUST respond ONLY in ENGLISH.
       
       PERSONALITY:
-      - Short natural answers (max 15 words).
+      - Short natural answers (max 20 words).
+      - Focus on helping with questions.
       - Never say you are an AI.`;
 
       const response = await ai.models.generateContent({
@@ -103,8 +106,36 @@ export const useIncoAI = (
 
     } catch (error: any) {
       console.error("Inco AI Error:", error);
-      // ΔΕΝ δημοσιεύουμε πλέον μήνυμα σφάλματος στο chat για να αποφύγουμε τα διπλά μηνύματα
+      
+      // Έλεγχος αν το σφάλμα είναι λόγω Quota (429)
+      const errorStr = (error.message || "").toLowerCase();
+      if (errorStr.includes('429') || errorStr.includes('quota') || errorStr.includes('limit')) {
+        
+        // Έλεγχος αν έχουμε ήδη στείλει μήνυμα σφάλματος πρόσφατα για να μην σπαμάρουμε
+        const lastMsgIsQuota = messages.length > 0 && 
+                               messages[messages.length-1].uid === INCO_BOT_UUID && 
+                               messages[messages.length-1].text.includes('όριο');
+
+        if (!lastMsgIsQuota) {
+          try {
+            const quotaWarning = "Έφτασα το όριο των δωρεάν ερωτήσεων για σήμερα! Δοκίμασε ξανά σε λίγο. ✨";
+            const encryptedWarning = encryptMessage(quotaWarning, pin, roomKey);
+            
+            await supabase.from('messages').insert({
+              room_key: roomKey,
+              uid: INCO_BOT_UUID,
+              username: 'inco',
+              avatar_url: aiAvatarUrl || DEFAULT_BOT_AVATAR,
+              text: encryptedWarning,
+              type: 'text'
+            });
+          } catch (dbErr) {
+            console.error("Could not send quota warning to DB", dbErr);
+          }
+        }
+      }
     } finally {
+      // Απελευθέρωση mutex
       isBusy.current = false;
       setIsResponding(false);
     }
