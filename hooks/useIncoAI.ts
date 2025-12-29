@@ -5,13 +5,15 @@ import { Message, ChatConfig } from '../types';
 import { encryptMessage } from '../utils/helpers';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
+const DEFAULT_BOT_AVATAR = 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1';
 
 export const useIncoAI = (
   roomKey: string,
   pin: string,
   messages: Message[],
   config: ChatConfig,
-  aiEnabled: boolean
+  aiEnabled: boolean,
+  aiAvatarUrl?: string
 ) => {
   const lastProcessedId = useRef<string | null>(null);
   const [isResponding, setIsResponding] = useState(false);
@@ -89,7 +91,7 @@ export const useIncoAI = (
         room_key: roomKey,
         uid: INCO_BOT_UUID,
         username: 'inco',
-        avatar_url: 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1',
+        avatar_url: aiAvatarUrl || DEFAULT_BOT_AVATAR,
         text: encryptedBotText,
         type: 'text',
         reply_to: {
@@ -103,7 +105,6 @@ export const useIncoAI = (
     } catch (error: any) {
       console.error("Inco AI Error:", error);
 
-      // ΕΛΕΓΧΟΣ ΓΙΑ RATE LIMIT / QUOTA EXCEEDED
       if (error.message?.includes('429') || error.message?.includes('quota') || error.message?.includes('503')) {
         try {
           const limitMessage = "I've reached my daily limit of thoughts. I need a short rest to recharge my mystery... Try again in a while.";
@@ -113,7 +114,7 @@ export const useIncoAI = (
             room_key: roomKey,
             uid: INCO_BOT_UUID,
             username: 'inco',
-            avatar_url: 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1',
+            avatar_url: aiAvatarUrl || DEFAULT_BOT_AVATAR,
             text: encryptedLimitText,
             type: 'text'
           });
