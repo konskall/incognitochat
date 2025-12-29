@@ -39,7 +39,7 @@ const RoomDeleteToast: React.FC<{
                 </div>
                 <div className="hidden sm:block h-8 w-px bg-white/10"></div>
                 <div className="flex gap-2 w-full sm:w-auto">
-                    <button onClick={onCancel} disabled={isDeleting} className="flex-1 sm:flex-none px-3 py-1.5 text-xs font-medium bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors text-center border border-white/5">Cancel</button>
+                    <button onClick={onCancel} className="flex-1 sm:flex-none px-3 py-1.5 text-xs font-medium bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors text-center border border-white/5">Cancel</button>
                     <button onClick={onConfirm} disabled={isDeleting} className="flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center justify-center gap-1.5">
                         {isDeleting ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14} />}
                         <span>{isOwner ? 'Delete' : 'Remove'}</span>
@@ -74,7 +74,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   // New States for PIN and Drag
   const [revealedPins, setRevealedPins] = useState<Set<string>>(new Set());
   const [draggedRoomIndex, setDraggedRoomIndex] = useState<number | null>(null);
-  const roomRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
     const initData = async () => {
