@@ -49,11 +49,10 @@ export const useIncoAI = (
     try {
       const ai = new GoogleGenAI({ apiKey });
       
-      // Περιορισμός του context στα τελευταία 10 μηνύματα για εξοικονόμηση tokens
       const context = chatHistory
         .slice(-10)
         .filter(m => m.type !== 'system' && m.text)
-        .map(m => `${m.username}: ${m.text.substring(0, 300)}`) // Κόβουμε πολύ μεγάλα μηνύματα
+        .map(m => `${m.username}: ${m.text.substring(0, 300)}`)
         .join('\n');
 
       const systemInstruction = `You are "inco", a helpful assistant in the encrypted chat room "${config.roomName}". 
@@ -65,7 +64,6 @@ export const useIncoAI = (
       - Never mention you are an AI.
       - Language: Respond in the same language as the user.`;
 
-      // Ρυθμίσεις για να μην κόβεται η απάντηση από τα φίλτρα ασφαλείας της Google
       const safetySettings = [
         { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
         { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
@@ -78,7 +76,7 @@ export const useIncoAI = (
         contents: `Previous messages:\n${context}\n\nRespond to: ${triggerMsg.username}`,
         config: {
           systemInstruction,
-          temperature: 0.7, // Ελαφρώς χαμηλότερο για πιο σταθερές απαντήσεις
+          temperature: 0.7,
           safetySettings,
         },
       });
@@ -104,11 +102,25 @@ export const useIncoAI = (
       });
 
     } catch (error: any) {
-      // Αν έχουμε Rate Limit (429), περιμένουμε λίγο πριν το επόμενο
-      if (error.message?.includes('429')) {
-        console.error("Inco AI: Rate limit exceeded. Try again in a few seconds.");
-      } else {
-        console.error("Inco AI Error:", error);
+      console.error("Inco AI Error:", error);
+
+      // ΕΛΕΓΧΟΣ ΓΙΑ RATE LIMIT / QUOTA EXCEEDED
+      if (error.message?.includes('429') || error.message?.includes('quota') || error.message?.includes('503')) {
+        try {
+          const limitMessage = "I've reached my daily limit of thoughts. I need a short rest to recharge my mystery... Try again in a while.";
+          const encryptedLimitText = encryptMessage(limitMessage, pin, roomKey);
+
+          await supabase.from('messages').insert({
+            room_key: roomKey,
+            uid: INCO_BOT_UUID,
+            username: 'inco',
+            avatar_url: 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1',
+            text: encryptedLimitText,
+            type: 'text'
+          });
+        } catch (dbError) {
+          console.error("Failed to send limit message to DB", dbError);
+        }
       }
     } finally {
       setIsResponding(false);
