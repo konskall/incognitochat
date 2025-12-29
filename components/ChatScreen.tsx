@@ -47,9 +47,9 @@ const RoomDeletedToast: React.FC<{ onExit: () => void }> = ({ onExit }) => {
                     </div>
                     
                     <div className="space-y-3">
-                        <h2 className="text-2xl font-bold text-white tracking-tight">Room Dissolved</h2>
+                        <h2 className="text-2xl font-bold text-white tracking-tight">Το δωμάτιο διαγράφηκε</h2>
                         <p className="text-slate-300 text-sm font-medium leading-relaxed">
-                            This chat room has been permanently deleted by the host.
+                            Αυτό το δωμάτιο δεν υπάρχει πλέον καθώς διαγράφηκε από τον δημιουργό του.
                         </p>
                     </div>
 
@@ -58,7 +58,7 @@ const RoomDeletedToast: React.FC<{ onExit: () => void }> = ({ onExit }) => {
                         className="w-full py-3.5 px-6 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl shadow-lg shadow-red-900/20 transition-all transform active:scale-95 flex items-center justify-center gap-2"
                     >
                         <Home size={18} />
-                        Return to Home
+                        Επιστροφή στην Αρχική
                     </button>
                 </div>
             </div>
@@ -122,7 +122,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   // --- CUSTOM HOOKS INTEGRATION ---
   
-  // 1. Message Handling
   const handleNewMessageReceived = useCallback(async (msg: Message) => {
     if (msg.uid !== user?.uid && msg.type !== 'system') {
         if (soundEnabled) {
@@ -153,10 +152,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     uploadFile 
   } = useChatMessages(config.roomKey, config.pin, user?.uid, handleNewMessageReceived);
 
-  // 2. Presence Handling
   const { participants, typingUsers, setTyping } = useRoomPresence(config.roomKey, user, config);
 
-  // 3. Audio Recorder Handling
   const handleRecordingComplete = async (blob: Blob, mimeType: string) => {
       try {
            const ext = mimeType.includes('mp4') || mimeType.includes('aac') ? 'mp4' : 'webm';
@@ -179,15 +176,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       cancelRecording
   } = useAudioRecorder(handleRecordingComplete);
 
-  // 4. Inco AI Bot Hook
   const isBotResponding = useIncoAI(config.roomKey, config.pin, messages, config, aiEnabled, aiAvatarUrl);
 
-  // Combine real typing users with bot typing status
   const combinedTypingUsers = isBotResponding ? [...typingUsers, 'inco'] : typingUsers;
 
   // --- SIDE EFFECTS ---
 
-  // Theme effect
   useEffect(() => {
     const root = document.documentElement;
     const darkColor = '#020617'; 
@@ -318,6 +312,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     };
   }, []);
 
+  const checkRoomStatus = useCallback(async () => {
+    if (!config.roomKey) return;
+    const { data, error } = await supabase
+        .from('rooms')
+        .select('room_key')
+        .eq('room_key', config.roomKey)
+        .maybeSingle();
+    
+    if (!data || error) {
+        setRoomDeleted(true);
+    }
+  }, [config.roomKey]);
+
   useEffect(() => {
     const initRoom = async () => {
       if (!user || !config.roomKey) return;
@@ -332,32 +339,55 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
              setRoomCreatorId(room.created_by);
              setAiEnabled(!!room.ai_enabled);
              setAiAvatarUrl(room.ai_avatar_url || '');
+             setIsRoomReady(true);
         } else {
-             const { error: insertError } = await supabase
-                .from('rooms')
-                .insert({
-                    room_key: config.roomKey,
-                    room_name: config.roomName,
-                    pin: config.pin,
-                    created_by: user.uid,
-                    ai_enabled: false
-                });
-             if (!insertError) {
-                 setRoomCreatorId(user.uid);
-                 await sendMessage(`Room created by ${config.username}`, config, null, null, null, 'system');
+             // Αν δεν υπάρχει το δωμάτιο, ελέγχουμε αν μόλις μπήκαμε ή αν διαγράφηκε ενώ ήμασταν μέσα
+             const sessionKey = `joined_${config.roomKey}`;
+             if (sessionStorage.getItem(sessionKey)) {
+                 // Ήμασταν ήδη μέσα, άρα διαγράφηκε
+                 setRoomDeleted(true);
+             } else {
+                 // Νέα προσπάθεια εισόδου, το δημιουργούμε
+                 const { error: insertError } = await supabase
+                    .from('rooms')
+                    .insert({
+                        room_key: config.roomKey,
+                        room_name: config.roomName,
+                        pin: config.pin,
+                        created_by: user.uid,
+                        ai_enabled: false
+                    });
+                 if (!insertError) {
+                     setRoomCreatorId(user.uid);
+                     await sendMessage(`Room created by ${config.username}`, config, null, null, null, 'system');
+                 }
+                 setIsRoomReady(true);
              }
         }
-        setIsRoomReady(true);
       } catch (error) {
         console.error("Error initializing room:", error);
         setIsRoomReady(true); 
       }
     };
     initRoom();
-  }, [user, config.roomKey]);
+
+    // Listener για mobile background sync
+    const handleVisibility = () => {
+        if (document.visibilityState === 'visible') {
+            checkRoomStatus();
+        }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', checkRoomStatus);
+
+    return () => {
+        document.removeEventListener('visibilitychange', handleVisibility);
+        window.removeEventListener('focus', checkRoomStatus);
+    };
+  }, [user, config.roomKey, config.roomName, config.pin, checkRoomStatus]);
 
   useEffect(() => {
-      if (isRoomReady && user && config.roomKey) {
+      if (isRoomReady && user && config.roomKey && !roomDeleted) {
           const checkSubscription = async () => {
               const { data } = await supabase
                 .from('subscribers')
@@ -375,10 +405,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           };
           checkSubscription();
       }
-  }, [isRoomReady, user, config.roomKey]);
+  }, [isRoomReady, user, config.roomKey, roomDeleted]);
 
   useEffect(() => {
-      if (isRoomReady && user && config.roomKey) {
+      if (isRoomReady && user && config.roomKey && !roomDeleted) {
           const sessionKey = `joined_${config.roomKey}`;
           if (!sessionStorage.getItem(sessionKey)) {
               sendMessage(`${config.username} joined the room`, config, null, null, null, 'system');
@@ -386,7 +416,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
               sessionStorage.setItem(sessionKey, 'true');
           }
       }
-  }, [isRoomReady, user, config.roomKey]);
+  }, [isRoomReady, user, config.roomKey, roomDeleted]);
 
   useEffect(() => {
     if (!messagesEndRef.current) return;
@@ -400,7 +430,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, [messages]);
 
   useEffect(() => {
-    if (!config.roomKey || !isRoomReady) return;
+    if (!config.roomKey || !isRoomReady || roomDeleted) return;
     const roomStatusChannel = supabase.channel(`room_status:${config.roomKey}`)
       .on('postgres_changes', {
         event: 'DELETE',
@@ -423,13 +453,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       })
       .subscribe();
     return () => { supabase.removeChannel(roomStatusChannel); };
-  }, [config.roomKey, isRoomReady]);
+  }, [config.roomKey, isRoomReady, roomDeleted]);
 
   const handleExitChat = async () => {
-      if (config.roomKey) {
+      if (config.roomKey && !roomDeleted) {
           await sendMessage(`${config.username} left the room`, config, null, null, null, 'system');
-          sessionStorage.removeItem(`joined_${config.roomKey}`);
       }
+      sessionStorage.removeItem(`joined_${config.roomKey}`);
       onExit();
   };
 
@@ -440,7 +470,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   const handleSend = async (e?: React.FormEvent) => {
       e?.preventDefault();
-      if ((!inputText.trim() && !selectedFile) || !user) return;
+      if ((!inputText.trim() && !selectedFile) || !user || roomDeleted) return;
       
       const textToSend = inputText.trim();
       setInputText('');
@@ -462,7 +492,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   };
 
   const handleSendLocation = async () => {
-       if (!navigator.geolocation || !user) return;
+       if (!navigator.geolocation || !user || roomDeleted) return;
        setIsGettingLocation(true);
        navigator.geolocation.getCurrentPosition(async (pos) => {
            try {
@@ -577,7 +607,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     if (!isOwner || !config.roomKey) return;
     const newState = !aiEnabled;
     try {
-      // Fix: roomKey variable was undefined, correctly using config.roomKey
       await supabase
         .from('rooms')
         .update({ ai_enabled: newState })
@@ -593,10 +622,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const handleUserClick = async (uid: string, username: string, avatar: string) => {
       if (uid === INCO_BOT_UUID) return;
       
-      // Look for user in active participants
       const activeUser = participants.find(p => p.uid === uid);
       
-      // Initial user object (presence)
       const userToDisplay: Presence = activeUser || {
           uid,
           username,
@@ -608,7 +635,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
       setSelectedUserPresence(userToDisplay);
       
-      // Fetch subscriber info for this user to get "joined_at" and "last_seen"
       try {
           const { data } = await supabase
             .from('subscribers')
@@ -619,7 +645,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           
           if (data) {
               setSelectedUserSubscriber(data as Subscriber);
-              // If user is offline, we use last_notified_at as a fallback for activity
               if (!activeUser) {
                   setSelectedUserPresence(prev => prev ? ({...prev, onlineAt: data.last_notified_at || ''}) : null);
               }
@@ -640,12 +665,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
               <div className="bg-red-500/20 p-1.5 rounded-full">
                 <WifiOff size={14} className="text-red-500 animate-pulse" />
               </div>
-              <span className="text-xs font-bold text-white dark:text-slate-900">No Connection</span>
+              <span className="text-xs font-bold text-white dark:text-slate-900">Χωρίς Σύνδεση</span>
           </div>
         </div>
       )}
 
-      {user && isRoomReady && (
+      {user && isRoomReady && !roomDeleted && (
           <CallManager 
             user={user}
             config={config}
@@ -659,7 +684,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       <ChatHeader
         config={config}
         participants={participants}
-        isRoomReady={isRoomReady}
+        isRoomReady={isRoomReady && !roomDeleted}
         showParticipantsList={showParticipantsList}
         setShowParticipantsList={setShowParticipantsList}
         showSettingsMenu={showSettingsMenu}
@@ -703,30 +728,32 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         <div ref={messagesEndRef} />
       </main>
 
-      <ChatInput
-        inputText={inputText}
-        setInputText={setInputText}
-        handleSend={handleSend}
-        handleInputChange={handleInputChange}
-        handleKeyDown={handleKeyDown}
-        isRecording={isRecording}
-        recordingDuration={recordingDuration}
-        startRecording={startRecording}
-        stopRecording={stopRecording}
-        cancelRecording={cancelRecording}
-        selectedFile={selectedFile}
-        setSelectedFile={setSelectedFile}
-        isUploading={isUploading}
-        isGettingLocation={isGettingLocation}
-        handleSendLocation={handleSendLocation}
-        editingMessageId={editingMessageId}
-        cancelEdit={() => { setEditingMessageId(null); setInputText(''); }}
-        replyingTo={replyingTo}
-        cancelReply={() => setReplyingTo(null)}
-        isOffline={isOffline}
-        isRoomReady={isRoomReady}
-        typingUsers={combinedTypingUsers}
-      />
+      {!roomDeleted && (
+        <ChatInput
+            inputText={inputText}
+            setInputText={setInputText}
+            handleSend={handleSend}
+            handleInputChange={handleInputChange}
+            handleKeyDown={handleKeyDown}
+            isRecording={isRecording}
+            recordingDuration={recordingDuration}
+            startRecording={startRecording}
+            stopRecording={stopRecording}
+            cancelRecording={cancelRecording}
+            selectedFile={selectedFile}
+            setSelectedFile={setSelectedFile}
+            isUploading={isUploading}
+            isGettingLocation={isGettingLocation}
+            handleSendLocation={handleSendLocation}
+            editingMessageId={editingMessageId}
+            cancelEdit={() => { setEditingMessageId(null); setInputText(''); }}
+            replyingTo={replyingTo}
+            cancelReply={() => setReplyingTo(null)}
+            isOffline={isOffline}
+            isRoomReady={isRoomReady}
+            typingUsers={combinedTypingUsers}
+        />
+      )}
 
       <DeleteChatModal 
         show={showDeleteModal} 
