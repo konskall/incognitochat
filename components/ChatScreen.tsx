@@ -21,13 +21,12 @@ import { useRoomPresence } from '../hooks/useRoomPresence';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useIncoAI } from '../hooks/useIncoAI';
 
-const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
-
 interface ChatScreenProps {
   config: ChatConfig;
   onExit: () => void;
 }
 
+// --- EMAILJS CONFIGURATION ---
 const EMAILJS_SERVICE_ID: string = "service_cnerkn6";
 const EMAILJS_TEMPLATE_ID: string = "template_zr9v8bp";
 const EMAILJS_PUBLIC_KEY: string = "cSDU4HLqgylnmX957";
@@ -59,19 +58,25 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
   const [inputText, setInputText] = useState('');
   const [roomData, setRoomData] = useState<Room | null>(null);
+  
+  // UI States
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showAiAvatarModal, setShowAiAvatarModal] = useState(false);
   const [showRoomSettings, setShowRoomSettings] = useState(false);
   const [selectedUserPresence, setSelectedUserPresence] = useState<Presence | null>(null);
   const [selectedUserSubscriber, setSelectedUserSubscriber] = useState<Subscriber | null>(null);
+  
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showParticipantsList, setShowParticipantsList] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  
+  // Room Status
   const [roomDeleted, setRoomDeleted] = useState(false);
   const [isRoomReady, setIsRoomReady] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiAvatarUrl, setAiAvatarUrl] = useState('');
+  
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') !== 'light');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -248,6 +253,55 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     return { backgroundImage: `radial-gradient(${isDarkMode ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`, backgroundSize: '20px 20px' };
   };
 
+  const handleDeleteConfirm = async () => {
+    setIsDeleting(true);
+    try {
+        await supabase.from('rooms').delete().eq('room_key', config.roomKey);
+        notifySubscribers('deleted', 'The room has been closed.');
+        onExit();
+    } catch (err) {
+        alert("Delete failed");
+    } finally {
+        setIsDeleting(false);
+        setShowDeleteModal(false);
+    }
+  };
+
+  const handleSaveEmail = async () => {
+    if (!emailAddress) return;
+    setIsSavingEmail(true);
+    try {
+        const { error } = await supabase.from('subscribers').upsert({
+            room_key: config.roomKey,
+            uid: user?.uid,
+            username: config.username,
+            email: emailAddress
+        }, { onConflict: 'room_key, uid' });
+        if (error) throw error;
+        setEmailAlertsEnabled(true);
+        setShowEmailModal(false);
+    } catch (err) {
+        alert("Failed to save email");
+    } finally {
+        setIsSavingEmail(false);
+    }
+  };
+
+  const handleUserClick = async (uid: string) => {
+    const presence = participants.find(p => p.uid === uid);
+    if (!presence) return;
+    
+    setSelectedUserPresence(presence);
+    
+    const { data } = await supabase.from('subscribers')
+        .select('*')
+        .eq('room_key', config.roomKey)
+        .eq('uid', uid)
+        .maybeSingle();
+        
+    setSelectedUserSubscriber(data);
+  };
+
   const isOwner = user?.uid === roomData?.created_by;
 
   return (
@@ -278,15 +332,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       <main className="flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50 dark:bg-slate-950/50 relative" style={getBackgroundStyle()}>
         <div className={`absolute inset-0 pointer-events-none ${roomData?.background_preset && roomData.background_preset !== 'none' ? (isDarkMode ? 'bg-slate-950/50' : 'bg-white/50') : ''}`}></div>
         <div className="relative z-10">
-          <MessageList messages={messages} currentUserUid={user?.uid || ''} onEdit={(msg) => { setInputText(msg.text); setEditingMessageId(msg.id); }} onDelete={deleteMessage} onReact={reactToMessage} onReply={setReplyingTo} />
+          <MessageList messages={messages} currentUserUid={user?.uid || ''} onEdit={(msg) => { setInputText(msg.text); setEditingMessageId(msg.id); }} onDelete={deleteMessage} onReact={reactToMessage} onReply={setReplyingTo} onUserClick={handleUserClick} />
           <div ref={messagesEndRef} />
         </div>
       </main>
 
       {!roomDeleted && <ChatInput inputText={inputText} setInputText={setInputText} handleSend={handleSend} handleInputChange={(e) => { setInputText(e.target.value); setTyping(true); }} handleKeyDown={(e) => { if(e.key==='Enter'&&!e.shiftKey) handleSend(); }} isRecording={isRecording} recordingDuration={recordingDuration} startRecording={startRecording} stopRecording={stopRecording} cancelRecording={cancelRecording} selectedFile={selectedFile} setSelectedFile={setSelectedFile} isUploading={isUploading} isGettingLocation={isGettingLocation} handleSendLocation={handleSendLocation} editingMessageId={editingMessageId} cancelEdit={() => { setEditingMessageId(null); setInputText(''); }} replyingTo={replyingTo} cancelReply={() => setReplyingTo(null)} isOffline={isOffline} isRoomReady={isRoomReady} typingUsers={combinedTypingUsers} />}
 
-      <DeleteChatModal show={showDeleteModal} onCancel={() => setShowDeleteModal(false)} onConfirm={async () => { await supabase.from('rooms').delete().eq('room_key', config.roomKey); onExit(); }} isDeleting={isDeleting} />
-      <EmailAlertModal show={showEmailModal} onCancel={() => setShowEmailModal(false)} onSave={() => {}} isSaving={isSavingEmail} emailAlertsEnabled={emailAlertsEnabled} onToggleOff={() => {}} emailAddress={emailAddress} setEmailAddress={setEmailAddress} />
+      <DeleteChatModal show={showDeleteModal} onCancel={() => setShowDeleteModal(false)} onConfirm={handleDeleteConfirm} isDeleting={isDeleting} />
+      <EmailAlertModal show={showEmailModal} onCancel={() => setShowEmailModal(false)} onSave={handleSaveEmail} isSaving={isSavingEmail} emailAlertsEnabled={emailAlertsEnabled} onToggleOff={() => setEmailAlertsEnabled(false)} emailAddress={emailAddress} setEmailAddress={setEmailAddress} />
       <AiAvatarModal show={showAiAvatarModal} onClose={() => setShowAiAvatarModal(false)} currentAvatarUrl={aiAvatarUrl} roomKey={config.roomKey} onUpdate={setAiAvatarUrl} />
 
       {selectedUserPresence && <UserProfileModal user={selectedUserPresence} subscriberInfo={selectedUserSubscriber} isRoomOwner={selectedUserPresence.uid === roomData?.created_by} onClose={() => setSelectedUserPresence(null)} />}
