@@ -69,7 +69,7 @@ export const useIncoAI = (
       
       let locationContext = "";
       if (pos) {
-        locationContext = `The user is currently located near coordinates ${pos.coords.latitude}, ${pos.coords.longitude}. Use this for weather or local recommendations.`;
+        locationContext = `User is near coordinates ${pos.coords.latitude}, ${pos.coords.longitude} (Sparta area).`;
       }
 
       const context = chatHistory
@@ -78,18 +78,18 @@ export const useIncoAI = (
         .map(m => `${m.username}: ${m.text.substring(0, 300)}`)
         .join('\n');
 
-      const systemInstruction = `You are "inco", a helpful chat assistant in "${config.roomName}".
-      
-      CURRENT_STATUS:
-      - Date: ${dateStr}
-      - Time: ${timeStr}
-      - ${locationContext}
-      
-      RULES:
-      - If user writes GREEK, respond ONLY in GREEK.
-      - Use Google Search for facts, local places, or current events.
-      - Be concise, friendly, and helpful.
-      - Never hallucinate. If you don't know, use search or say so.`;
+      const systemInstruction = `You are "inco", a helpful chat assistant in the room "${config.roomName}".
+
+BACKGROUND DATA (Internal use only):
+- Date: ${dateStr}
+- Time: ${timeStr}
+- Location: ${locationContext || "Unknown"}
+
+STRICT RULES:
+1. NEVER mention the current time, date, or your location in your response unless the user explicitly asks for it (e.g., "what time is it?" or "weather here").
+2. Respond in the language used by the user. If they write in GREEK, respond ONLY in GREEK.
+3. Be concise and friendly. Use Google Search ONLY when necessary for facts or current events.
+4. Do not start your sentences with "Σήμερα είναι..." or "Η ώρα είναι..." unless relevant.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-flash-latest', 
@@ -132,22 +132,19 @@ export const useIncoAI = (
         }
       };
 
-      // Προσπάθεια εισαγωγής με πηγές
       const { error: firstTryError } = await supabase.from('messages').insert({
           ...messagePayload,
           grounding_metadata: sources
       });
 
-      // Αν αποτύχει με 42703 (undefined_column), σημαίνει ότι λείπει η στήλη στη βάση, οπότε στέλνουμε χωρίς αυτήν
       if (firstTryError && firstTryError.code === '42703') {
-          console.warn("Column 'grounding_metadata' missing in DB. Falling back to basic insert.");
           await supabase.from('messages').insert(messagePayload);
       }
 
     } catch (error: any) {
       console.error("Inco AI Error:", error);
       if (error.message?.includes('429')) {
-          const errMsg = encryptMessage("⚠️ Συγγνώμη, έχω δεχθεί πάρα πολλά αιτήματα. Δοκιμάστε πάλι σε λίγο.", pin, roomKey);
+          const errMsg = encryptMessage("⚠️ Sorry, I've received too many requests. Please try again in a moment.", pin, roomKey);
           await supabase.from('messages').insert({
             room_key: roomKey,
             uid: INCO_BOT_UUID,
