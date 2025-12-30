@@ -60,6 +60,7 @@ export interface Presence {
   status: 'active' | 'inactive';
 }
 
+// Webrtc Signaling Data
 export interface SignalData {
   type: 'offer' | 'answer' | 'candidate' | 'bye' | 'reject';
   payload: any;
@@ -78,20 +79,17 @@ export interface Subscriber {
     username: string;
     email: string;
     created_at?: string;
-    last_notified_at?: string;
+    last_notified_at?: string; // Track last email time
 }
 
+// New Interface for Room Dashboard
 export interface Room {
   id: string;
   room_key: string;
   room_name: string;
-  pin: string; 
+  pin: string; // Stored to allow auto-join for creator
   created_at: string;
   created_by: string;
   ai_enabled?: boolean;
   ai_avatar_url?: string;
-  avatar_url?: string;
-  background_url?: string;
-  background_type?: 'image' | 'preset';
-  background_preset?: string;
 }
