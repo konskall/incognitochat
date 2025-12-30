@@ -157,7 +157,7 @@ export const useChatMessages = (
       try {
         const encryptedText = encryptMessage(text, pin, roomKey);
 
-        await supabase.from('messages').insert({
+        const { error } = await supabase.from('messages').insert({
           room_key: roomKey,
           uid: userUid,
           username: config.username,
@@ -176,6 +176,9 @@ export const useChatMessages = (
               }
             : null,
         });
+
+        if (error) throw error;
+
       } catch (e) {
         console.error('Send message failed', e);
         throw e;
