@@ -19,7 +19,6 @@ export const useChatMessages = (
     onNewMessageRef.current = onNewMessage;
   }, [onNewMessage]);
 
-  // Load initial messages function (reusable for refreshes)
   const fetchMessages = useCallback(async () => {
     if (!roomKey) return;
     
@@ -48,21 +47,18 @@ export const useChatMessages = (
         reactions: d.reactions || {},
         replyTo: d.reply_to,
         type: d.type || 'text',
+        groundingMetadata: d.grounding_metadata || [],
       }));
       
       setMessages(msgs);
     }
   }, [roomKey, pin]);
 
-  // Initial load and visibility listener
   useEffect(() => {
     fetchMessages();
 
-    // Fix for Mobile Backgrounding:
-    // When user returns to tab, refresh messages to get anything missed during sleep
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log("App became visible, syncing messages...");
         fetchMessages();
       }
     };
@@ -76,7 +72,6 @@ export const useChatMessages = (
     };
   }, [fetchMessages]);
 
-  // Real-time Subscription
   useEffect(() => {
     if (!roomKey) return;
 
@@ -105,6 +100,7 @@ export const useChatMessages = (
               reactions: d.reactions || {},
               replyTo: d.reply_to,
               type: d.type || 'text',
+              groundingMetadata: d.grounding_metadata || [],
             };
             
             setMessages((prev) => {
