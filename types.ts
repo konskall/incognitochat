@@ -19,6 +19,11 @@ export interface ReplyInfo {
   isAttachment: boolean;
 }
 
+export interface GroundingSource {
+  title?: string;
+  uri?: string;
+}
+
 export interface Message {
   id: string;
   text: string;
@@ -35,6 +40,7 @@ export interface Message {
   reactions?: { [emoji: string]: string[] }; 
   replyTo?: ReplyInfo | null;
   type?: 'text' | 'system';
+  groundingMetadata?: GroundingSource[];
 }
 
 export interface ChatConfig {
