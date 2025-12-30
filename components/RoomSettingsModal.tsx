@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { X, Upload, RotateCcw, Image as ImageIcon, Layout, Info, Calendar, User, Save, Loader2, Sparkles, Shield } from 'lucide-react';
+import { X, Upload, RotateCcw, Image as ImageIcon, Layout, Calendar, User, Save, Loader2, Sparkles, Shield } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { Room } from '../types';
 import { compressImage } from '../utils/helpers';
