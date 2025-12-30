@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../services/supabase';
@@ -139,8 +138,8 @@ export const useIncoAI = (
           grounding_metadata: sources
       });
 
-      // Αν αποτύχει με 400, σημαίνει ότι λείπει η στήλη στη βάση, οπότε στέλνουμε χωρίς αυτήν
-      if (firstTryError && firstTryError.code === '42703' || (firstTryError?.status === 400)) {
+      // Αν αποτύχει με 42703 (undefined_column), σημαίνει ότι λείπει η στήλη στη βάση, οπότε στέλνουμε χωρίς αυτήν
+      if (firstTryError && firstTryError.code === '42703') {
           console.warn("Column 'grounding_metadata' missing in DB. Falling back to basic insert.");
           await supabase.from('messages').insert(messagePayload);
       }
