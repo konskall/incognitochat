@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../services/supabase';
-import { ChatConfig, Message, User, Subscriber, Presence, Room } from '../types';
+import { ChatConfig, Message, User, Subscriber, Presence } from '../types';
 import MessageList from './MessageList';
 import CallManager from './CallManager';
 import { initAudio, playBeep } from '../utils/helpers';
@@ -12,7 +12,6 @@ import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
 import AiAvatarModal from './AiAvatarModal';
 import UserProfileModal from './UserProfileModal';
-import RoomSettingsModal from './RoomSettingsModal';
 import { WifiOff, Trash2, Home, RefreshCcw } from 'lucide-react';
 
 // Hooks
@@ -21,30 +20,55 @@ import { useRoomPresence } from '../hooks/useRoomPresence';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useIncoAI } from '../hooks/useIncoAI';
 
+const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
+
 interface ChatScreenProps {
   config: ChatConfig;
   onExit: () => void;
 }
 
+// --- EMAILJS CONFIGURATION ---
 const EMAILJS_SERVICE_ID: string = "service_cnerkn6";
 const EMAILJS_TEMPLATE_ID: string = "template_zr9v8bp";
 const EMAILJS_PUBLIC_KEY: string = "cSDU4HLqgylnmX957";
 
+// Notification Cooldown in Minutes
+const NOTIFICATION_COOLDOWN_MINUTES = 30;
+
+// -- Custom Room Deleted Toast (Persistent) --
 const RoomDeletedToast: React.FC<{ onExit: () => void, onRecreate: () => void }> = ({ onExit, onRecreate }) => {
     return createPortal(
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-500">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-500">
             <div className="relative bg-slate-900/90 dark:bg-slate-900/90 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center overflow-hidden ring-1 ring-white/10">
+                
                 <div className="flex flex-col items-center gap-6">
                     <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(239,68,68,0.3)] ring-1 ring-red-500/50">
                          <Trash2 size={40} className="text-red-500" />
                     </div>
+                    
                     <div className="space-y-3">
-                        <h2 className="text-2xl font-bold text-white tracking-tight">Το δωμάτιο διαγράφηκε</h2>
-                        <p className="text-slate-300 text-sm font-medium leading-relaxed">Αυτό το δωμάτιο δεν υπάρχει πλέον από τον δημιουργό του.</p>
+                        <h2 className="text-2xl font-bold text-white tracking-tight">The room was deleted</h2>
+                        <p className="text-slate-300 text-sm font-medium leading-relaxed">
+                            This room no longer exists. You can recreate it now or return to home.
+                        </p>
                     </div>
+
                     <div className="flex flex-col gap-3 w-full">
-                        <button onClick={onRecreate} className="w-full py-3.5 px-6 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-transform active:scale-95"><RefreshCcw size={18} /> Recreate Room</button>
-                        <button onClick={onExit} className="w-full py-3.5 px-6 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-transform active:scale-95"><Home size={18} /> Return to Home</button>
+                        <button 
+                            onClick={onRecreate}
+                            className="w-full py-3.5 px-6 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-900/20 transition-all transform active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            <RefreshCcw size={18} />
+                            Recreate Room
+                        </button>
+
+                        <button 
+                            onClick={onExit}
+                            className="w-full py-3.5 px-6 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all transform active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            <Home size={18} />
+                            Return to Home
+                        </button>
                     </div>
                 </div>
             </div>
@@ -56,31 +80,49 @@ const RoomDeletedToast: React.FC<{ onExit: () => void, onRecreate: () => void }>
 const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
   const [inputText, setInputText] = useState('');
-  const [roomData, setRoomData] = useState<Room | null>(null);
+  
+  // UI States
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showAiAvatarModal, setShowAiAvatarModal] = useState(false);
-  const [showRoomSettings, setShowRoomSettings] = useState(false);
   const [selectedUserPresence, setSelectedUserPresence] = useState<Presence | null>(null);
   const [selectedUserSubscriber, setSelectedUserSubscriber] = useState<Subscriber | null>(null);
+  
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showParticipantsList, setShowParticipantsList] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  
+  // Room Status
   const [roomDeleted, setRoomDeleted] = useState(false);
+  
+  // Room & Creator State
   const [isRoomReady, setIsRoomReady] = useState(false);
+  const [roomCreatorId, setRoomCreatorId] = useState<string | null>(null);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiAvatarUrl, setAiAvatarUrl] = useState('');
-  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') !== 'light');
+  
+  // Theme State - Default to Dark Mode
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    return localStorage.getItem('theme') !== 'light';
+  });
+
+  // Edit & Reply State
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+
+  // Notification, Sound & Vibration State
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
   const [canVibrate, setCanVibrate] = useState(false);
+
+  // Email Alert State
   const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
   const [isSavingEmail, setIsSavingEmail] = useState(false);
+  
+  // File & Location handling state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
 
@@ -88,54 +130,89 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const isFirstLoad = useRef(true);
   const prevMessageCount = useRef(0);
 
-  useEffect(() => {
-    const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUser({ uid: session.user.id, isAnonymous: !!session.user.is_anonymous, email: session.user.email });
-      }
-      setCanVibrate('vibrate' in navigator);
-    };
-    init();
-    const goOnline = () => setIsOffline(false);
-    const goOffline = () => setIsOffline(true);
-    window.addEventListener('online', goOnline);
-    window.addEventListener('offline', goOffline);
-    return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
-  }, []);
-
-  // Προσθήκη εφέ για τον αυτόματο συγχρονισμό του email όταν συνδέεται ο χρήστης
-  useEffect(() => {
-    if (user?.email && !emailAddress) {
-      setEmailAddress(user.email);
-    }
-  }, [user, emailAddress]);
-
+  // --- CUSTOM HOOKS INTEGRATION ---
+  
   const handleNewMessageReceived = useCallback(async (msg: Message) => {
     if (msg.uid !== user?.uid && msg.type !== 'system') {
-        if (soundEnabled) { initAudio(); setTimeout(() => playBeep(), 10); }
-        if (vibrationEnabled && canVibrate && 'vibrate' in navigator) navigator.vibrate(200);
+        if (soundEnabled) {
+            initAudio();
+            setTimeout(() => playBeep(), 10);
+        }
+        
+        if (vibrationEnabled && canVibrate && 'vibrate' in navigator) {
+            navigator.vibrate(200);
+        }
+
         if (document.hidden && notificationsEnabled) {
-            new Notification(`New message from ${msg.username}`, { body: msg.text || 'Sent an attachment', icon: 'https://konskall.github.io/incognitochat/favicon-96x96.png' });
+            new Notification(`New message from ${msg.username}`, {
+                body: msg.text || 'Sent an attachment',
+                icon: 'https://konskall.github.io/incognitochat/favicon-96x96.png'
+            });
         }
     }
   }, [user, soundEnabled, vibrationEnabled, notificationsEnabled, canVibrate]);
 
-  const { messages, isUploading, sendMessage, editMessage, deleteMessage, reactToMessage, uploadFile } = useChatMessages(config.roomKey, config.pin, user?.uid, handleNewMessageReceived);
+  const { 
+    messages, 
+    isUploading, 
+    sendMessage, 
+    editMessage, 
+    deleteMessage, 
+    reactToMessage, 
+    uploadFile 
+  } = useChatMessages(config.roomKey, config.pin, user?.uid, handleNewMessageReceived);
+
   const { participants, typingUsers, setTyping } = useRoomPresence(config.roomKey, user, config);
-  const { isRecording, recordingDuration, startRecording, stopRecording, cancelRecording } = useAudioRecorder(async (blob, mimeType) => {
-      const file = new File([blob], `voice_${Date.now()}.mp4`, { type: mimeType });
-      const attachment = await uploadFile(file);
-      if (attachment) { await sendMessage("", config, attachment, null, null, 'text'); notifySubscribers('message', 'Sent a voice message'); }
-  });
+
+  const handleRecordingComplete = async (blob: Blob, mimeType: string) => {
+      try {
+           const ext = mimeType.includes('mp4') || mimeType.includes('aac') ? 'mp4' : 'webm';
+           const file = new File([blob], `voice_${Date.now()}.${ext}`, { type: mimeType });
+           const attachment = await uploadFile(file);
+           if (attachment) {
+               await sendMessage("", config, attachment, null, null, 'text');
+               notifySubscribers('message', 'Sent a voice message');
+           }
+      } catch (e) {
+          console.error("Failed to upload voice", e);
+      }
+  };
+
+  const {
+      isRecording,
+      recordingDuration,
+      startRecording,
+      stopRecording,
+      cancelRecording
+  } = useAudioRecorder(handleRecordingComplete);
+
   const isBotResponding = useIncoAI(config.roomKey, config.pin, messages, config, aiEnabled, aiAvatarUrl);
+
   const combinedTypingUsers = isBotResponding ? [...typingUsers, 'inco'] : typingUsers;
+
+  // --- SIDE EFFECTS ---
 
   useEffect(() => {
     const root = document.documentElement;
-    const themeColor = isDarkMode ? '#020617' : '#f8fafc';
-    if (isDarkMode) { root.classList.add('dark'); root.style.colorScheme = 'dark'; } else { root.classList.remove('dark'); root.style.colorScheme = 'light'; }
-    document.querySelector("meta[name='theme-color']")?.setAttribute('content', themeColor);
+    const darkColor = '#020617'; 
+    const lightColor = '#f8fafc';
+    const themeColor = isDarkMode ? darkColor : lightColor;
+
+    if (isDarkMode) {
+      root.classList.add('dark');
+      root.style.colorScheme = 'dark';
+    } else {
+      root.classList.remove('dark');
+      root.style.colorScheme = 'light';
+    }
+    
+    let meta = document.querySelector("meta[name='theme-color']");
+    if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', 'theme-color');
+        document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', themeColor);
   }, [isDarkMode]);
 
   const toggleTheme = () => {
@@ -145,255 +222,587 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     setShowSettingsMenu(false);
   };
 
-  const toggleNotifications = async () => {
-    if (!notificationsEnabled) {
-      if ('Notification' in window) {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') setNotificationsEnabled(true); else alert("Notification permission denied.");
-      } else alert("This browser does not support desktop notifications.");
-    } else setNotificationsEnabled(false);
-  };
+  const notifySubscribers = async (action: 'message' | 'deleted' | 'joined', details: string) => {
+      if (!config.roomKey || !user) return;
+      if (action === 'joined') return;
 
-  const handleSend = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if ((!inputText.trim() && !selectedFile) || isUploading || isOffline || !isRoomReady || !user) return;
-    try {
-      if (editingMessageId) { await editMessage(editingMessageId, inputText); setEditingMessageId(null); setInputText(''); }
-      else {
-        let attachment = null;
-        if (selectedFile) { attachment = await uploadFile(selectedFile); setSelectedFile(null); }
-        await sendMessage(inputText, config, attachment, replyingTo, null, 'text');
-        setInputText(''); setReplyingTo(null); notifySubscribers('message', attachment ? 'Sent an attachment' : (inputText || 'Sent a message'));
+      try {
+          const { data, error } = await supabase
+            .from('subscribers')
+            .select('*')
+            .eq('room_key', config.roomKey);
+          
+          if (error) return;
+          const subscribers = data as Subscriber[];
+          if (!subscribers || subscribers.length === 0) return;
+
+          const onlineUserIds = new Set(participants.map(p => p.uid));
+          const recipientsToEmail: string[] = [];
+          const subscriberIdsToUpdate: string[] = [];
+          const now = new Date();
+
+          subscribers.forEach(sub => {
+              if (sub.uid === user.uid) return;
+              if (onlineUserIds.has(sub.uid)) return;
+
+              if (sub.last_notified_at) {
+                  const lastNotified = new Date(sub.last_notified_at);
+                  const diffInMinutes = (now.getTime() - lastNotified.getTime()) / 60000;
+                  if (diffInMinutes < NOTIFICATION_COOLDOWN_MINUTES && action !== 'deleted') {
+                      return;
+                  }
+              }
+
+              if (sub.email) {
+                  recipientsToEmail.push(sub.email);
+                  if (sub.id) subscriberIdsToUpdate.push(sub.uid); 
+              }
+          });
+
+          if (recipientsToEmail.length > 0) {
+              let actionLabel = 'New Message';
+              if (action === 'deleted') actionLabel = 'Room Deleted';
+
+              const emailParams = {
+                  to_email: recipientsToEmail.join(','), 
+                  room_name: config.roomName,
+                  action_type: actionLabel,
+                  sender_name: config.username, 
+                  message_body: details,
+                  link: window.location.href
+              };
+              
+              await emailjs.send(
+                  EMAILJS_SERVICE_ID,
+                  EMAILJS_TEMPLATE_ID,
+                  emailParams,
+                  EMAILJS_PUBLIC_KEY
+              );
+
+              if (subscriberIdsToUpdate.length > 0) {
+                  await supabase
+                      .from('subscribers')
+                      .update({ last_notified_at: new Date().toISOString() })
+                      .in('uid', subscriberIdsToUpdate)
+                      .eq('room_key', config.roomKey);
+              }
+          }
+      } catch (e) {
+          console.error("EmailJS Failed", e);
       }
-    } catch (error) { console.error("Failed to send message", error); }
   };
 
-  const handleSendLocation = async () => {
-    if (!navigator.geolocation) { alert("Geolocation is not supported by your browser"); return; }
-    setIsGettingLocation(true);
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        try { await sendMessage("Shared my location", config, null, null, { lat: latitude, lng: longitude }, 'text'); notifySubscribers('message', 'Shared a location'); }
-        catch (error) { console.error("Error sending location:", error); }
-        finally { setIsGettingLocation(false); }
-      },
-      (error) => { console.error("Geolocation error:", error); setIsGettingLocation(false); alert("Unable to retrieve your location."); },
-      { timeout: 10000 }
-    );
-  };
+  useEffect(() => {
+    const checkUser = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+             setUser({ 
+                 uid: session.user.id, 
+                 isAnonymous: session.user.is_anonymous ?? true,
+                 email: session.user.email 
+             });
+        } else {
+             const { data: anonData } = await supabase.auth.signInAnonymously();
+             if (anonData.user) {
+                 setUser({ uid: anonData.user.id, isAnonymous: true });
+             }
+        }
+    };
+    checkUser();
+
+    const handleNetworkChange = () => setIsOffline(!navigator.onLine);
+    window.addEventListener('online', handleNetworkChange);
+    window.addEventListener('offline', handleNetworkChange);
+    if ('Notification' in window && Notification.permission === 'granted') setNotificationsEnabled(true);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) setCanVibrate(true);
+
+    return () => {
+      window.removeEventListener('online', handleNetworkChange);
+      window.removeEventListener('offline', handleNetworkChange);
+    };
+  }, []);
+
+  const checkRoomStatus = useCallback(async () => {
+    if (!config.roomKey) return;
+    const { data, error } = await supabase
+        .from('rooms')
+        .select('room_key')
+        .eq('room_key', config.roomKey)
+        .maybeSingle();
+    
+    if (!data || error) {
+        setRoomDeleted(true);
+    }
+  }, [config.roomKey]);
 
   const initRoom = useCallback(async () => {
     if (!user || !config.roomKey) return;
     try {
-      const { data: room } = await supabase.from('rooms').select('*').eq('room_key', config.roomKey).maybeSingle();
+      const { data: room } = await supabase
+          .from('rooms')
+          .select('*')
+          .eq('room_key', config.roomKey)
+          .maybeSingle();
+
       if (room) {
-           setRoomData(room);
+           setRoomCreatorId(room.created_by);
            setAiEnabled(!!room.ai_enabled);
            setAiAvatarUrl(room.ai_avatar_url || '');
            setIsRoomReady(true);
-           setRoomDeleted(false);
-           
-           // Έλεγχος για υπάρχουσα συνδρομή e-mail
-           const { data: sub } = await supabase.from('subscribers').select('*').eq('room_key', config.roomKey).eq('uid', user.uid).maybeSingle();
-           if (sub) {
-               setEmailAlertsEnabled(true);
-               setEmailAddress(sub.email);
-           }
-
-           // Στείλε μήνυμα εισόδου αν είναι η πρώτη φορά στη συνεδρία
-           const joinKey = `joined_msg_${config.roomKey}`;
-           if (!sessionStorage.getItem(joinKey)) {
-               await sendMessage(`Ο χρήστης ${config.username} μπήκε στο δωμάτιο`, config, null, null, null, 'system');
-               sessionStorage.setItem(joinKey, 'true');
-           }
+           setRoomDeleted(false); // Reset in case we are recreating
       } else {
-           // Αν το δωμάτιο δεν υπάρχει αλλά ο χρήστης το είχε επισκεφθεί πριν, σημαίνει ότι διαγράφηκε
-           const visitKey = `visited_${config.roomKey}`;
-           if (sessionStorage.getItem(visitKey)) { 
-               setRoomDeleted(true); 
-           } 
-           else {
-               // Δημιουργία νέου δωματίου
-               const { error: insertError } = await supabase.from('rooms').insert({ room_key: config.roomKey, room_name: config.roomName, pin: config.pin, created_by: user.uid, ai_enabled: false });
-               if (!insertError) { 
-                   await sendMessage(`Το δωμάτιο δημιουργήθηκε από τον χρήστη ${config.username}`, config, null, null, null, 'system'); 
-                   sessionStorage.setItem(visitKey, 'true');
-                   initRoom();
+           const sessionKey = `joined_${config.roomKey}`;
+           if (sessionStorage.getItem(sessionKey)) {
+               setRoomDeleted(true);
+           } else {
+               const { error: insertError } = await supabase
+                  .from('rooms')
+                  .insert({
+                      room_key: config.roomKey,
+                      room_name: config.roomName,
+                      pin: config.pin,
+                      created_by: user.uid,
+                      ai_enabled: false
+                  });
+               if (!insertError) {
+                   setRoomCreatorId(user.uid);
+                   await sendMessage(`Room created by ${config.username}`, config, null, null, null, 'system');
                }
+               setIsRoomReady(true);
+               setRoomDeleted(false);
            }
       }
-    } catch (error) { setIsRoomReady(true); }
+    } catch (error) {
+      console.error("Error initializing room:", error);
+      setIsRoomReady(true); 
+    }
   }, [user, config, sendMessage]);
 
   useEffect(() => {
     initRoom();
-    const handleVisibility = () => { if (document.visibilityState === 'visible') initRoom(); };
-    window.addEventListener('focus', handleVisibility);
-    return () => { window.removeEventListener('focus', handleVisibility); };
-  }, [initRoom]);
 
-  // Real-time listener για τη διαγραφή του δωματίου
-  useEffect(() => {
-      if (!config.roomKey) return;
-      const channel = supabase.channel(`room_status_${config.roomKey}`)
-          .on('postgres_changes', { 
-              event: 'DELETE', 
-              schema: 'public', 
-              table: 'rooms', 
-              filter: `room_key=eq.${config.roomKey}` 
-          }, () => {
-              setRoomDeleted(true);
-          })
-          .subscribe();
-      return () => { supabase.removeChannel(channel); };
-  }, [config.roomKey]);
+    const handleVisibility = () => {
+        if (document.visibilityState === 'visible') {
+            checkRoomStatus();
+        }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', checkRoomStatus);
 
-  const notifySubscribers = async (action: 'message' | 'deleted' | 'joined', details: string) => {
-    if (!config.roomKey || !user) return;
-    const { data } = await supabase.from('subscribers').select('*').eq('room_key', config.roomKey);
-    if (!data || data.length === 0) return;
-    const onlineUserIds = new Set(participants.map(p => p.uid));
-    const recipients = (data as Subscriber[]).filter(s => s.uid !== user.uid && !onlineUserIds.has(s.uid)).map(s => s.email).filter(Boolean);
-    if (recipients.length > 0) {
-      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, { to_email: recipients.join(','), room_name: config.roomName, action_type: action === 'deleted' ? 'Room Deleted' : 'New Message', sender_name: config.username, message_body: details, link: window.location.href }, EMAILJS_PUBLIC_KEY);
-    }
+    return () => {
+        document.removeEventListener('visibilitychange', handleVisibility);
+        window.removeEventListener('focus', checkRoomStatus);
+    };
+  }, [user, config.roomKey, config.roomName, config.pin, checkRoomStatus, initRoom]);
+
+  const handleRecreate = () => {
+      // Clear the session flag so initRoom knows this is an intentional new creation
+      sessionStorage.removeItem(`joined_${config.roomKey}`);
+      // Re-run initialization
+      initRoom();
   };
+
+  useEffect(() => {
+      if (isRoomReady && user && config.roomKey && !roomDeleted) {
+          const checkSubscription = async () => {
+              const { data } = await supabase
+                .from('subscribers')
+                .select('email')
+                .eq('room_key', config.roomKey)
+                .eq('uid', user.uid)
+                .maybeSingle();
+
+              if (data && data.email) {
+                  setEmailAlertsEnabled(true);
+                  setEmailAddress(data.email);
+              } else if (user.email) {
+                  setEmailAddress(user.email);
+              }
+          };
+          checkSubscription();
+      }
+  }, [isRoomReady, user, config.roomKey, roomDeleted]);
+
+  useEffect(() => {
+      if (isRoomReady && user && config.roomKey && !roomDeleted) {
+          const sessionKey = `joined_${config.roomKey}`;
+          if (!sessionStorage.getItem(sessionKey)) {
+              sendMessage(`${config.username} joined the room`, config, null, null, null, 'system');
+              notifySubscribers('joined', `${config.username} has entered the room.`);
+              sessionStorage.setItem(sessionKey, 'true');
+          }
+      }
+  }, [isRoomReady, user, config.roomKey, roomDeleted]);
 
   useEffect(() => {
     if (!messagesEndRef.current) return;
-    if (isFirstLoad.current && messages.length > 0) { messagesEndRef.current.scrollIntoView({ behavior: "auto" }); isFirstLoad.current = false; }
-    else if (messages.length > prevMessageCount.current) { messagesEndRef.current.scrollIntoView({ behavior: "smooth" }); }
+    if (isFirstLoad.current && messages.length > 0) {
+        messagesEndRef.current.scrollIntoView({ behavior: "auto" });
+        isFirstLoad.current = false;
+    } else if (messages.length > prevMessageCount.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
     prevMessageCount.current = messages.length;
   }, [messages]);
 
-  const handleRoomUpdate = (updates: Partial<Room>) => {
-    setRoomData(prev => prev ? { ...prev, ...updates } : null);
+  useEffect(() => {
+    if (!config.roomKey || !isRoomReady || roomDeleted) return;
+    const roomStatusChannel = supabase.channel(`room_status:${config.roomKey}`)
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'rooms',
+        filter: `room_key=eq.${config.roomKey}`
+      }, () => {
+        setRoomDeleted(true);
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'rooms',
+        filter: `room_key=eq.${config.roomKey}`
+      }, (payload) => {
+        if (payload.new) {
+            if (payload.new.ai_enabled !== undefined) setAiEnabled(payload.new.ai_enabled);
+            if (payload.new.ai_avatar_url !== undefined) setAiAvatarUrl(payload.new.ai_avatar_url || '');
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(roomStatusChannel); };
+  }, [config.roomKey, isRoomReady, roomDeleted]);
+
+  const handleExitChat = async () => {
+      if (config.roomKey && !roomDeleted) {
+          await sendMessage(`${config.username} left the room`, config, null, null, null, 'system');
+      }
+      sessionStorage.removeItem(`joined_${config.roomKey}`);
+      onExit();
   };
 
-  const getBackgroundStyle = () => {
-    if (!roomData) return {};
-    if (roomData.background_type === 'image' && roomData.background_url) {
-        return { backgroundImage: `url(${roomData.background_url})`, backgroundSize: 'cover', backgroundPosition: 'center' };
-    }
-    if (roomData.background_preset && roomData.background_preset !== 'none') {
-        const presets: Record<string, string> = {
-            'prism': 'https://www.transparenttextures.com/patterns/cubes.png',
-            'grid': 'https://www.transparenttextures.com/patterns/stardust.png',
-            'circuit': 'https://www.transparenttextures.com/patterns/circuit-board.png',
-            'waves': 'https://www.transparenttextures.com/patterns/double-lined-grid.png',
-            'polygons': 'https://www.transparenttextures.com/patterns/diagonal-striped-brick.png'
-        };
-        const url = presets[roomData.background_preset];
-        if (url) return { backgroundImage: `url(${url})`, backgroundSize: '40px', backgroundRepeat: 'repeat' };
-    }
-    return { backgroundImage: `radial-gradient(${isDarkMode ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`, backgroundSize: '20px 20px' };
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setInputText(e.target.value);
+      setTyping(true);
   };
 
-  const handleDeleteConfirm = async () => {
-    setIsDeleting(true);
+  const handleSend = async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      if ((!inputText.trim() && !selectedFile) || !user || roomDeleted) return;
+      
+      const textToSend = inputText.trim();
+      setInputText('');
+      setTyping(false);
+      setSelectedFile(null);
+      setReplyingTo(null);
+
+      if (editingMessageId) {
+          await editMessage(editingMessageId, textToSend);
+          setEditingMessageId(null);
+      } else {
+          let attachment = null;
+          if (selectedFile) {
+              attachment = await uploadFile(selectedFile);
+          }
+          await sendMessage(textToSend, config, attachment, replyingTo, null, 'text');
+          notifySubscribers('message', textToSend || 'Sent a file');
+      }
+  };
+
+  const handleSendLocation = async () => {
+       if (!navigator.geolocation || !user || roomDeleted) return;
+       setIsGettingLocation(true);
+       navigator.geolocation.getCurrentPosition(async (pos) => {
+           try {
+               await sendMessage("📍 Shared a location", config, null, null, { lat: pos.coords.latitude, lng: pos.coords.longitude }, 'text');
+               notifySubscribers('message', 'Shared a location');
+           } catch(e) { console.error(e); }
+           finally { setIsGettingLocation(false); }
+       });
+  };
+
+  const handleEditMessage = useCallback((msg: Message) => {
+      setInputText(msg.text);
+      setEditingMessageId(msg.id);
+      setReplyingTo(null);
+      setSelectedFile(null);
+  }, []);
+  
+  const handleReply = useCallback((msg: Message) => {
+      setReplyingTo(msg);
+      setEditingMessageId(null);
+  }, []);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          handleSend();
+      }
+      if (e.key === 'Escape') {
+          setEditingMessageId(null);
+          setReplyingTo(null);
+          setInputText('');
+      }
+  };
+
+  const handleDeleteChat = async () => {
+      if (!config.roomKey) return;
+      setIsDeleting(true);
+      try {
+           await notifySubscribers('deleted', 'Room was deleted by host');
+           
+           const { data: files } = await supabase.storage.from('attachments').list(config.roomKey);
+           if (files && files.length > 0) {
+               const filesToRemove = files.map(x => `${config.roomKey}/${x.name}`);
+               await supabase.storage.from('attachments').remove(filesToRemove);
+           }
+           
+           await supabase.from('rooms').delete().eq('room_key', config.roomKey);
+           onExit();
+      } catch(e) {
+          console.error("Delete failed", e);
+          setIsDeleting(false);
+      }
+  };
+  
+  const toggleNotifications = async () => {
+      if (notificationsEnabled) {
+          setNotificationsEnabled(false);
+      } else {
+          const p = await Notification.requestPermission();
+          if (p === 'granted') setNotificationsEnabled(true);
+      }
+      setShowSettingsMenu(false);
+  };
+
+  const handleEmailToggle = async () => {
+      if (!user || !config.roomKey) return;
+      if (emailAlertsEnabled) {
+          await supabase.from('subscribers')
+            .update({ email: '' })
+            .eq('room_key', config.roomKey)
+            .eq('uid', user.uid);
+
+          setEmailAlertsEnabled(false);
+          setEmailAddress('');
+          setShowEmailModal(false);
+      } else {
+          if (!emailAddress && user.email) {
+              setEmailAddress(user.email);
+          }
+          setShowEmailModal(true);
+      }
+  };
+
+  const saveEmailSubscription = async () => {
+      if (!user || !config.roomKey || !emailAddress.includes('@')) {
+          alert("Please enter a valid email.");
+          return;
+      }
+      setIsSavingEmail(true);
+      try {
+          await supabase.from('subscribers').upsert({
+              room_key: config.roomKey,
+              uid: user.uid,
+              username: config.username,
+              email: emailAddress,
+              last_notified_at: new Date().toISOString()
+          }, { onConflict: 'room_key, uid' });
+
+          setEmailAlertsEnabled(true);
+          setShowEmailModal(false);
+          setShowSettingsMenu(false);
+      } catch (e: any) {
+          console.error("Error saving email:", e);
+          alert("Failed to subscribe.");
+      } finally {
+          setIsSavingEmail(false);
+      }
+  };
+
+  const handleToggleAI = async () => {
+    const isOwner = user?.uid === roomCreatorId;
+    if (!isOwner || !config.roomKey) return;
+    const newState = !aiEnabled;
     try {
-        // Στείλε ειδοποίηση πριν τη διαγραφή
-        await notifySubscribers('deleted', 'Το δωμάτιο έκλεισε οριστικά από τον δημιουργό.');
-        await supabase.from('rooms').delete().eq('room_key', config.roomKey);
-        onExit();
-    } catch (err) {
-        alert("Η διαγραφή απέτυχε");
-    } finally {
-        setIsDeleting(false);
-        setShowDeleteModal(false);
-    }
-  };
-
-  const handleSaveEmail = async () => {
-    if (!emailAddress) return;
-    setIsSavingEmail(true);
-    try {
-        const { error } = await supabase.from('subscribers').upsert({
-            room_key: config.roomKey,
-            uid: user?.uid,
-            username: config.username,
-            email: emailAddress
-        }, { onConflict: 'room_key, uid' });
-        if (error) throw error;
-        setEmailAlertsEnabled(true);
-        setShowEmailModal(false);
-    } catch (err) {
-        alert("Failed to save email");
-    } finally {
-        setIsSavingEmail(false);
+      await supabase
+        .from('rooms')
+        .update({ ai_enabled: newState })
+        .eq('room_key', config.roomKey);
+      
+      setAiEnabled(newState);
+      await sendMessage(`Inco AI ${newState ? 'enabled' : 'disabled'} by ${config.username}`, config, null, null, null, 'system');
+    } catch (e) {
+      console.error("Failed to toggle AI", e);
     }
   };
 
   const handleUserClick = async (uid: string, username: string, avatar: string) => {
-    let presence = participants.find(p => p.uid === uid);
-    if (!presence) {
-        presence = { uid, username, avatar, isTyping: false, onlineAt: '', status: 'inactive' };
-    }
-    setSelectedUserPresence(presence);
-    const { data } = await supabase.from('subscribers').select('*').eq('room_key', config.roomKey).eq('uid', uid).maybeSingle();
-    setSelectedUserSubscriber(data);
-  };
+      if (uid === INCO_BOT_UUID) return;
+      
+      const activeUser = participants.find(p => p.uid === uid);
+      
+      const userToDisplay: Presence = activeUser || {
+          uid,
+          username,
+          avatar,
+          status: 'inactive',
+          isTyping: false,
+          onlineAt: ''
+      };
 
-  const handleToggleAI = async () => {
-      const nextState = !aiEnabled;
-      setAiEnabled(nextState);
+      setSelectedUserPresence(userToDisplay);
+      
       try {
-          await supabase.from('rooms').update({ ai_enabled: nextState }).eq('room_key', config.roomKey);
-          const statusMsg = nextState ? "Ο Inco AI ενεργοποιήθηκε" : "Ο Inco AI απενεργοποιήθηκε";
-          await sendMessage(statusMsg, config, null, null, null, 'system');
-      } catch (error) {
-          console.error("AI Toggle failed", error);
+          const { data } = await supabase
+            .from('subscribers')
+            .select('*')
+            .eq('room_key', config.roomKey)
+            .eq('uid', uid)
+            .maybeSingle();
+          
+          if (data) {
+              setSelectedUserSubscriber(data as Subscriber);
+              if (!activeUser) {
+                  setSelectedUserPresence(prev => prev ? ({...prev, onlineAt: data.last_notified_at || ''}) : null);
+              }
+          }
+      } catch (e) {
+          console.error("Failed to fetch user subscriber info", e);
       }
   };
 
-  const isOwner = user?.uid === roomData?.created_by;
-
   return (
     <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
-      {roomDeleted && <RoomDeletedToast onExit={onExit} onRecreate={() => { sessionStorage.removeItem(`joined_msg_${config.roomKey}`); sessionStorage.removeItem(`visited_${config.roomKey}`); setRoomDeleted(false); initRoom(); }} />}
-      {isOffline && <div className="absolute top-20 left-0 right-0 flex justify-center z-40"><div className="flex items-center gap-2.5 px-4 py-2 bg-slate-900/90 dark:bg-white/90 rounded-full shadow-2xl border border-white/10 dark:border-slate-200/20 text-xs font-bold text-white dark:text-slate-900"><WifiOff size={14} className="text-red-500 animate-pulse" /> Χωρίς Σύνδεση</div></div>}
+      
+      {roomDeleted && <RoomDeletedToast onExit={handleExitChat} onRecreate={handleRecreate} />}
+
+      {isOffline && (
+        <div className="absolute top-20 left-0 right-0 flex justify-center z-40 pointer-events-none animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className="flex items-center gap-2.5 px-4 py-2 bg-slate-900/90 dark:bg-white/90 backdrop-blur-md rounded-full shadow-2xl border border-white/10 dark:border-slate-200/20">
+              <div className="bg-red-500/20 p-1.5 rounded-full">
+                <WifiOff size={14} className="text-red-500 animate-pulse" />
+              </div>
+              <span className="text-xs font-bold text-white dark:text-slate-900">Χωρίς Σύνδεση</span>
+          </div>
+        </div>
+      )}
 
       {user && isRoomReady && !roomDeleted && (
-          <CallManager user={user} config={config} users={participants} showParticipants={showParticipantsList} onCloseParticipants={() => setShowParticipantsList(false)} roomCreatorId={roomData?.created_by} />
+          <CallManager 
+            user={user}
+            config={config}
+            users={participants}
+            showParticipants={showParticipantsList}
+            onCloseParticipants={() => setShowParticipantsList(false)}
+            roomCreatorId={roomCreatorId}
+          />
       )}
 
       <ChatHeader
-        config={config} roomData={roomData} participants={participants}
+        config={config}
+        participants={participants}
         isRoomReady={isRoomReady && !roomDeleted}
-        showParticipantsList={showParticipantsList} setShowParticipantsList={setShowParticipantsList}
-        showSettingsMenu={showSettingsMenu} setShowSettingsMenu={setShowSettingsMenu}
-        canVibrate={canVibrate} vibrationEnabled={vibrationEnabled} setVibrationEnabled={setVibrationEnabled}
-        soundEnabled={soundEnabled} setSoundEnabled={setSoundEnabled}
-        notificationsEnabled={notificationsEnabled} toggleNotifications={toggleNotifications}
-        emailAlertsEnabled={emailAlertsEnabled} setShowEmailModal={setShowEmailModal}
-        isDarkMode={isDarkMode} toggleTheme={toggleTheme}
-        setShowDeleteModal={setShowDeleteModal} onExit={onExit} isOwner={isOwner}
-        isGoogleUser={user ? !user.isAnonymous : false} aiEnabled={aiEnabled}
+        showParticipantsList={showParticipantsList}
+        setShowParticipantsList={setShowParticipantsList}
+        showSettingsMenu={showSettingsMenu}
+        setShowSettingsMenu={setShowSettingsMenu}
+        canVibrate={canVibrate}
+        vibrationEnabled={vibrationEnabled}
+        setVibrationEnabled={setVibrationEnabled}
+        soundEnabled={soundEnabled}
+        setSoundEnabled={setSoundEnabled}
+        notificationsEnabled={notificationsEnabled}
+        toggleNotifications={toggleNotifications}
+        emailAlertsEnabled={emailAlertsEnabled}
+        setShowEmailModal={setShowEmailModal}
+        isDarkMode={isDarkMode}
+        toggleTheme={toggleTheme}
+        setShowDeleteModal={setShowDeleteModal}
+        onExit={handleExitChat}
+        isOwner={user?.uid === roomCreatorId}
+        isGoogleUser={user ? !user.isAnonymous : false}
+        aiEnabled={aiEnabled}
         onToggleAI={handleToggleAI}
-        onOpenAiAvatar={() => setShowAiAvatarModal(true)} onOpenRoomSettings={() => setShowRoomSettings(true)}
+        onOpenAiAvatar={() => setShowAiAvatarModal(true)}
       />
 
-      <main className="flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50 dark:bg-slate-950/50 relative z-10" style={getBackgroundStyle()}>
-        <div className={`absolute inset-0 pointer-events-none ${roomData?.background_preset && roomData.background_preset !== 'none' ? (isDarkMode ? 'bg-slate-950/50' : 'bg-white/50') : ''}`}></div>
-        <div className="relative z-10">
-          <MessageList messages={messages} currentUserUid={user?.uid || ''} onEdit={(msg) => { setInputText(msg.text); setEditingMessageId(msg.id); }} onDelete={deleteMessage} onReact={reactToMessage} onReply={setReplyingTo} onUserClick={handleUserClick} />
-          <div ref={messagesEndRef} />
-        </div>
+      <main 
+        className="flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50 dark:bg-slate-950/50" 
+        style={{
+            backgroundImage: `radial-gradient(${isDarkMode ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`, 
+            backgroundSize: '20px 20px'
+        }}
+      >
+        <MessageList 
+            messages={messages} 
+            currentUserUid={user?.uid || ''} 
+            onEdit={handleEditMessage}
+            onDelete={deleteMessage}
+            onReply={handleReply}
+            onReact={reactToMessage}
+            onUserClick={handleUserClick}
+        />
+        <div ref={messagesEndRef} />
       </main>
 
-      {!roomDeleted && <ChatInput inputText={inputText} setInputText={setInputText} handleSend={handleSend} handleInputChange={(e) => { setInputText(e.target.value); setTyping(true); }} handleKeyDown={(e) => { if(e.key==='Enter'&&!e.shiftKey) handleSend(); }} isRecording={isRecording} recordingDuration={recordingDuration} startRecording={startRecording} stopRecording={stopRecording} cancelRecording={cancelRecording} selectedFile={selectedFile} setSelectedFile={setSelectedFile} isUploading={isUploading} isGettingLocation={isGettingLocation} handleSendLocation={handleSendLocation} editingMessageId={editingMessageId} cancelEdit={() => { setEditingMessageId(null); setInputText(''); }} replyingTo={replyingTo} cancelReply={() => setReplyingTo(null)} isOffline={isOffline} isRoomReady={isRoomReady} typingUsers={combinedTypingUsers} />}
+      {!roomDeleted && (
+        <ChatInput
+            inputText={inputText}
+            setInputText={setInputText}
+            handleSend={handleSend}
+            handleInputChange={handleInputChange}
+            handleKeyDown={handleKeyDown}
+            isRecording={isRecording}
+            recordingDuration={recordingDuration}
+            startRecording={startRecording}
+            stopRecording={stopRecording}
+            cancelRecording={cancelRecording}
+            selectedFile={selectedFile}
+            setSelectedFile={setSelectedFile}
+            isUploading={isUploading}
+            isGettingLocation={isGettingLocation}
+            handleSendLocation={handleSendLocation}
+            editingMessageId={editingMessageId}
+            cancelEdit={() => { setEditingMessageId(null); setInputText(''); }}
+            replyingTo={replyingTo}
+            cancelReply={() => setReplyingTo(null)}
+            isOffline={isOffline}
+            isRoomReady={isRoomReady}
+            typingUsers={combinedTypingUsers}
+        />
+      )}
 
-      <DeleteChatModal show={showDeleteModal} onCancel={() => setShowDeleteModal(false)} onConfirm={handleDeleteConfirm} isDeleting={isDeleting} />
-      <EmailAlertModal show={showEmailModal} onCancel={() => setShowEmailModal(false)} onSave={handleSaveEmail} isSaving={isSavingEmail} emailAlertsEnabled={emailAlertsEnabled} onToggleOff={() => setEmailAlertsEnabled(false)} emailAddress={emailAddress} setEmailAddress={setEmailAddress} />
-      <AiAvatarModal show={showAiAvatarModal} onClose={() => setShowAiAvatarModal(false)} currentAvatarUrl={aiAvatarUrl} roomKey={config.roomKey} onUpdate={setAiAvatarUrl} />
+      <DeleteChatModal 
+        show={showDeleteModal} 
+        onCancel={() => setShowDeleteModal(false)} 
+        onConfirm={handleDeleteChat} 
+        isDeleting={isDeleting} 
+      />
 
-      {selectedUserPresence && <UserProfileModal user={selectedUserPresence} subscriberInfo={selectedUserSubscriber} isRoomOwner={selectedUserPresence.uid === roomData?.created_by} onClose={() => setSelectedUserPresence(null)} />}
-      
-      {showRoomSettings && roomData && (
-          <RoomSettingsModal
-            room={roomData} creatorName={participants.find(p => p.uid === roomData.created_by)?.username || "Host"}
-            onClose={() => setShowRoomSettings(false)} onUpdate={handleRoomUpdate}
+      <EmailAlertModal 
+        show={showEmailModal} 
+        onCancel={() => setShowEmailModal(false)} 
+        onSave={saveEmailSubscription} 
+        isSaving={isSavingEmail} 
+        emailAlertsEnabled={emailAlertsEnabled} 
+        onToggleOff={handleEmailToggle} 
+        emailAddress={emailAddress} 
+        setEmailAddress={setEmailAddress} 
+      />
+
+      <AiAvatarModal
+        show={showAiAvatarModal}
+        onClose={() => setShowAiAvatarModal(false)}
+        currentAvatarUrl={aiAvatarUrl}
+        roomKey={config.roomKey}
+        onUpdate={(newUrl) => setAiAvatarUrl(newUrl)}
+      />
+
+      {selectedUserPresence && (
+          <UserProfileModal
+            user={selectedUserPresence}
+            subscriberInfo={selectedUserSubscriber}
+            isRoomOwner={selectedUserPresence.uid === roomCreatorId}
+            onClose={() => { setSelectedUserPresence(null); setSelectedUserSubscriber(null); }}
           />
       )}
     </div>
