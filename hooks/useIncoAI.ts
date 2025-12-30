@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../services/supabase';
-import { Message, ChatConfig } from '../types';
+import { Message, ChatConfig, GroundingSource } from '../types';
 import { encryptMessage } from '../utils/helpers';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
@@ -25,7 +25,6 @@ export const useIncoAI = (
 
     const lastMsg = messages[messages.length - 1];
     
-    // Έλεγχοι εγκυρότητας
     if (!lastMsg || !lastMsg.text || lastMsg.type === 'system') return;
     if (lastMsg.uid === INCO_BOT_UUID) return; 
     if (lastMsg.id === lastProcessedId.current) return;
@@ -37,11 +36,9 @@ export const useIncoAI = (
       messages.find(m => m.id === lastMsg.replyTo?.id)?.uid === INCO_BOT_UUID;
 
     if (mentionsInco || isReplyToBot) {
-      // Άμεσο κλείδωμα
       isBusy.current = true;
       lastProcessedId.current = lastMsg.id;
       
-      // Μικρή καθυστέρηση για αποφυγή race conditions από το React Strict Mode
       const timer = setTimeout(() => {
         setIsResponding(true);
         handleBotResponse(messages, lastMsg);
@@ -51,38 +48,74 @@ export const useIncoAI = (
     }
   }, [messages, aiEnabled]);
 
+  const getCurrentLocation = (): Promise<GeolocationPosition | null> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve(pos),
+        () => resolve(null),
+        { timeout: 5000 }
+      );
+    });
+  };
+
   const handleBotResponse = async (chatHistory: Message[], triggerMsg: Message) => {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
+      const pos = await getCurrentLocation();
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' });
+      const dateStr = now.toLocaleDateString('el-GR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      
+      let locationContext = "";
+      if (pos) {
+        locationContext = `The user is currently located near coordinates ${pos.coords.latitude}, ${pos.coords.longitude}. Use this for weather or local recommendations.`;
+      }
+
       const context = chatHistory
-        .slice(-8)
+        .slice(-10)
         .filter(m => m.type !== 'system' && m.text)
         .map(m => `${m.username}: ${m.text.substring(0, 300)}`)
         .join('\n');
 
-      const systemInstruction = `You are "inco", a helpful chat room assistant in "${config.roomName}". 
-      User "${triggerMsg.username}" is talking to you.
+      const systemInstruction = `You are "inco", a helpful chat assistant in "${config.roomName}".
       
-      LANG_RULES:
-      - If user writes GREEK, you MUST respond ONLY in GREEK.
-      - If user writes ENGLISH, you MUST respond ONLY in ENGLISH.
+      CURRENT_STATUS:
+      - Date: ${dateStr}
+      - Time: ${timeStr}
+      - ${locationContext}
       
-      PERSONALITY:
-      - Short, direct natural answers (max 20 words).
-      - Never say you are an AI.`;
+      RULES:
+      - If user writes GREEK, respond ONLY in GREEK.
+      - Use Google Search for facts, local places, or current events.
+      - Be concise, friendly, and helpful.
+      - Never hallucinate. If you don't know, use search or say so.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Context:\n${context}\n\nUser ${triggerMsg.username} said: ${triggerMsg.text}\nRespond directly:`,
+        contents: `Recent conversation:\n${context}\n\nUser ${triggerMsg.username}: ${triggerMsg.text}`,
         config: {
           systemInstruction,
-          temperature: 0.7,
+          temperature: 0.5,
+          tools: [{ googleSearch: {} }],
         },
       });
 
       const botText = response.text;
       if (!botText) return;
+
+      // Extract Grounding Metadata (Sources)
+      let sources: GroundingSource[] = [];
+      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+      if (groundingChunks) {
+        sources = groundingChunks
+          .filter((chunk: any) => chunk.web)
+          .map((chunk: any) => ({
+            title: chunk.web.title,
+            uri: chunk.web.uri
+          }));
+      }
 
       const encryptedBotText = encryptMessage(botText, pin, roomKey);
 
@@ -93,6 +126,7 @@ export const useIncoAI = (
         avatar_url: aiAvatarUrl || DEFAULT_BOT_AVATAR,
         text: encryptedBotText,
         type: 'text',
+        grounding_metadata: sources, // Storing sources in the database
         reply_to: {
             id: triggerMsg.id,
             username: triggerMsg.username,
@@ -103,7 +137,6 @@ export const useIncoAI = (
 
     } catch (error: any) {
       console.error("Inco AI Error:", error);
-      // ΔΕΝ δημοσιεύουμε πλέον μήνυμα σφάλματος στο chat για να αποφύγουμε τα διπλά μηνύματα
     } finally {
       isBusy.current = false;
       setIsResponding(false);
