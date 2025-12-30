@@ -42,7 +42,7 @@ export const useIncoAI = (
       const timer = setTimeout(() => {
         setIsResponding(true);
         handleBotResponse(messages, lastMsg);
-      }, 500); // Small delay to avoid accidental double triggers
+      }, 500);
 
       return () => clearTimeout(timer);
     }
@@ -92,7 +92,6 @@ export const useIncoAI = (
       - Be concise, friendly, and helpful.
       - Never hallucinate. If you don't know, use search or say so.`;
 
-      // Switching to a more stable model with higher rate limits for Free Tier
       const response = await ai.models.generateContent({
         model: 'gemini-flash-latest', 
         contents: `Recent conversation:\n${context}\n\nUser ${triggerMsg.username}: ${triggerMsg.text}`,
@@ -106,7 +105,6 @@ export const useIncoAI = (
       const botText = response.text;
       if (!botText) return;
 
-      // Extract Grounding Metadata (Sources)
       let sources: GroundingSource[] = [];
       const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
       if (groundingChunks) {
@@ -120,27 +118,37 @@ export const useIncoAI = (
 
       const encryptedBotText = encryptMessage(botText, pin, roomKey);
 
-      await supabase.from('messages').insert({
+      const messagePayload: any = {
         room_key: roomKey,
         uid: INCO_BOT_UUID,
         username: 'inco',
         avatar_url: aiAvatarUrl || DEFAULT_BOT_AVATAR,
         text: encryptedBotText,
         type: 'text',
-        grounding_metadata: sources,
         reply_to: {
             id: triggerMsg.id,
             username: triggerMsg.username,
             text: triggerMsg.text.substring(0, 100),
             isAttachment: !!triggerMsg.attachment
         }
+      };
+
+      // Προσπάθεια εισαγωγής με πηγές
+      const { error: firstTryError } = await supabase.from('messages').insert({
+          ...messagePayload,
+          grounding_metadata: sources
       });
+
+      // Αν αποτύχει με 400, σημαίνει ότι λείπει η στήλη στη βάση, οπότε στέλνουμε χωρίς αυτήν
+      if (firstTryError && firstTryError.code === '42703' || (firstTryError?.status === 400)) {
+          console.warn("Column 'grounding_metadata' missing in DB. Falling back to basic insert.");
+          await supabase.from('messages').insert(messagePayload);
+      }
 
     } catch (error: any) {
       console.error("Inco AI Error:", error);
-      // Handle Quota Exhausted gracefully
       if (error.message?.includes('429')) {
-          const errMsg = encryptMessage("⚠️ Συγγνώμη, έχω δεχθεί πάρα πολλά αιτήματα αυτή τη στιγμή. Παρακαλώ δοκιμάστε πάλι σε ένα λεπτό.", pin, roomKey);
+          const errMsg = encryptMessage("⚠️ Συγγνώμη, έχω δεχθεί πάρα πολλά αιτήματα. Δοκιμάστε πάλι σε λίγο.", pin, roomKey);
           await supabase.from('messages').insert({
             room_key: roomKey,
             uid: INCO_BOT_UUID,
