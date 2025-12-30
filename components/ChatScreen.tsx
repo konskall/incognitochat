@@ -26,14 +26,13 @@ interface ChatScreenProps {
   onExit: () => void;
 }
 
-// --- EMAILJS CONFIGURATION ---
 const EMAILJS_SERVICE_ID: string = "service_cnerkn6";
 const EMAILJS_TEMPLATE_ID: string = "template_zr9v8bp";
 const EMAILJS_PUBLIC_KEY: string = "cSDU4HLqgylnmX957";
 
 const RoomDeletedToast: React.FC<{ onExit: () => void, onRecreate: () => void }> = ({ onExit, onRecreate }) => {
     return createPortal(
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-500">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-500">
             <div className="relative bg-slate-900/90 dark:bg-slate-900/90 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center overflow-hidden ring-1 ring-white/10">
                 <div className="flex flex-col items-center gap-6">
                     <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(239,68,68,0.3)] ring-1 ring-red-500/50">
@@ -41,7 +40,7 @@ const RoomDeletedToast: React.FC<{ onExit: () => void, onRecreate: () => void }>
                     </div>
                     <div className="space-y-3">
                         <h2 className="text-2xl font-bold text-white tracking-tight">Το δωμάτιο διαγράφηκε</h2>
-                        <p className="text-slate-300 text-sm font-medium leading-relaxed">Αυτό το δωμάτιο δεν υπάρχει πλέον. Μπορείτε να το ξαναδημιουργήσετε ή να επιστρέψετε στην αρχική.</p>
+                        <p className="text-slate-300 text-sm font-medium leading-relaxed">Αυτό το δωμάτιο δεν υπάρχει πλέον από τον δημιουργό του.</p>
                     </div>
                     <div className="flex flex-col gap-3 w-full">
                         <button onClick={onRecreate} className="w-full py-3.5 px-6 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-transform active:scale-95"><RefreshCcw size={18} /> Recreate Room</button>
@@ -58,25 +57,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
   const [inputText, setInputText] = useState('');
   const [roomData, setRoomData] = useState<Room | null>(null);
-  
-  // UI States
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showAiAvatarModal, setShowAiAvatarModal] = useState(false);
   const [showRoomSettings, setShowRoomSettings] = useState(false);
   const [selectedUserPresence, setSelectedUserPresence] = useState<Presence | null>(null);
   const [selectedUserSubscriber, setSelectedUserSubscriber] = useState<Subscriber | null>(null);
-  
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showParticipantsList, setShowParticipantsList] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-  
-  // Room Status
   const [roomDeleted, setRoomDeleted] = useState(false);
   const [isRoomReady, setIsRoomReady] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiAvatarUrl, setAiAvatarUrl] = useState('');
-  
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') !== 'light');
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -193,13 +186,27 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
            setAiAvatarUrl(room.ai_avatar_url || '');
            setIsRoomReady(true);
            setRoomDeleted(false);
+           
+           // Στείλε μήνυμα εισόδου αν είναι η πρώτη φορά στη συνεδρία
+           const joinKey = `joined_msg_${config.roomKey}`;
+           if (!sessionStorage.getItem(joinKey)) {
+               await sendMessage(`Ο χρήστης ${config.username} μπήκε στο δωμάτιο`, config, null, null, null, 'system');
+               sessionStorage.setItem(joinKey, 'true');
+           }
       } else {
-           const sessionKey = `joined_${config.roomKey}`;
-           if (sessionStorage.getItem(sessionKey)) { setRoomDeleted(true); } 
+           // Αν το δωμάτιο δεν υπάρχει αλλά ο χρήστης το είχε επισκεφθεί πριν, σημαίνει ότι διαγράφηκε
+           const visitKey = `visited_${config.roomKey}`;
+           if (sessionStorage.getItem(visitKey)) { 
+               setRoomDeleted(true); 
+           } 
            else {
+               // Δημιουργία νέου δωματίου
                const { error: insertError } = await supabase.from('rooms').insert({ room_key: config.roomKey, room_name: config.roomName, pin: config.pin, created_by: user.uid, ai_enabled: false });
-               if (!insertError) { await sendMessage(`Room created by ${config.username}`, config, null, null, null, 'system'); }
-               initRoom();
+               if (!insertError) { 
+                   await sendMessage(`Το δωμάτιο δημιουργήθηκε από τον χρήστη ${config.username}`, config, null, null, null, 'system'); 
+                   sessionStorage.setItem(visitKey, 'true');
+                   initRoom();
+               }
            }
       }
     } catch (error) { setIsRoomReady(true); }
@@ -212,8 +219,24 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     return () => { window.removeEventListener('focus', handleVisibility); };
   }, [initRoom]);
 
+  // Real-time listener για τη διαγραφή του δωματίου
+  useEffect(() => {
+      if (!config.roomKey) return;
+      const channel = supabase.channel(`room_status_${config.roomKey}`)
+          .on('postgres_changes', { 
+              event: 'DELETE', 
+              schema: 'public', 
+              table: 'rooms', 
+              filter: `room_key=eq.${config.roomKey}` 
+          }, () => {
+              setRoomDeleted(true);
+          })
+          .subscribe();
+      return () => { supabase.removeChannel(channel); };
+  }, [config.roomKey]);
+
   const notifySubscribers = async (action: 'message' | 'deleted' | 'joined', details: string) => {
-    if (!config.roomKey || !user || action === 'joined') return;
+    if (!config.roomKey || !user) return;
     const { data } = await supabase.from('subscribers').select('*').eq('room_key', config.roomKey);
     if (!data || data.length === 0) return;
     const onlineUserIds = new Set(participants.map(p => p.uid));
@@ -248,7 +271,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             'polygons': 'https://www.transparenttextures.com/patterns/diagonal-striped-brick.png'
         };
         const url = presets[roomData.background_preset];
-        if (url) return { backgroundImage: `url(${url})`, backgroundSize: '80px', backgroundRepeat: 'repeat' };
+        if (url) return { backgroundImage: `url(${url})`, backgroundSize: '40px', backgroundRepeat: 'repeat' };
     }
     return { backgroundImage: `radial-gradient(${isDarkMode ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`, backgroundSize: '20px 20px' };
   };
@@ -256,11 +279,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const handleDeleteConfirm = async () => {
     setIsDeleting(true);
     try {
+        // Στείλε ειδοποίηση πριν τη διαγραφή
+        await notifySubscribers('deleted', 'Το δωμάτιο έκλεισε οριστικά από τον δημιουργό.');
         await supabase.from('rooms').delete().eq('room_key', config.roomKey);
-        notifySubscribers('deleted', 'The room has been closed.');
         onExit();
     } catch (err) {
-        alert("Delete failed");
+        alert("Η διαγραφή απέτυχε");
     } finally {
         setIsDeleting(false);
         setShowDeleteModal(false);
@@ -287,26 +311,33 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   };
 
-  const handleUserClick = async (uid: string) => {
-    const presence = participants.find(p => p.uid === uid);
-    if (!presence) return;
-    
+  const handleUserClick = async (uid: string, username: string, avatar: string) => {
+    let presence = participants.find(p => p.uid === uid);
+    if (!presence) {
+        presence = { uid, username, avatar, isTyping: false, onlineAt: '', status: 'inactive' };
+    }
     setSelectedUserPresence(presence);
-    
-    const { data } = await supabase.from('subscribers')
-        .select('*')
-        .eq('room_key', config.roomKey)
-        .eq('uid', uid)
-        .maybeSingle();
-        
+    const { data } = await supabase.from('subscribers').select('*').eq('room_key', config.roomKey).eq('uid', uid).maybeSingle();
     setSelectedUserSubscriber(data);
+  };
+
+  const handleToggleAI = async () => {
+      const nextState = !aiEnabled;
+      setAiEnabled(nextState);
+      try {
+          await supabase.from('rooms').update({ ai_enabled: nextState }).eq('room_key', config.roomKey);
+          const statusMsg = nextState ? "Ο Inco AI ενεργοποιήθηκε" : "Ο Inco AI απενεργοποιήθηκε";
+          await sendMessage(statusMsg, config, null, null, null, 'system');
+      } catch (error) {
+          console.error("AI Toggle failed", error);
+      }
   };
 
   const isOwner = user?.uid === roomData?.created_by;
 
   return (
     <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
-      {roomDeleted && <RoomDeletedToast onExit={onExit} onRecreate={() => { setRoomDeleted(false); initRoom(); }} />}
+      {roomDeleted && <RoomDeletedToast onExit={onExit} onRecreate={() => { sessionStorage.removeItem(`joined_msg_${config.roomKey}`); sessionStorage.removeItem(`visited_${config.roomKey}`); setRoomDeleted(false); initRoom(); }} />}
       {isOffline && <div className="absolute top-20 left-0 right-0 flex justify-center z-40"><div className="flex items-center gap-2.5 px-4 py-2 bg-slate-900/90 dark:bg-white/90 rounded-full shadow-2xl border border-white/10 dark:border-slate-200/20 text-xs font-bold text-white dark:text-slate-900"><WifiOff size={14} className="text-red-500 animate-pulse" /> Χωρίς Σύνδεση</div></div>}
 
       {user && isRoomReady && !roomDeleted && (
@@ -325,11 +356,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         isDarkMode={isDarkMode} toggleTheme={toggleTheme}
         setShowDeleteModal={setShowDeleteModal} onExit={onExit} isOwner={isOwner}
         isGoogleUser={user ? !user.isAnonymous : false} aiEnabled={aiEnabled}
-        onToggleAI={() => { const n = !aiEnabled; setAiEnabled(n); supabase.from('rooms').update({ ai_enabled: n }).eq('room_key', config.roomKey).then(); }}
+        onToggleAI={handleToggleAI}
         onOpenAiAvatar={() => setShowAiAvatarModal(true)} onOpenRoomSettings={() => setShowRoomSettings(true)}
       />
 
-      <main className="flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50 dark:bg-slate-950/50 relative" style={getBackgroundStyle()}>
+      <main className="flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50 dark:bg-slate-950/50 relative z-10" style={getBackgroundStyle()}>
         <div className={`absolute inset-0 pointer-events-none ${roomData?.background_preset && roomData.background_preset !== 'none' ? (isDarkMode ? 'bg-slate-950/50' : 'bg-white/50') : ''}`}></div>
         <div className="relative z-10">
           <MessageList messages={messages} currentUserUid={user?.uid || ''} onEdit={(msg) => { setInputText(msg.text); setEditingMessageId(msg.id); }} onDelete={deleteMessage} onReact={reactToMessage} onReply={setReplyingTo} onUserClick={handleUserClick} />
