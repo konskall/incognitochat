@@ -42,7 +42,7 @@ export const useIncoAI = (
       const timer = setTimeout(() => {
         setIsResponding(true);
         handleBotResponse(messages, lastMsg);
-      }, 200);
+      }, 500); // Small delay to avoid accidental double triggers
 
       return () => clearTimeout(timer);
     }
@@ -92,12 +92,13 @@ export const useIncoAI = (
       - Be concise, friendly, and helpful.
       - Never hallucinate. If you don't know, use search or say so.`;
 
+      // Switching to a more stable model with higher rate limits for Free Tier
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest', 
         contents: `Recent conversation:\n${context}\n\nUser ${triggerMsg.username}: ${triggerMsg.text}`,
         config: {
           systemInstruction,
-          temperature: 0.5,
+          temperature: 0.7,
           tools: [{ googleSearch: {} }],
         },
       });
@@ -126,7 +127,7 @@ export const useIncoAI = (
         avatar_url: aiAvatarUrl || DEFAULT_BOT_AVATAR,
         text: encryptedBotText,
         type: 'text',
-        grounding_metadata: sources, // Storing sources in the database
+        grounding_metadata: sources,
         reply_to: {
             id: triggerMsg.id,
             username: triggerMsg.username,
@@ -137,6 +138,18 @@ export const useIncoAI = (
 
     } catch (error: any) {
       console.error("Inco AI Error:", error);
+      // Handle Quota Exhausted gracefully
+      if (error.message?.includes('429')) {
+          const errMsg = encryptMessage("⚠️ Συγγνώμη, έχω δεχθεί πάρα πολλά αιτήματα αυτή τη στιγμή. Παρακαλώ δοκιμάστε πάλι σε ένα λεπτό.", pin, roomKey);
+          await supabase.from('messages').insert({
+            room_key: roomKey,
+            uid: INCO_BOT_UUID,
+            username: 'inco',
+            avatar_url: aiAvatarUrl || DEFAULT_BOT_AVATAR,
+            text: errMsg,
+            type: 'text'
+          });
+      }
     } finally {
       isBusy.current = false;
       setIsResponding(false);
