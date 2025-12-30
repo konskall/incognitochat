@@ -177,9 +177,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       )}
 
       <ChatModalsContainer 
-        showDeleteModal={modals.delete} setShowDeleteModal={(v) => setModals({...modals, delete: v})} handleDeleteChat={room.deleteRoom} isDeleting={isDeleting}
+        showDeleteModal={modals.delete} setShowDeleteModal={(v) => setModals({...modals, delete: v})} handleDeleteChat={async () => { setIsDeleting(true); try { await room.deleteRoom(); } finally { setIsDeleting(false); } }} isDeleting={isDeleting}
         showEmailModal={modals.email} setShowEmailModal={(v) => setModals({...modals, email: v})} 
-        saveEmailSubscription={async () => { await supabase.from('subscribers').upsert({room_key:config.roomKey, uid:user?.uid, email:settings.emailAddress}); setModals({...modals, email: false}); settings.setEmailAlertsEnabled(true); }}
+        saveEmailSubscription={async () => { setIsSavingEmail(true); try { await supabase.from('subscribers').upsert({room_key:config.roomKey, uid:user?.uid, email:settings.emailAddress}); setModals({...modals, email: false}); settings.setEmailAlertsEnabled(true); } finally { setIsSavingEmail(false); } }}
         isSavingEmail={isSavingEmail} emailAlertsEnabled={settings.emailAlertsEnabled} handleEmailToggle={() => settings.setEmailAlertsEnabled(false)}
         emailAddress={settings.emailAddress} setEmailAddress={settings.setEmailAddress}
         showAiAvatarModal={modals.ai} setShowAiAvatarModal={(v) => setModals({...modals, ai: v})} aiAvatarUrl={room.aiAvatarUrl} roomKey={config.roomKey} setAiAvatarUrl={room.setAiAvatarUrl}
