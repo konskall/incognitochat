@@ -104,6 +104,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
   }, []);
 
+  // Προσθήκη εφέ για τον αυτόματο συγχρονισμό του email όταν συνδέεται ο χρήστης
+  useEffect(() => {
+    if (user?.email && !emailAddress) {
+      setEmailAddress(user.email);
+    }
+  }, [user, emailAddress]);
+
   const handleNewMessageReceived = useCallback(async (msg: Message) => {
     if (msg.uid !== user?.uid && msg.type !== 'system') {
         if (soundEnabled) { initAudio(); setTimeout(() => playBeep(), 10); }
@@ -187,6 +194,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
            setIsRoomReady(true);
            setRoomDeleted(false);
            
+           // Έλεγχος για υπάρχουσα συνδρομή e-mail
+           const { data: sub } = await supabase.from('subscribers').select('*').eq('room_key', config.roomKey).eq('uid', user.uid).maybeSingle();
+           if (sub) {
+               setEmailAlertsEnabled(true);
+               setEmailAddress(sub.email);
+           }
+
            // Στείλε μήνυμα εισόδου αν είναι η πρώτη φορά στη συνεδρία
            const joinKey = `joined_msg_${config.roomKey}`;
            if (!sessionStorage.getItem(joinKey)) {
