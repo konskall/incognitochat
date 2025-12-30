@@ -99,14 +99,14 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   };
 
   return (
-    <header className="glass-panel px-4 py-3 flex items-center justify-between z-10 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))] transition-all">
+    <header className="glass-panel px-4 py-3 flex items-center justify-between sticky top-0 shadow-md pt-[calc(0.75rem+env(safe-area-inset-top))] transition-all z-[100]">
         <div className="flex items-center gap-3 overflow-hidden">
              <div 
-                onClick={isOwner ? onOpenRoomSettings : undefined}
+                onClick={() => isOwner && onOpenRoomSettings()}
                 className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0 relative overflow-hidden bg-slate-200 dark:bg-slate-800 group ${isOwner ? 'cursor-pointer hover:scale-105 active:scale-95 transition-all' : ''}`}
              >
                 {roomData?.avatar_url ? (
-                    <img src={roomData.avatar_url} className="w-full h-full object-cover" />
+                    <img src={roomData.avatar_url} className="w-full h-full object-cover" alt="Room" />
                 ) : (
                     <div className="w-full h-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
                         {config.roomName.substring(0,2).toUpperCase()}
@@ -141,7 +141,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
              </div>
         </div>
 
-        <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center relative">
+        <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center relative z-[110]">
             {isOwner && isGoogleUser && (
                 <button
                     onClick={onToggleAI}
@@ -155,8 +155,9 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             <button onClick={() => setShowParticipantsList(true)} className={`p-2 rounded-lg transition ${showParticipantsList ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`} title="View Participants & Call"><Users size={20} /></button>
             <button ref={settingsButtonRef} onClick={() => setShowSettingsMenu(!showSettingsMenu)} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition" title="Settings"><Settings size={20} /></button>
             <button onClick={onExit} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition" title="Exit Room"><LogOut size={20} /></button>
+            
             {showSettingsMenu && (
-                <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5" ref={settingsMenuRef}>
+                <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 z-[120] overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5" ref={settingsMenuRef}>
                     {isOwner && isGoogleUser && (
                         <button onClick={() => { onOpenAiAvatar(); setShowSettingsMenu(false); }} className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition"><Palette size={18} /><span>Customize AI Look</span></button>
                     )}
