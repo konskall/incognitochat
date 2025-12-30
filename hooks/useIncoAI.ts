@@ -18,9 +18,10 @@ export const useIncoAI = (
   const lastProcessedId = useRef<string | null>(null);
   const isBusy = useRef<boolean>(false);
   const [isResponding, setIsResponding] = useState(false);
+  const [isQuotaExhausted, setIsQuotaExhausted] = useState(false);
 
   useEffect(() => {
-    if (!aiEnabled || messages.length === 0) return;
+    if (!aiEnabled || messages.length === 0 || isQuotaExhausted) return;
 
     const lastMsg = messages[messages.length - 1];
     
@@ -45,7 +46,7 @@ export const useIncoAI = (
 
       return () => clearTimeout(timer);
     }
-  }, [messages, aiEnabled]);
+  }, [messages, aiEnabled, isQuotaExhausted]);
 
   const getCurrentLocation = (): Promise<GeolocationPosition | null> => {
     return new Promise((resolve) => {
@@ -69,7 +70,7 @@ export const useIncoAI = (
       
       let locationContext = "";
       if (pos) {
-        locationContext = `User is near coordinates ${pos.coords.latitude}, ${pos.coords.longitude} (Sparta area).`;
+        locationContext = `User is near coordinates ${pos.coords.latitude}, ${pos.coords.longitude}.`;
       }
 
       const context = chatHistory
@@ -92,7 +93,7 @@ STRICT RULES:
 4. Do not start your sentences with "Σήμερα είναι..." or "Η ώρα είναι..." unless relevant.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-flash-latest', 
+        model: 'gemini-2.5-flash', 
         contents: `Recent conversation:\n${context}\n\nUser ${triggerMsg.username}: ${triggerMsg.text}`,
         config: {
           systemInstruction,
@@ -143,8 +144,10 @@ STRICT RULES:
 
     } catch (error: any) {
       console.error("Inco AI Error:", error);
+      // Διαχείριση ορίων (Rate Limits / Quota)
       if (error.message?.includes('429')) {
-          const errMsg = encryptMessage("⚠️ Sorry, I've received too many requests. Please try again in a moment.", pin, roomKey);
+          setIsQuotaExhausted(true);
+          const errMsg = encryptMessage("⚠️ I have exhausted my daily question quota. I will be available again tomorrow!", pin, roomKey);
           await supabase.from('messages').insert({
             room_key: roomKey,
             uid: INCO_BOT_UUID,
