@@ -1,11 +1,9 @@
-
 import React, { useRef, useEffect } from 'react';
-import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut, Wand2, Palette, Shield, Edit3 } from 'lucide-react';
-import { ChatConfig, Presence, Room } from '../types';
+import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut, Wand2, Palette } from 'lucide-react';
+import { ChatConfig, Presence } from '../types';
 
 interface ChatHeaderProps {
   config: ChatConfig;
-  roomData: Room | null;
   participants: Presence[];
   isRoomReady: boolean;
   showParticipantsList: boolean;
@@ -30,12 +28,10 @@ interface ChatHeaderProps {
   aiEnabled: boolean;
   onToggleAI: () => void;
   onOpenAiAvatar: () => void;
-  onOpenRoomSettings: () => void;
 }
 
 const ChatHeader: React.FC<ChatHeaderProps> = ({
   config,
-  roomData,
   participants,
   isRoomReady,
   showParticipantsList,
@@ -59,8 +55,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   isGoogleUser,
   aiEnabled,
   onToggleAI,
-  onOpenAiAvatar,
-  onOpenRoomSettings
+  onOpenAiAvatar
 }) => {
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -77,8 +72,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             setShowSettingsMenu(false);
         }
     };
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => { document.removeEventListener('mousedown', handleClickOutside); };
+    return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, [showSettingsMenu, setShowSettingsMenu]);
 
   const handleShare = async () => {
@@ -87,41 +85,34 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
     shareUrl.searchParams.set('room', config.roomName);
     shareUrl.searchParams.set('pin', config.pin);
     const inviteUrl = shareUrl.toString();
+
     const shareText = `🔒 Join my secure room on Incognito Chat!\n\n🏠 Room: ${config.roomName}\n🔑 PIN: ${config.pin}`;
+
     try {
         if (navigator.share) {
-            await navigator.share({ title: 'Incognito Chat Invite', text: shareText, url: inviteUrl });
+            await navigator.share({
+                title: 'Incognito Chat Invite',
+                text: shareText,
+                url: inviteUrl
+            });
         } else {
             await navigator.clipboard.writeText(`${shareText}\n\n${inviteUrl}`);
             alert('Room details copied to clipboard!');
         }
-    } catch (err) { console.error('Error sharing:', err); }
+    } catch (err) {
+        console.error('Error sharing:', err);
+    }
   };
 
   return (
-    <header className="glass-panel px-4 py-3 flex items-center justify-between sticky top-0 shadow-md pt-[calc(0.75rem+env(safe-area-inset-top))] transition-all z-[100]">
+    <header className="glass-panel px-4 py-3 flex items-center justify-between z-10 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
         <div className="flex items-center gap-3 overflow-hidden">
-             <div 
-                onClick={() => isOwner && onOpenRoomSettings()}
-                className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0 relative overflow-hidden bg-slate-200 dark:bg-slate-800 group ${isOwner ? 'cursor-pointer hover:scale-105 active:scale-95 transition-all' : ''}`}
-             >
-                {roomData?.avatar_url ? (
-                    <img src={roomData.avatar_url} className="w-full h-full object-cover" alt="Room" />
-                ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                        {config.roomName.substring(0,2).toUpperCase()}
-                    </div>
-                )}
-                {isOwner && (
-                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Edit3 size={14} className="text-white drop-shadow-md" />
-                    </div>
-                )}
+             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
+                {config.roomName.substring(0,2).toUpperCase()}
              </div>
              <div className="min-w-0 flex flex-col justify-center">
                  <h2 className="font-bold text-slate-800 dark:text-slate-100 leading-tight truncate text-sm md:text-base flex items-center gap-1.5">
                     {config.roomName}
-                    {isOwner && <Shield size={12} className="text-blue-500 shrink-0" />}
                  </h2>
                  <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
                      <div className="flex items-center gap-1.5">
@@ -141,7 +132,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
              </div>
         </div>
 
-        <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center relative z-[110]">
+        <div className="flex gap-1 sm:gap-2 flex-shrink-0 items-center relative">
             {isOwner && isGoogleUser && (
                 <button
                     onClick={onToggleAI}
@@ -151,27 +142,108 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                     <Wand2 size={20} />
                 </button>
             )}
-            <button onClick={handleShare} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition" title="Share Room Invite"><Share2 size={20} /></button>
-            <button onClick={() => setShowParticipantsList(true)} className={`p-2 rounded-lg transition ${showParticipantsList ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`} title="View Participants & Call"><Users size={20} /></button>
-            <button ref={settingsButtonRef} onClick={() => setShowSettingsMenu(!showSettingsMenu)} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition" title="Settings"><Settings size={20} /></button>
-            <button onClick={onExit} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition" title="Exit Room"><LogOut size={20} /></button>
-            
+
+            <button
+                onClick={handleShare}
+                className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                title="Share Room Invite"
+            >
+                <Share2 size={20} />
+            </button>
+
+            <button 
+                onClick={() => setShowParticipantsList(true)}
+                className={`p-2 rounded-lg transition ${showParticipantsList ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                title="View Participants & Call"
+            >
+                <Users size={20} />
+            </button>
+
+            <button
+                ref={settingsButtonRef}
+                onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+                className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                title="Settings"
+            >
+                <Settings size={20} />
+            </button>
+
+            <button 
+                onClick={onExit}
+                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
+                title="Exit Room"
+            >
+                <LogOut size={20} />
+            </button>
+
             {showSettingsMenu && (
-                <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 z-[120] overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5" ref={settingsMenuRef}>
-                    {isOwner && isGoogleUser && (
-                        <button onClick={() => { onOpenAiAvatar(); setShowSettingsMenu(false); }} className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition"><Palette size={18} /><span>Customize AI Look</span></button>
-                    )}
-                    {canVibrate && (
-                         <button onClick={() => { setVibrationEnabled(!vibrationEnabled); setShowSettingsMenu(false); }} className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${vibrationEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}>{vibrationEnabled ? <Vibrate size={18} /> : <VibrateOff size={18} />}<span>Vibration</span></button>
-                    )}
-                    <button onClick={() => { setSoundEnabled(!soundEnabled); setShowSettingsMenu(false); }} className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${soundEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}>{soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}<span>Sound</span></button>
-                    <button onClick={() => { toggleNotifications(); setShowSettingsMenu(false); }} className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${notificationsEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}>{notificationsEnabled ? <Bell size={18} /> : <BellOff size={18} />}<span>Notifications</span></button>
-                    <button onClick={() => { toggleTheme(); setShowSettingsMenu(false); }} className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">{isDarkMode ? <Sun size={18} /> : <Moon size={18} />}<span>Theme</span></button>
-                    <div className="h-px bg-slate-100 dark:bg-slate-700/50 my-1" />
-                    <button onClick={() => { setShowEmailModal(true); setShowSettingsMenu(false); }} className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${emailAlertsEnabled ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300 hover:text-blue-500'}`}><Mail size={18} /><span>Email Alerts</span>{emailAlertsEnabled && <span className="ml-auto text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">ON</span>}</button>
-                    <div className="h-px bg-slate-100 dark:bg-slate-700/50 my-1" />
-                    <button onClick={() => { setShowDeleteModal(true); setShowSettingsMenu(false); }} className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"><Trash2 size={18} /><span>Delete Chat</span></button>
-                </div>
+                <>
+                    <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5" ref={settingsMenuRef}>
+                        {isOwner && isGoogleUser && (
+                            <button 
+                                onClick={() => { onOpenAiAvatar(); setShowSettingsMenu(false); }}
+                                className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition"
+                            >
+                                <Palette size={18} />
+                                <span>Customize AI Look</span>
+                            </button>
+                        )}
+                        
+                        {canVibrate && (
+                             <button 
+                                onClick={() => { setVibrationEnabled(!vibrationEnabled); setShowSettingsMenu(false); }}
+                                className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${vibrationEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+                            >
+                                {vibrationEnabled ? <Vibrate size={18} /> : <VibrateOff size={18} />}
+                                <span>Vibration</span>
+                            </button>
+                        )}
+                        <button 
+                            onClick={() => { setSoundEnabled(!soundEnabled); setShowSettingsMenu(false); }}
+                            className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${soundEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+                        >
+                            {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+                            <span>Sound</span>
+                        </button>
+                        <button 
+                            onClick={() => { toggleNotifications(); setShowSettingsMenu(false); }}
+                            className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${notificationsEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+                        >
+                            {notificationsEnabled ? <Bell size={18} /> : <BellOff size={18} />}
+                            <span>Notifications</span>
+                        </button>
+                        <button 
+                            onClick={() => { toggleTheme(); setShowSettingsMenu(false); }}
+                            className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition"
+                        >
+                            {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+                            <span>Theme</span>
+                        </button>
+
+                        <div className="h-px bg-slate-100 dark:bg-slate-700/50 my-1" />
+
+                        <div className="p-2">
+                             <button 
+                                onClick={() => { setShowEmailModal(true); setShowSettingsMenu(false); }}
+                                className={`flex items-center gap-3 w-full rounded-lg text-sm font-medium transition ${emailAlertsEnabled ? 'text-blue-600 dark:text-blue-400 mb-2' : 'text-slate-600 dark:text-slate-300 hover:text-blue-500'}`}
+                             >
+                                <Mail size={18} />
+                                <span>Email Alerts</span>
+                                {emailAlertsEnabled && <span className="ml-auto text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">ON</span>}
+                             </button>
+                        </div>
+
+                        <div className="h-px bg-slate-100 dark:bg-slate-700/50 my-1" />
+
+                        <button 
+                            onClick={() => { setShowDeleteModal(true); setShowSettingsMenu(false); }}
+                            className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
+                        >
+                            <Trash2 size={18} />
+                            <span>Delete Chat</span>
+                        </button>
+                    </div>
+                </>
             )}
         </div>
     </header>
