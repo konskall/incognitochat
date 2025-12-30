@@ -5,7 +5,7 @@ import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { 
   FileText, Download, Edit2, 
-  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, Trash2, Eye, Play, Pause, AlertCircle, Wand2
+  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search
 } from 'lucide-react';
 
 interface MessageListProps {
@@ -20,7 +20,6 @@ interface MessageListProps {
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 
-// -- Custom Delete Toast Component --
 const DeleteToast: React.FC<{ onConfirm: () => void; onCancel: () => void }> = ({ onConfirm, onCancel }) => {
     return createPortal(
         <div className="fixed bottom-20 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto z-[100] animate-in slide-in-from-bottom-4 fade-in duration-300">
@@ -43,7 +42,6 @@ const DeleteToast: React.FC<{ onConfirm: () => void; onCancel: () => void }> = (
     );
 };
 
-// -- Custom Audio Player Component --
 const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) => {
     const audioRef = useRef<HTMLAudioElement>(null);
     const waveformRef = useRef<HTMLDivElement>(null);
@@ -107,7 +105,6 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
     );
 };
 
-// -- Universal Media Preview Modal Component --
 const MediaPreviewModal: React.FC<{ src: string; alt: string; type: string; onClose: () => void; }> = ({ src, alt, type, onClose }) => {
     useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = 'unset'; }; }, []);
     const handleDownload = async (e: React.MouseEvent) => {
@@ -137,7 +134,6 @@ const MediaPreviewModal: React.FC<{ src: string; alt: string; type: string; onCl
     );
 };
 
-// -- Link Preview Component --
 const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -276,6 +272,31 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
                 {renderAttachment()}
                 {renderLocation()}
                 {msg.text && <div className={`leading-relaxed whitespace-pre-wrap break-words break-all ${(msg.attachment || msg.location) ? 'mt-2 pt-2 border-t ' + (isMe ? 'border-white/20' : 'border-slate-100 dark:border-slate-700') : ''}`}>{renderContent(msg.text)}</div>}
+                
+                {/* Grounding Sources UI */}
+                {msg.groundingMetadata && msg.groundingMetadata.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-indigo-100 dark:border-indigo-900/30">
+                    <div className="flex items-center gap-1.5 mb-2 text-indigo-500 dark:text-indigo-400">
+                      <Search size={12} />
+                      <span className="text-[10px] font-bold uppercase tracking-wider">Πηγές Αναζήτησης</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {msg.groundingMetadata.map((source, idx) => (
+                        <a 
+                          key={idx} 
+                          href={source.uri} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-2 py-1 bg-white/50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-lg text-[10px] font-medium text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition-colors max-w-[200px]"
+                        >
+                          <span className="truncate">{source.title || 'Link'}</span>
+                          <ExternalLink size={8} className="shrink-0" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className={`flex items-center justify-end gap-1 mt-1 select-none ${isMe ? 'text-blue-200' : isBot ? 'text-indigo-400' : 'text-slate-400'}`}>{msg.isEdited && <span className="text-[9px] italic opacity-80">(edited)</span>}<span className="text-[10px] font-medium">{timeString}</span></div>
             </div>
             {msg.reactions && Object.keys(msg.reactions).length > 0 && <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>{Object.entries(msg.reactions).map(([emoji, uids]) => { if (uids.length === 0) return null; const iReacted = uids.includes(currentUid); return (<button key={emoji} onClick={() => onReact(msg, emoji)} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs shadow-sm border transition-all hover:scale-105 ${iReacted ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-slate-800 dark:text-blue-100' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}><span>{emoji}</span><span className={`font-semibold text-[10px] ${iReacted ? 'text-blue-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>{uids.length}</span></button>);})}</div>}
