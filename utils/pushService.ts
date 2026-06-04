@@ -1,8 +1,9 @@
 
 import { supabase } from '../services/supabase';
 
-// REPLACE THIS WITH YOUR VAPID PUBLIC KEY FROM STEP 1
-const VAPID_PUBLIC_KEY = 'BGTGP7sFM_sOavl6uF_e-MeAnapyi6sI_bjoSSk3N4mjCW6bPHdQxvN7Z4w750IAhEHsy9xfPY9MCHu7Y7OADbU'; 
+// VAPID public key (safe to ship to the client). The matching private key is a
+// Supabase secret (VAPID_PRIVATE_KEY) used only by the `send-push` Edge Function.
+const VAPID_PUBLIC_KEY = 'BH7GMEOmJ8h-am1gUZqhMP3jVRV_oUMiKD3vdtlMXhcfI5sggWXmmC9q7irvM44i9PHCvEDZZiupxzXtL4j60cM';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);

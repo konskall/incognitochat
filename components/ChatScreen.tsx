@@ -6,6 +6,7 @@ import { ChatConfig, Message, User, Subscriber, Presence } from '../types';
 import MessageList from './MessageList';
 import CallManager from './CallManager';
 import { initAudio, playBeep } from '../utils/helpers';
+import { subscribeToPushNotifications, unsubscribeFromPushNotifications } from '../utils/pushService';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
@@ -222,21 +223,37 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const notifySubscribers = async (action: 'message' | 'deleted' | 'joined', details: string) => {
       if (!config.roomKey || !user) return;
       if (action === 'joined') return;
-      try {
-          await supabase.functions.invoke('notify-room', {
+
+      const excludeUids = participants.map(p => p.uid);
+      const pushTitle = action === 'deleted'
+          ? `Room "${config.roomName}" was deleted`
+          : `New message in ${config.roomName}`;
+
+      // Email (notify-room) + Web Push (send-push) both run server-side; fire in
+      // parallel, non-blocking. Each is a silent no-op if its secret isn't set.
+      await Promise.allSettled([
+          supabase.functions.invoke('notify-room', {
               body: {
                   roomKey: config.roomKey,
                   roomName: config.roomName,
                   senderName: config.username,
                   body: details,
                   action,
-                  excludeUids: participants.map(p => p.uid),
+                  excludeUids,
                   link: window.location.href,
               },
-          });
-      } catch (e) {
-          console.error('notify-room failed', e);
-      }
+          }),
+          supabase.functions.invoke('send-push', {
+              body: {
+                  roomKey: config.roomKey,
+                  roomName: config.roomName,
+                  title: pushTitle,
+                  body: action === 'deleted' ? details : `${config.username}: ${details}`,
+                  url: window.location.href,
+                  excludeUids,
+              },
+          }),
+      ]);
   };
 
   useEffect(() => {
@@ -517,9 +534,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const toggleNotifications = async () => {
       if (notificationsEnabled) {
           setNotificationsEnabled(false);
+          // Unregister this device's push subscription for the room.
+          if (user) await unsubscribeFromPushNotifications(user.uid, config.roomKey);
       } else {
           const p = await Notification.requestPermission();
-          if (p === 'granted') setNotificationsEnabled(true);
+          if (p === 'granted') {
+              setNotificationsEnabled(true);
+              // Register a Web Push subscription so the user gets notified even
+              // when the tab/app is closed (Edge Function `send-push` delivers).
+              if (user) await subscribeToPushNotifications(user.uid, config.roomKey);
+          }
       }
       setShowSettingsMenu(false);
   };
