@@ -49,10 +49,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
       {/* Features Grid */}
       <div className="max-w-7xl mx-auto px-6 py-12 lg:py-24">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          <FeatureCard 
+          <FeatureCard
             icon={<Lock className="text-blue-500" />}
-            title="AES-256 E2EE"
-            description="Messages are encrypted on your device using your room PIN. Even we can't read them."
+            title="PIN-Protected Rooms"
+            description="Messages are scrambled with your room PIN, and only people who join the room with the correct PIN can read them."
           />
           <FeatureCard 
             icon={<Shield className="text-purple-500" />}

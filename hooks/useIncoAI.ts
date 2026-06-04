@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../services/supabase';
 import { Message, ChatConfig, GroundingSource } from '../types';
 import { encryptMessage } from '../utils/helpers';
@@ -48,77 +47,59 @@ export const useIncoAI = (
     }
   }, [messages, aiEnabled, isQuotaExhausted]);
 
-  const getCurrentLocation = (): Promise<GeolocationPosition | null> => {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) return resolve(null);
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve(pos),
-        () => resolve(null),
-        { timeout: 5000 }
-      );
-    });
-  };
-
   const handleBotResponse = async (chatHistory: Message[], triggerMsg: Message) => {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      
-      const pos = await getCurrentLocation();
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' });
-      const dateStr = now.toLocaleDateString('el-GR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      
-      let locationContext = "";
-      if (pos) {
-        locationContext = `User is near coordinates ${pos.coords.latitude}, ${pos.coords.longitude}.`;
-      }
-
       const context = chatHistory
         .slice(-10)
         .filter(m => m.type !== 'system' && m.text)
         .map(m => `${m.username}: ${m.text.substring(0, 300)}`)
         .join('\n');
 
-      const systemInstruction = `You are "inco", a helpful chat assistant in the room "${config.roomName}".
-
-BACKGROUND DATA (Internal use only):
-- Date: ${dateStr}
-- Time: ${timeStr}
-- Location: ${locationContext || "Unknown"}
-
-STRICT RULES:
-1. NEVER mention the current time, date, or your location in your response unless the user explicitly asks for it (e.g., "what time is it?" or "weather here").
-2. Respond in the language used by the user. If they write in GREEK, respond ONLY in GREEK.
-3. Be concise and friendly. Use Google Search ONLY when necessary for facts or current events.
-4. Do not start your sentences with "Σήμερα είναι..." or "Η ώρα είναι..." unless relevant.`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash', 
-        contents: `Recent conversation:\n${context}\n\nUser ${triggerMsg.username}: ${triggerMsg.text}`,
-        config: {
-          systemInstruction,
-          temperature: 0.7,
-          tools: [{ googleSearch: {} }],
+      // Gemini is called server-side (Edge Function `inco-ai`) so the API key is
+      // never shipped to the browser. The function verifies room membership and
+      // returns plaintext + grounding sources; we encrypt + insert client-side so
+      // the room PIN / encryption key never leaves the device.
+      const { data, error } = await supabase.functions.invoke('inco-ai', {
+        body: {
+          roomKey,
+          roomName: config.roomName,
+          context,
+          triggerText: triggerMsg.text,
+          triggerUsername: triggerMsg.username,
         },
       });
 
-      const botText = response.text;
-      if (!botText) return;
-
-      let sources: GroundingSource[] = [];
-      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-      if (groundingChunks) {
-        sources = groundingChunks
-          .filter((chunk: any) => chunk.web)
-          .map((chunk: any) => ({
-            title: chunk.web.title,
-            uri: chunk.web.uri
-          }));
+      if (error) {
+        // 403 (not a member) / 503 (AI not configured) / 5xx — stay silent.
+        console.error('Inco AI proxy error:', error);
+        return;
       }
+
+      if (data?.quota) {
+        setIsQuotaExhausted(true);
+        const errMsg = encryptMessage(
+          "⚠️ I have exhausted my daily question quota. I will be available again tomorrow!",
+          pin,
+          roomKey
+        );
+        await supabase.from('messages').insert({
+          room_key: roomKey,
+          uid: INCO_BOT_UUID,
+          username: 'inco',
+          avatar_url: aiAvatarUrl || DEFAULT_BOT_AVATAR,
+          text: errMsg,
+          type: 'text',
+        });
+        return;
+      }
+
+      const botText: string | undefined = data?.text;
+      if (!botText) return;
+      const sources: GroundingSource[] = data?.sources || [];
 
       const encryptedBotText = encryptMessage(botText, pin, roomKey);
 
-      const messagePayload: any = {
+      await supabase.from('messages').insert({
         room_key: roomKey,
         uid: INCO_BOT_UUID,
         username: 'inco',
@@ -126,37 +107,15 @@ STRICT RULES:
         text: encryptedBotText,
         type: 'text',
         reply_to: {
-            id: triggerMsg.id,
-            username: triggerMsg.username,
-            text: triggerMsg.text.substring(0, 100),
-            isAttachment: !!triggerMsg.attachment
-        }
-      };
-
-      const { error: firstTryError } = await supabase.from('messages').insert({
-          ...messagePayload,
-          grounding_metadata: sources
+          id: triggerMsg.id,
+          username: triggerMsg.username,
+          text: triggerMsg.text.substring(0, 100),
+          isAttachment: !!triggerMsg.attachment,
+        },
+        grounding_metadata: sources,
       });
-
-      if (firstTryError && firstTryError.code === '42703') {
-          await supabase.from('messages').insert(messagePayload);
-      }
-
     } catch (error: any) {
       console.error("Inco AI Error:", error);
-      // Διαχείριση ορίων (Rate Limits / Quota)
-      if (error.message?.includes('429')) {
-          setIsQuotaExhausted(true);
-          const errMsg = encryptMessage("⚠️ I have exhausted my daily question quota. I will be available again tomorrow!", pin, roomKey);
-          await supabase.from('messages').insert({
-            room_key: roomKey,
-            uid: INCO_BOT_UUID,
-            username: 'inco',
-            avatar_url: aiAvatarUrl || DEFAULT_BOT_AVATAR,
-            text: errMsg,
-            type: 'text'
-          });
-      }
     } finally {
       isBusy.current = false;
       setIsResponding(false);

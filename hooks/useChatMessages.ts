@@ -7,8 +7,11 @@ import { decryptMessage, encryptMessage } from '../utils/helpers';
 export const useChatMessages = (
   roomKey: string,
   pin: string,
-  userUid: string | undefined, 
-  onNewMessage?: (msg: Message) => void
+  userUid: string | undefined,
+  onNewMessage?: (msg: Message) => void,
+  // Only fetch/subscribe once room membership is established (RLS gates reads
+  // on membership, so fetching before the join RPC completes returns nothing).
+  enabled: boolean = true
 ) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -20,8 +23,8 @@ export const useChatMessages = (
   }, [onNewMessage]);
 
   const fetchMessages = useCallback(async () => {
-    if (!roomKey) return;
-    
+    if (!roomKey || !enabled) return;
+
     const { data, error } = await supabase
       .from('messages')
       .select('*')
@@ -43,7 +46,7 @@ export const useChatMessages = (
         createdAt: d.created_at,
         attachment: d.attachment,
         location: d.location,
-        isEdited: false, 
+        isEdited: d.is_edited ?? false,
         reactions: d.reactions || {},
         replyTo: d.reply_to,
         type: d.type || 'text',
@@ -52,7 +55,7 @@ export const useChatMessages = (
       
       setMessages(msgs);
     }
-  }, [roomKey, pin]);
+  }, [roomKey, pin, enabled]);
 
   useEffect(() => {
     fetchMessages();
@@ -73,7 +76,7 @@ export const useChatMessages = (
   }, [fetchMessages]);
 
   useEffect(() => {
-    if (!roomKey) return;
+    if (!roomKey || !enabled) return;
 
     const channel = supabase
       .channel(`messages:${roomKey}`)
@@ -121,7 +124,9 @@ export const useChatMessages = (
                       ...m,
                       text: decryptMessage(d.text || '', pin, roomKey),
                       reactions: d.reactions || {},
-                      isEdited: true, 
+                      // Only flag as edited when the DB row says so — a
+                      // reaction-only UPDATE must not mark a message "(edited)".
+                      isEdited: d.is_edited ?? m.isEdited,
                     }
                   : m
               )
@@ -139,7 +144,7 @@ export const useChatMessages = (
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [roomKey, pin]);
+  }, [roomKey, pin, enabled]);
 
   const sendMessage = useCallback(
     async (
@@ -196,6 +201,7 @@ export const useChatMessages = (
         .from('messages')
         .update({
           text: encryptedText,
+          is_edited: true,
         })
         .eq('id', msgId);
     } catch (e) {
@@ -226,16 +232,32 @@ export const useChatMessages = (
       }
 
       const updatedReactions = { ...currentReactions, [emoji]: newList };
-       setMessages((prev) =>
+      if (newList.length === 0) {
+        delete updatedReactions[emoji];
+      }
+      // Optimistic update; server merge is atomic via the RPC.
+      setMessages((prev) =>
         prev.map((m) =>
           m.id === msg.id ? { ...m, reactions: updatedReactions } : m
         )
       );
 
-      await supabase
-        .from('messages')
-        .update({ reactions: updatedReactions })
-        .eq('id', msg.id);
+      // toggle_reaction is a SECURITY DEFINER RPC: it merges reactions
+      // atomically (no last-write-wins clobber) and is the only way to update
+      // another member's message row under the strict UPDATE policy.
+      const { error } = await supabase.rpc('toggle_reaction', {
+        p_message_id: msg.id,
+        p_emoji: emoji,
+      });
+      if (error) {
+        console.error('Reaction failed', error);
+        // Roll back optimistic update on failure.
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msg.id ? { ...m, reactions: currentReactions } : m
+          )
+        );
+      }
     },
     [userUid]
   );

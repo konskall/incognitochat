@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 
+# Environment variables (keep secrets out of git)
+.env
+.env.*
+!.env.example
+
+# Local-only security audit report (do not publish to a public repo)
+AUDIT.md
+
+# Playwright MCP test artifacts
+.playwright-mcp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

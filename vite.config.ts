@@ -3,14 +3,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
+// NOTE: the Gemini API key is no longer injected into the client bundle.
+// It now lives server-side as the GEMINI_API_KEY secret used by the
+// `inco-ai` Supabase Edge Function (supabase/functions/inco-ai).
 export default defineConfig({
   plugins: [react()],
   // Base path set to repository name for GitHub Pages
-  base: '/incognitochat/', 
-  define: {
-    // This makes process.env.API_KEY available in the client-side code
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY),
-  },
+  base: '/incognitochat/',
   build: {
     outDir: 'dist',
     sourcemap: false,

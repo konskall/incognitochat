@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase } from '../services/supabase';
+import { supabase, joinOrCreateRoom } from '../services/supabase';
 import { User, ChatConfig, Room } from '../types';
 import { generateRoomKey, compressImage } from '../utils/helpers';
 import { 
@@ -265,29 +265,34 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
   const handleCreateOrJoinRoom = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!newRoomName || !newRoomPin) return;
+      const roomName = newRoomName.trim();
+      const pin = newRoomPin.trim();
+      if (!roomName || !pin) return;
       setCreating(true);
-      const roomKey = generateRoomKey(newRoomPin, newRoomName);
+      const roomKey = generateRoomKey(pin, roomName);
       try {
-           const { data: existingRoom, error: fetchError } = await supabase.from('rooms').select('*').eq('room_key', roomKey).maybeSingle();
-           if (fetchError) throw fetchError;
-           if (existingRoom) {
-               await supabase.from('subscribers').upsert({ room_key: roomKey, uid: user.uid, username: displayName, email: '' }, { onConflict: 'room_key, uid' });
-               localStorage.setItem(`lastRead_${existingRoom.room_key}`, Date.now().toString());
-               onJoinRoom({ username: displayName, avatarURL: avatarUrl, roomName: existingRoom.room_name, pin: existingRoom.pin, roomKey: existingRoom.room_key });
-           } else {
-               const { data, error } = await supabase.from('rooms').insert({ room_key: roomKey, room_name: newRoomName, pin: newRoomPin, created_by: user.uid }).select().single();
-               if (error) throw error;
-               if (data) {
-                   localStorage.setItem(`lastRead_${data.room_key}`, Date.now().toString());
-                   setRooms([data, ...rooms]);
-                   setNewRoomName('');
-                   setNewRoomPin('');
-                   setShowCreate(false);
-               }
+           // Create-or-join + PIN verification + membership all happen in one
+           // server-side RPC (the only way to gain access under the new RLS).
+           const { data: room, error } = await joinOrCreateRoom({
+               roomKey,
+               roomName,
+               pin,
+               username: displayName,
+           });
+           if (error) {
+               if (error.code === 'WRONG_PIN') alert('Wrong PIN for this room.');
+               else alert('Failed to enter room. Please try again.');
+               return;
+           }
+           if (room) {
+               localStorage.setItem(`lastRead_${room.room_key}`, Date.now().toString());
+               setNewRoomName('');
+               setNewRoomPin('');
+               setShowCreate(false);
+               onJoinRoom({ username: displayName, avatarURL: avatarUrl, roomName: room.room_name, pin, roomKey: room.room_key });
            }
       } catch (e: any) {
-          alert("Failed to create or join room: " + e.message);
+          alert("Failed to create or join room: " + (e?.message || 'Unknown error'));
       } finally {
           setCreating(false);
       }

@@ -1,12 +1,11 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase } from '../services/supabase';
+import { supabase, joinOrCreateRoom } from '../services/supabase';
 import { ChatConfig, Message, User, Subscriber, Presence } from '../types';
 import MessageList from './MessageList';
 import CallManager from './CallManager';
 import { initAudio, playBeep } from '../utils/helpers';
-import emailjs from '@emailjs/browser';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
@@ -26,14 +25,6 @@ interface ChatScreenProps {
   config: ChatConfig;
   onExit: () => void;
 }
-
-// --- EMAILJS CONFIGURATION ---
-const EMAILJS_SERVICE_ID: string = "service_cnerkn6";
-const EMAILJS_TEMPLATE_ID: string = "template_zr9v8bp";
-const EMAILJS_PUBLIC_KEY: string = "cSDU4HLqgylnmX957";
-
-// Notification Cooldown in Minutes
-const NOTIFICATION_COOLDOWN_MINUTES = 30;
 
 // -- Custom Room Deleted Toast (Persistent) --
 const RoomDeletedToast: React.FC<{ onExit: () => void, onRecreate: () => void }> = ({ onExit, onRecreate }) => {
@@ -94,6 +85,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   
   // Room Status
   const [roomDeleted, setRoomDeleted] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
   
   // Room & Creator State
   const [isRoomReady, setIsRoomReady] = useState(false);
@@ -159,8 +151,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     editMessage, 
     deleteMessage, 
     reactToMessage, 
-    uploadFile 
-  } = useChatMessages(config.roomKey, config.pin, user?.uid, handleNewMessageReceived);
+    uploadFile
+  } = useChatMessages(config.roomKey, config.pin, user?.uid, handleNewMessageReceived, isRoomReady && !roomDeleted);
 
   const { participants, typingUsers, setTyping } = useRoomPresence(config.roomKey, user, config);
 
@@ -222,73 +214,28 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     setShowSettingsMenu(false);
   };
 
+  // Email notifications run SERVER-SIDE (Edge Function `notify-room`): it
+  // verifies room membership, reads subscribers with the service role, applies
+  // the cooldown, and sends via EmailJS. No subscriber emails or EmailJS keys
+  // ever touch the client. Requires the EMAILJS_PRIVATE_KEY secret to be set
+  // (otherwise the function returns 503 and this is a silent no-op).
   const notifySubscribers = async (action: 'message' | 'deleted' | 'joined', details: string) => {
       if (!config.roomKey || !user) return;
       if (action === 'joined') return;
-
       try {
-          const { data, error } = await supabase
-            .from('subscribers')
-            .select('*')
-            .eq('room_key', config.roomKey);
-          
-          if (error) return;
-          const subscribers = data as Subscriber[];
-          if (!subscribers || subscribers.length === 0) return;
-
-          const onlineUserIds = new Set(participants.map(p => p.uid));
-          const recipientsToEmail: string[] = [];
-          const subscriberIdsToUpdate: string[] = [];
-          const now = new Date();
-
-          subscribers.forEach(sub => {
-              if (sub.uid === user.uid) return;
-              if (onlineUserIds.has(sub.uid)) return;
-
-              if (sub.last_notified_at) {
-                  const lastNotified = new Date(sub.last_notified_at);
-                  const diffInMinutes = (now.getTime() - lastNotified.getTime()) / 60000;
-                  if (diffInMinutes < NOTIFICATION_COOLDOWN_MINUTES && action !== 'deleted') {
-                      return;
-                  }
-              }
-
-              if (sub.email) {
-                  recipientsToEmail.push(sub.email);
-                  if (sub.id) subscriberIdsToUpdate.push(sub.uid); 
-              }
+          await supabase.functions.invoke('notify-room', {
+              body: {
+                  roomKey: config.roomKey,
+                  roomName: config.roomName,
+                  senderName: config.username,
+                  body: details,
+                  action,
+                  excludeUids: participants.map(p => p.uid),
+                  link: window.location.href,
+              },
           });
-
-          if (recipientsToEmail.length > 0) {
-              let actionLabel = 'New Message';
-              if (action === 'deleted') actionLabel = 'Room Deleted';
-
-              const emailParams = {
-                  to_email: recipientsToEmail.join(','), 
-                  room_name: config.roomName,
-                  action_type: actionLabel,
-                  sender_name: config.username, 
-                  message_body: details,
-                  link: window.location.href
-              };
-              
-              await emailjs.send(
-                  EMAILJS_SERVICE_ID,
-                  EMAILJS_TEMPLATE_ID,
-                  emailParams,
-                  EMAILJS_PUBLIC_KEY
-              );
-
-              if (subscriberIdsToUpdate.length > 0) {
-                  await supabase
-                      .from('subscribers')
-                      .update({ last_notified_at: new Date().toISOString() })
-                      .in('uid', subscriberIdsToUpdate)
-                      .eq('room_key', config.roomKey);
-              }
-          }
       } catch (e) {
-          console.error("EmailJS Failed", e);
+          console.error('notify-room failed', e);
       }
   };
 
@@ -329,8 +276,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         .select('room_key')
         .eq('room_key', config.roomKey)
         .maybeSingle();
-    
-    if (!data || error) {
+
+    // Only treat as deleted when the row is CONFIRMED absent (no error).
+    // A transient network/RLS error must not kick the user out of the room.
+    if (!error && !data) {
         setRoomDeleted(true);
     }
   }, [config.roomKey]);
@@ -338,43 +287,45 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const initRoom = useCallback(async () => {
     if (!user || !config.roomKey) return;
     try {
-      const { data: room } = await supabase
-          .from('rooms')
-          .select('*')
-          .eq('room_key', config.roomKey)
-          .maybeSingle();
+      // Joining (or creating) a room goes through the server-side RPC, which
+      // verifies the PIN and registers membership. This is the only way to gain
+      // access under the membership-gated RLS. Don't silently recreate a room we
+      // already joined this session (so deletion is surfaced, not masked).
+      const alreadyJoined = !!sessionStorage.getItem(`joined_${config.roomKey}`);
+
+      const { data: room, error } = await joinOrCreateRoom({
+        roomKey: config.roomKey,
+        roomName: config.roomName,
+        pin: config.pin,
+        username: config.username,
+        createIfMissing: !alreadyJoined,
+      });
+
+      if (error) {
+        if (error.code === 'ROOM_DELETED') {
+          setRoomDeleted(true);
+        } else if (error.code === 'WRONG_PIN') {
+          setAccessError('Wrong PIN for this room. Check the PIN and try again.');
+        } else {
+          setAccessError('Could not join the room. Please try again.');
+        }
+        return;
+      }
 
       if (room) {
-           setRoomCreatorId(room.created_by);
-           setAiEnabled(!!room.ai_enabled);
-           setAiAvatarUrl(room.ai_avatar_url || '');
-           setIsRoomReady(true);
-           setRoomDeleted(false); // Reset in case we are recreating
-      } else {
-           const sessionKey = `joined_${config.roomKey}`;
-           if (sessionStorage.getItem(sessionKey)) {
-               setRoomDeleted(true);
-           } else {
-               const { error: insertError } = await supabase
-                  .from('rooms')
-                  .insert({
-                      room_key: config.roomKey,
-                      room_name: config.roomName,
-                      pin: config.pin,
-                      created_by: user.uid,
-                      ai_enabled: false
-                  });
-               if (!insertError) {
-                   setRoomCreatorId(user.uid);
-                   await sendMessage(`Room created by ${config.username}`, config, null, null, null, 'system');
-               }
-               setIsRoomReady(true);
-               setRoomDeleted(false);
-           }
+        setRoomCreatorId(room.created_by);
+        setAiEnabled(!!room.ai_enabled);
+        setAiAvatarUrl(room.ai_avatar_url || '');
+        setIsRoomReady(true);
+        setRoomDeleted(false);
+        setAccessError(null);
+        if (room.is_new) {
+          await sendMessage(`Room created by ${config.username}`, config, null, null, null, 'system');
+        }
       }
-    } catch (error) {
-      console.error("Error initializing room:", error);
-      setIsRoomReady(true); 
+    } catch (e) {
+      console.error("Error initializing room:", e);
+      setAccessError('Could not join the room. Please try again.');
     }
   }, [user, config, sendMessage]);
 
@@ -599,13 +550,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
       setIsSavingEmail(true);
       try {
-          await supabase.from('subscribers').upsert({
-              room_key: config.roomKey,
-              uid: user.uid,
+          // The membership row already exists (created by join_or_create_room),
+          // so we UPDATE it. Direct INSERT into subscribers is blocked by RLS.
+          await supabase.from('subscribers')
+            .update({
               username: config.username,
               email: emailAddress,
               last_notified_at: new Date().toISOString()
-          }, { onConflict: 'room_key, uid' });
+            })
+            .eq('room_key', config.roomKey)
+            .eq('uid', user.uid);
 
           setEmailAlertsEnabled(true);
           setShowEmailModal(false);
@@ -674,6 +628,30 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
       
       {roomDeleted && <RoomDeletedToast onExit={handleExitChat} onRecreate={handleRecreate} />}
+
+      {accessError && createPortal(
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-slate-900/90 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center ring-1 ring-white/10">
+            <div className="flex flex-col items-center gap-6">
+              <div className="w-20 h-20 bg-amber-500/10 rounded-full flex items-center justify-center ring-1 ring-amber-500/50">
+                <Trash2 size={40} className="text-amber-400" />
+              </div>
+              <div className="space-y-3">
+                <h2 className="text-2xl font-bold text-white tracking-tight">Can't enter room</h2>
+                <p className="text-slate-300 text-sm font-medium leading-relaxed">{accessError}</p>
+              </div>
+              <button
+                onClick={onExit}
+                className="w-full py-3.5 px-6 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all transform active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Home size={18} />
+                Return to Home
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {isOffline && (
         <div className="absolute top-20 left-0 right-0 flex justify-center z-40 pointer-events-none animate-in slide-in-from-top-4 fade-in duration-300">

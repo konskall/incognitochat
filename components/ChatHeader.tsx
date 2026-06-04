@@ -80,11 +80,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   }, [showSettingsMenu, setShowSettingsMenu]);
 
   const handleShare = async () => {
-    const baseUrl = window.location.href.split('?')[0]; 
-    const shareUrl = new URL(baseUrl);
-    shareUrl.searchParams.set('room', config.roomName);
-    shareUrl.searchParams.set('pin', config.pin);
-    const inviteUrl = shareUrl.toString();
+    const baseUrl = window.location.href.split('?')[0];
+    // Do NOT put the PIN in the URL (it leaks into browser history, referrers,
+    // and link-preview crawlers). The PIN is shared only in the message text
+    // below, which the user consciously sends to a specific recipient.
+    const inviteUrl = baseUrl;
 
     const shareText = `🔒 Join my secure room on Incognito Chat!\n\n🏠 Room: ${config.roomName}\n🔑 PIN: ${config.pin}`;
 
