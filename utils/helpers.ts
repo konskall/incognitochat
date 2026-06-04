@@ -5,12 +5,24 @@ import CryptoJS from 'crypto-js';
  * Derives a secure 256-bit key from the PIN and Room Key (Salt).
  * Uses PBKDF2 to prevent rainbow table attacks.
  */
+// PBKDF2 is intentionally CPU-heavy; the derived key is identical for a given
+// (pin, roomKey) so we derive it ONCE and cache it. Without this, every message
+// encrypt/decrypt re-ran PBKDF2 on the main thread (a multi-hundred-ms freeze
+// when decrypting a full history).
+const keyCache = new Map<string, CryptoJS.lib.WordArray>();
+
 const deriveKey = (pin: string, roomKey: string) => {
     // We combine PIN and RoomKey to ensure the same PIN in different rooms creates different keys.
-    return CryptoJS.PBKDF2(pin, roomKey, {
-        keySize: 256 / 32,
-        iterations: 1000
-    });
+    const cacheKey = `${roomKey}::${pin}`;
+    let key = keyCache.get(cacheKey);
+    if (!key) {
+        key = CryptoJS.PBKDF2(pin, roomKey, {
+            keySize: 256 / 32,
+            iterations: 1000
+        });
+        keyCache.set(cacheKey, key);
+    }
+    return key;
 };
 
 /**

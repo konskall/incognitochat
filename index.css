@@ -3,13 +3,30 @@
 @tailwind utilities;
 
 /* Reset & Mobile Optimizations */
-html {
+html, body {
   -webkit-text-size-adjust: 100%;
+  /* Stop Android Chrome pull-to-refresh from reloading the SPA (and dropping
+     the user out of a room / re-running anonymous sign-in). */
+  overscroll-behavior-y: none;
 }
 body {
+  /* dvh is the correct mobile viewport unit; the first two are fallbacks for
+     iOS Safari < 15.4 which doesn't support dvh. */
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
   min-height: 100dvh;
   -webkit-tap-highlight-color: transparent; /* Remove gray tap box on iOS */
-  -webkit-overflow-scrolling: touch; 
+}
+
+/* Prevent iOS Safari from auto-zooming when a control is focused (any font
+   size below 16px triggers the zoom). Scoped to phones, where 16px is the
+   correct touch size anyway. */
+@media (max-width: 640px) {
+  input:not([type='range']),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
 }
 
 /* Custom Scrollbar */

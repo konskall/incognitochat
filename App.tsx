@@ -101,7 +101,8 @@ const App: React.FC = () => {
     await supabase.auth.signOut();
     localStorage.removeItem('chatPin');
     localStorage.removeItem('chatRoomName');
-    localStorage.removeItem('chatAvatarURL'); 
+    localStorage.removeItem('chatAvatarURL');
+    localStorage.removeItem('chatUsername');
 
     setCurrentUser(null);
     setCurrentView('login');
@@ -110,8 +111,10 @@ const App: React.FC = () => {
   const handleExitChat = () => {
     setChatConfig(null);
     localStorage.removeItem("chatPin");
-    localStorage.removeItem("roomName");
-    
+    // Was "roomName" (wrong key) — the value is stored under "chatRoomName",
+    // so the room name used to linger after exiting the chat.
+    localStorage.removeItem("chatRoomName");
+
     if (currentUser && !currentUser.isAnonymous) {
         setCurrentView('dashboard');
     } else {
