@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut, Wand2, Palette, Search, Image as ImageIcon } from 'lucide-react';
+import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut, Wand2, Palette, Search, Image as ImageIcon, Timer } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
 
 interface ChatHeaderProps {
@@ -31,6 +31,8 @@ interface ChatHeaderProps {
   onToggleSearch: () => void;
   roomAvatarUrl?: string;
   onOpenRoomAppearance: () => void;
+  messageTtlLabel?: string | null;
+  onOpenEphemeral: () => void;
 }
 
 const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -61,7 +63,9 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   onOpenAiAvatar,
   onToggleSearch,
   roomAvatarUrl,
-  onOpenRoomAppearance
+  onOpenRoomAppearance,
+  messageTtlLabel,
+  onOpenEphemeral
 }) => {
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -138,6 +142,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                         <span className="hidden sm:inline text-slate-300 dark:text-slate-600 mr-1">|</span>
                         <span className="sm:font-semibold sm:text-slate-700 dark:sm:text-slate-300">{config.username}</span>
                      </span>
+                     {messageTtlLabel && (
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-orange-500 bg-orange-500/10 px-1.5 py-0.5 rounded-full" title={`Messages disappear after ${messageTtlLabel}`}>
+                            <Timer size={11} /> {messageTtlLabel}
+                        </span>
+                     )}
                  </div>
              </div>
         </div>
@@ -204,6 +213,17 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                             >
                                 <ImageIcon size={18} />
                                 <span>Room Appearance</span>
+                            </button>
+                        )}
+
+                        {isOwner && (
+                            <button
+                                onClick={() => { onOpenEphemeral(); setShowSettingsMenu(false); }}
+                                className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${messageTtlLabel ? 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+                            >
+                                <Timer size={18} />
+                                <span>Disappearing Messages</span>
+                                {messageTtlLabel && <span className="ml-auto text-[10px] bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-300 px-1.5 py-0.5 rounded">{messageTtlLabel}</span>}
                             </button>
                         )}
 

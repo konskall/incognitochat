@@ -26,6 +26,7 @@ export interface JoinRoomResult {
   background_url: string | null;
   background_type: string | null;
   background_preset: string | null;
+  message_ttl_seconds: number | null;
   is_new: boolean;
 }
 

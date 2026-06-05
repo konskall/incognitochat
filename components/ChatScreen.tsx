@@ -15,6 +15,7 @@ import { DeleteChatModal, EmailAlertModal } from './ChatModals';
 import AiAvatarModal from './AiAvatarModal';
 import UserProfileModal from './UserProfileModal';
 import RoomAppearanceModal from './RoomAppearanceModal';
+import EphemeralModal, { formatTtl } from './EphemeralModal';
 import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
 import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown } from 'lucide-react';
 
@@ -104,6 +105,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [bgPreset, setBgPreset] = useState('dots');
   const [bgUrl, setBgUrl] = useState('');
   const [showRoomAppearance, setShowRoomAppearance] = useState(false);
+
+  // Disappearing messages: per-room TTL in seconds (null = off).
+  const [messageTtl, setMessageTtl] = useState<number | null>(null);
+  const [showEphemeral, setShowEphemeral] = useState(false);
 
   // Theme State - Default to Dark Mode
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -363,6 +368,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         setBgType(room.background_type || 'preset');
         setBgPreset(room.background_preset || 'dots');
         setBgUrl(room.background_url || '');
+        setMessageTtl(room.message_ttl_seconds ?? null);
         setIsRoomReady(true);
         setRoomDeleted(false);
         setAccessError(null);
@@ -513,6 +519,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             if (payload.new.background_type !== undefined) setBgType(payload.new.background_type || 'preset');
             if (payload.new.background_preset !== undefined) setBgPreset(payload.new.background_preset || 'dots');
             if (payload.new.background_url !== undefined) setBgUrl(payload.new.background_url || '');
+            if (payload.new.message_ttl_seconds !== undefined) setMessageTtl(payload.new.message_ttl_seconds ?? null);
         }
       })
       .subscribe();
@@ -826,6 +833,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onToggleSearch={() => { setShowSearch((s) => { const next = !s; if (!next) setSearchQuery(''); return next; }); }}
         roomAvatarUrl={roomAvatarUrl}
         onOpenRoomAppearance={() => setShowRoomAppearance(true)}
+        messageTtlLabel={formatTtl(messageTtl)}
+        onOpenEphemeral={() => setShowEphemeral(true)}
       />
 
       {showSearch && (
@@ -863,6 +872,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             onLoadEarlier={loadOlderMessages}
             searchQuery={showSearch ? searchQuery : ''}
             seenMessageId={seenMessageId}
+            messageTtlSeconds={messageTtl}
         />
         <div ref={messagesEndRef} />
       </main>
@@ -941,6 +951,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         isDarkMode={isDarkMode}
         current={{ avatarUrl: roomAvatarUrl, bgType, bgPreset, bgUrl }}
         onUpdate={(next) => { setRoomAvatarUrl(next.avatarUrl); setBgType(next.bgType); setBgPreset(next.bgPreset); setBgUrl(next.bgUrl); }}
+      />
+
+      <EphemeralModal
+        show={showEphemeral}
+        onClose={() => setShowEphemeral(false)}
+        roomKey={config.roomKey}
+        currentTtl={messageTtl}
+        onUpdate={(ttl) => {
+          setMessageTtl(ttl);
+          const label = formatTtl(ttl);
+          sendMessage(label ? `Disappearing messages set to ${label} by ${config.username}` : `Disappearing messages turned off by ${config.username}`, config, null, null, null, 'system');
+        }}
       />
 
       {selectedUserPresence && (

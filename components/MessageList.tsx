@@ -28,6 +28,7 @@ interface MessageListProps {
   onLoadEarlier?: () => void | Promise<void>;
   searchQuery?: string;
   seenMessageId?: string | null;
+  messageTtlSeconds?: number | null;
 }
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
@@ -418,9 +419,17 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
   );
 });
 
-const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onUserClick, hasMoreOlder, onLoadEarlier, searchQuery, seenMessageId }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onUserClick, hasMoreOlder, onLoadEarlier, searchQuery, seenMessageId, messageTtlSeconds }) => {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
+  // Ticks while disappearing-messages is on, so expired messages drop from view
+  // promptly (the cron is the authoritative deleter, this is for precision).
+  const [, setTtlTick] = useState(0);
+  useEffect(() => {
+    if (!messageTtlSeconds || messageTtlSeconds <= 0) return;
+    const id = setInterval(() => setTtlTick((t) => t + 1), 20000);
+    return () => clearInterval(id);
+  }, [messageTtlSeconds]);
 
   // All viewable media in order, for swipe navigation in the lightbox.
   const mediaItems = useMemo<MediaItem[]>(
@@ -460,12 +469,19 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
     restoreScrollRef.current = null;
   }, [messages]);
 
+  // Hide messages already past the room's disappearing-messages TTL (the cron
+  // deletes them server-side; this keeps the view precise between runs).
+  const ttlCutoff = messageTtlSeconds && messageTtlSeconds > 0 ? Date.now() - messageTtlSeconds * 1000 : 0;
+  const liveMessages = ttlCutoff
+    ? messages.filter((m) => new Date(m.createdAt as any).getTime() >= ttlCutoff)
+    : messages;
+
   // Search filters the (loaded) messages client-side — message text is encrypted
   // so it can only be matched after decryption on the client.
   const q = searchQuery?.trim().toLowerCase() || '';
   const visibleMessages = q
-    ? messages.filter((m) => m.type !== 'system' && (((m.text || '').toLowerCase().includes(q)) || (m.username || '').toLowerCase().includes(q)))
-    : messages;
+    ? liveMessages.filter((m) => m.type !== 'system' && (((m.text || '').toLowerCase().includes(q)) || (m.username || '').toLowerCase().includes(q)))
+    : liveMessages;
 
   return (
     <>
@@ -483,7 +499,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
               ))}
             </>
           )
-        ) : messages.length === 0 ? (
+        ) : liveMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60"><p>No messages yet.</p><p className="text-xs">Say hello! 👋</p></div>
         ) : (
           <>
@@ -497,7 +513,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
                 </button>
               </div>
             )}
-            {messages.map((msg) => (
+            {liveMessages.map((msg) => (
               <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} showSeen={msg.id === seenMessageId} />
             ))}
           </>
