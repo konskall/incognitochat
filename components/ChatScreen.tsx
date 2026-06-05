@@ -1,10 +1,12 @@
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom } from '../services/supabase';
 import { ChatConfig, Message, User, Subscriber, Presence } from '../types';
 import MessageList from './MessageList';
-import CallManager from './CallManager';
+// WebRTC call logic is the heaviest component in the app (~43KB); load it
+// lazily so entering a room paints the message list first.
+const CallManager = lazy(() => import('./CallManager'));
 import { initAudio, playBeep } from '../utils/helpers';
 import { subscribeToPushNotifications, unsubscribeFromPushNotifications } from '../utils/pushService';
 import ChatHeader from './ChatHeader';
@@ -699,14 +701,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       )}
 
       {user && isRoomReady && !roomDeleted && (
-          <CallManager 
-            user={user}
-            config={config}
-            users={participants}
-            showParticipants={showParticipantsList}
-            onCloseParticipants={() => setShowParticipantsList(false)}
-            roomCreatorId={roomCreatorId}
-          />
+          <Suspense fallback={null}>
+            <CallManager
+              user={user}
+              config={config}
+              users={participants}
+              showParticipants={showParticipantsList}
+              onCloseParticipants={() => setShowParticipantsList(false)}
+              roomCreatorId={roomCreatorId}
+            />
+          </Suspense>
       )}
 
       <ChatHeader

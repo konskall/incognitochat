@@ -1,12 +1,22 @@
 
-import React, { useState, useEffect } from 'react';
-import LoginScreen from './components/LoginScreen';
-import ChatScreen from './components/ChatScreen';
-import DashboardScreen from './components/DashboardScreen';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import LandingPage from './components/LandingPage';
 import { ChatConfig, User } from './types';
 import { generateRoomKey } from './utils/helpers';
 import { supabase } from './services/supabase';
+
+// Route-level code splitting: each screen is its own chunk so a visitor landing
+// on the marketing/login view doesn't download the (heavy) chat + dashboard
+// code. LandingPage stays eager — it's the initial paint.
+const ChatScreen = lazy(() => import('./components/ChatScreen'));
+const DashboardScreen = lazy(() => import('./components/DashboardScreen'));
+const LoginScreen = lazy(() => import('./components/LoginScreen'));
+
+const ScreenLoader: React.FC = () => (
+  <div className="min-h-[100dvh] w-full flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+    <div className="w-8 h-8 border-2 border-slate-300 dark:border-slate-700 border-t-blue-500 rounded-full animate-spin" />
+  </div>
+);
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'landing' | 'login' | 'dashboard' | 'chat'>('landing');
@@ -126,12 +136,16 @@ const App: React.FC = () => {
     <div className="min-h-[100dvh] w-full">
       {currentView === 'landing' ? (
         <LandingPage onStart={handleStartApp} />
-      ) : currentView === 'chat' && chatConfig ? (
-        <ChatScreen config={chatConfig} onExit={handleExitChat} />
-      ) : currentView === 'dashboard' && currentUser ? (
-        <DashboardScreen user={currentUser} onJoinRoom={handleJoin} onLogout={handleLogout} />
       ) : (
-        <LoginScreen onJoin={handleJoin} onShowLanding={() => setCurrentView('landing')} />
+        <Suspense fallback={<ScreenLoader />}>
+          {currentView === 'chat' && chatConfig ? (
+            <ChatScreen config={chatConfig} onExit={handleExitChat} />
+          ) : currentView === 'dashboard' && currentUser ? (
+            <DashboardScreen user={currentUser} onJoinRoom={handleJoin} onLogout={handleLogout} />
+          ) : (
+            <LoginScreen onJoin={handleJoin} onShowLanding={() => setCurrentView('landing')} />
+          )}
+        </Suspense>
       )}
     </div>
   );
