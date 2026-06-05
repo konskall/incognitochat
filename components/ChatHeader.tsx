@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut, Wand2, Palette } from 'lucide-react';
+import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut, Wand2, Palette, Search } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
 
 interface ChatHeaderProps {
@@ -28,6 +28,7 @@ interface ChatHeaderProps {
   aiEnabled: boolean;
   onToggleAI: () => void;
   onOpenAiAvatar: () => void;
+  onToggleSearch: () => void;
 }
 
 const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -55,7 +56,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   isGoogleUser,
   aiEnabled,
   onToggleAI,
-  onOpenAiAvatar
+  onOpenAiAvatar,
+  onToggleSearch
 }) => {
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -142,6 +144,14 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                     <Wand2 size={20} />
                 </button>
             )}
+
+            <button
+                onClick={onToggleSearch}
+                className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                title="Search Messages"
+            >
+                <Search size={20} />
+            </button>
 
             <button
                 onClick={handleShare}

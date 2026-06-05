@@ -78,44 +78,26 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      let file = e.target.files[0];
-      
-      if (file.size > MAX_FILE_SIZE) {
-        if (file.type.startsWith('image/')) {
-            const confirmCompress = window.confirm(
-                `Image is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Compress to under 40MB?`
-            );
-            
-            if (confirmCompress) {
-                // Ideally, parent should handle "isUploading" state during compression too, 
-                // but for UI simplicity we just await here.
-                try {
-                    const compressed = await compressImage(file);
-                    if (compressed.size > MAX_FILE_SIZE) {
-                         alert(`Still too large after compression (${(compressed.size/1024/1024).toFixed(1)}MB). Please choose a smaller image.`);
-                         if (fileInputRef.current) fileInputRef.current.value = '';
-                         return;
-                    }
-                    file = compressed;
-                } catch (error) {
-                    console.error("Compression failed:", error);
-                    alert("Failed to compress image.");
-                    if (fileInputRef.current) fileInputRef.current.value = '';
-                    return;
-                }
-            } else {
-                if (fileInputRef.current) fileInputRef.current.value = '';
-                return;
-            }
-        } else {
-            alert(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is 40MB.`);
-            if (fileInputRef.current) fileInputRef.current.value = '';
-            return;
+    if (!e.target.files || !e.target.files[0]) return;
+    let file = e.target.files[0];
+
+    // Always downscale/compress images (not just oversized ones) to save
+    // bandwidth and speed up loading. GIFs are skipped so animation survives.
+    if (file.type.startsWith('image/') && file.type !== 'image/gif') {
+        try {
+            file = await compressImage(file);
+        } catch (error) {
+            console.error("Compression failed, sending original:", error);
         }
-      }
-      setSelectedFile(file);
     }
+
+    if (file.size > MAX_FILE_SIZE) {
+        alert(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is 40MB.`);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+    }
+
+    setSelectedFile(file);
   };
 
   const clearFile = () => {

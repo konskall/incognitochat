@@ -58,6 +58,7 @@ export interface Presence {
   isTyping: boolean;
   onlineAt: string;
   status: 'active' | 'inactive';
+  lastReadAt?: string; // ISO timestamp of the latest message this user has seen
 }
 
 // Webrtc Signaling Data

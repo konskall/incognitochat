@@ -3,11 +3,18 @@ import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMe
 import { createPortal } from 'react-dom';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
+import { supabase } from '../services/supabase';
 import { useModalA11y } from '../hooks/useModalA11y';
-import { 
-  FileText, Download, Edit2, 
-  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search
+import {
+  FileText, Download, Edit2,
+  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search, CheckCheck, ChevronLeft, ChevronRight
 } from 'lucide-react';
+
+type MediaItem = { url: string; name: string; type: string };
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 interface MessageListProps {
   messages: Message[];
@@ -19,6 +26,8 @@ interface MessageListProps {
   onUserClick?: (uid: string, username: string, avatar: string) => void;
   hasMoreOlder?: boolean;
   onLoadEarlier?: () => void | Promise<void>;
+  searchQuery?: string;
+  seenMessageId?: string | null;
 }
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
@@ -108,65 +117,150 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
     );
 };
 
-const MediaPreviewModal: React.FC<{ src: string; alt: string; type: string; onClose: () => void; }> = ({ src, alt, type, onClose }) => {
+const MediaPreviewModal: React.FC<{ items: MediaItem[]; index: number; onClose: () => void; onNavigate: (i: number) => void; }> = ({ items, index, onClose, onNavigate }) => {
     const dialogRef = useRef<HTMLDivElement>(null);
+    const touchStartX = useRef<number | null>(null);
     useModalA11y(true, onClose, dialogRef);
     useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = 'unset'; }; }, []);
+
+    const item = items[index];
+    const hasPrev = index > 0;
+    const hasNext = index < items.length - 1;
+    const go = useCallback((delta: number) => {
+        const next = index + delta;
+        if (next >= 0 && next < items.length) onNavigate(next);
+    }, [index, items.length, onNavigate]);
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowLeft') go(-1);
+            else if (e.key === 'ArrowRight') go(1);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [go]);
+
     const handleDownload = async (e: React.MouseEvent) => {
         e.stopPropagation();
+        if (!item) return;
         try {
-            const response = await fetch(src);
+            const response = await fetch(item.url);
             const blob = await response.blob();
             const blobUrl = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
-            link.href = blobUrl; link.download = alt || 'media';
+            link.href = blobUrl; link.download = item.name || 'media';
             document.body.appendChild(link); link.click(); document.body.removeChild(link);
             window.URL.revokeObjectURL(blobUrl);
-        } catch (e) { window.open(src, '_blank'); }
+        } catch (e) { window.open(item.url, '_blank'); }
     };
-    const isVideo = type.startsWith('video/');
+
+    if (!item) return null;
+    const isVideo = item.type.startsWith('video/');
     return createPortal(
-        <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Media preview" className="outline-none fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-in fade-in duration-200 backdrop-blur-sm" onClick={onClose}>
+        <div
+          ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Media preview"
+          className="outline-none fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-in fade-in duration-200 backdrop-blur-sm"
+          onClick={onClose}
+          onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
+          onTouchEnd={(e) => {
+              if (touchStartX.current == null) return;
+              const dx = e.changedTouches[0].clientX - touchStartX.current;
+              if (dx > 50) go(-1); else if (dx < -50) go(1);
+              touchStartX.current = null;
+          }}
+        >
             <div className="absolute top-0 left-0 right-0 z-[10000] flex justify-between items-center p-4 pt-[max(1rem,env(safe-area-inset-top))] bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
                  <button onClick={handleDownload} aria-label="Download" className="pointer-events-auto p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"><Download size={24} /></button>
+                 {items.length > 1 && <span className="pointer-events-none text-white/80 text-sm font-medium bg-black/40 px-3 py-1 rounded-full backdrop-blur-md">{index + 1} / {items.length}</span>}
                  <button onClick={onClose} aria-label="Close preview" className="pointer-events-auto p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"><X size={24} /></button>
             </div>
+
+            {hasPrev && <button onClick={(e) => { e.stopPropagation(); go(-1); }} aria-label="Previous" className="hidden sm:flex absolute left-3 z-[10000] p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"><ChevronLeft size={28} /></button>}
+            {hasNext && <button onClick={(e) => { e.stopPropagation(); go(1); }} aria-label="Next" className="hidden sm:flex absolute right-3 z-[10000] p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"><ChevronRight size={28} /></button>}
+
             <div className="w-full h-full flex items-center justify-center p-4 overflow-hidden">
-                {isVideo ? <video src={src} controls autoPlay playsInline className="max-w-full max-h-full shadow-2xl rounded-lg outline-none" onClick={(e) => e.stopPropagation()} /> : <img src={src} alt={alt} className="max-w-full max-h-full object-contain shadow-2xl rounded-lg" onClick={(e) => e.stopPropagation()} />}
+                {isVideo ? <video key={item.url} src={item.url} controls autoPlay playsInline className="max-w-full max-h-full shadow-2xl rounded-lg outline-none" onClick={(e) => e.stopPropagation()} /> : <img key={item.url} src={item.url} alt={item.name} className="max-w-full max-h-full object-contain shadow-2xl rounded-lg" onClick={(e) => e.stopPropagation()} />}
             </div>
         </div>,
         document.body
     );
 };
 
+// In-memory cache so the same URL isn't re-fetched across messages/re-renders.
+const linkPreviewCache = new Map<string, { title?: string; description?: string; image?: string; publisher?: string } | null>();
+
 const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
-    const [data, setData] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
+    const [data, setData] = useState(() => linkPreviewCache.get(url) ?? null);
+    const [loading, setLoading] = useState(() => !linkPreviewCache.has(url));
     useEffect(() => {
-        let isActive = true; 
-        fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`).then(res => res.json()).then(json => {
-            if (isActive) { if (json.status === 'success') setData(json.data); setLoading(false); }
-        }).catch(() => { if (isActive) setLoading(false); });
+        if (linkPreviewCache.has(url)) { setData(linkPreviewCache.get(url) ?? null); setLoading(false); return; }
+        let isActive = true;
+        // Server-side Open Graph fetch (Edge Function) — no third-party client call.
+        supabase.functions.invoke('link-preview', { body: { url } })
+            .then(({ data: res }) => {
+                const preview = res?.data ?? null;
+                linkPreviewCache.set(url, preview);
+                if (isActive) { setData(preview); setLoading(false); }
+            })
+            .catch(() => { if (isActive) setLoading(false); });
         return () => { isActive = false; };
     }, [url]);
     if (loading || !data || !data.title || data.title === url) return null;
     return (
         <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-stretch mt-2 bg-white/95 dark:bg-slate-800/95 border border-black/10 dark:border-white/10 rounded-lg overflow-hidden hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors w-[260px] sm:w-[320px] md:w-[360px] max-w-full min-h-[80px] shadow-sm text-slate-800 dark:text-slate-100 no-underline group/card">
-            {data.image?.url ? <div className="w-24 flex-shrink-0 bg-cover bg-center bg-no-repeat bg-slate-100 dark:bg-slate-700 border-r border-slate-100 dark:border-slate-700" style={{backgroundImage: `url(${data.image.url})`}} /> : <div className="w-20 flex-shrink-0 flex items-center justify-center bg-slate-100 dark:bg-slate-700 text-slate-400 border-r border-slate-100 dark:border-slate-700"><ExternalLink size={24} /></div>}
+            {data.image ? <div className="w-24 flex-shrink-0 bg-cover bg-center bg-no-repeat bg-slate-100 dark:bg-slate-700 border-r border-slate-100 dark:border-slate-700" style={{backgroundImage: `url(${data.image})`}} /> : <div className="w-20 flex-shrink-0 flex items-center justify-center bg-slate-100 dark:bg-slate-700 text-slate-400 border-r border-slate-100 dark:border-slate-700"><ExternalLink size={24} /></div>}
             <div className="flex-1 p-2.5 flex flex-col justify-center min-w-0">
                 <h3 className="font-bold text-xs truncate leading-tight group-hover/card:text-blue-600 dark:group-hover/card:text-blue-400 transition-colors">{data.title}</h3>
                 {data.description && <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-1 leading-snug">{data.description}</p>}
-                <div className="flex items-center gap-1.5 mt-2 pt-0.5">{data.logo?.url && <img src={data.logo.url} className="w-3.5 h-3.5 rounded-sm object-contain" alt="" />}<span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider truncate">{data.publisher || new URL(url).hostname}</span></div>
+                <div className="flex items-center gap-1.5 mt-2 pt-0.5"><span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider truncate">{data.publisher || new URL(url).hostname}</span></div>
             </div>
         </a>
     );
 };
 
-const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete, onReact, onReply, onPreview, onUserClick }: { 
-    msg: Message; isMe: boolean; currentUid: string; onEdit: (msg: Message) => void; onRequestDelete: (msgId: string) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; onPreview: (url: string, name: string, type: string) => void; onUserClick?: (uid: string, username: string, avatar: string) => void;
+const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete, onReact, onReply, onPreview, onUserClick, searchQuery, showSeen }: {
+    msg: Message; isMe: boolean; currentUid: string; onEdit: (msg: Message) => void; onRequestDelete: (msgId: string) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; onPreview: (url: string, name: string, type: string) => void; onUserClick?: (uid: string, username: string, avatar: string) => void; searchQuery?: string; showSeen?: boolean;
 }) => {
   const [showReactions, setShowReactions] = useState(false);
   const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+
+  // Swipe-to-reply (mobile): drag a bubble horizontally past a threshold to reply.
+  const [swipeX, setSwipeX] = useState(0);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const swiping = useRef(false);
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchStart.current = { x: t.clientX, y: t.clientY };
+    swiping.current = false;
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!touchStart.current) return;
+    const t = e.touches[0];
+    const dx = t.clientX - touchStart.current.x;
+    const dy = t.clientY - touchStart.current.y;
+    if (!swiping.current) {
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.5) swiping.current = true;
+      else return;
+    }
+    setSwipeX(Math.max(-90, Math.min(90, dx)));
+  };
+  const onTouchEnd = () => {
+    if (Math.abs(swipeX) > 55) onReply(msg);
+    setSwipeX(0);
+    touchStart.current = null;
+    swiping.current = false;
+  };
+
+  const highlight = (str: string): React.ReactNode => {
+    const q = searchQuery?.trim();
+    if (!q) return str;
+    const parts = str.split(new RegExp(`(${escapeRegExp(q)})`, 'gi'));
+    return parts.map((p, i) =>
+      p.toLowerCase() === q.toLowerCase()
+        ? <mark key={i} className="bg-yellow-300/80 text-black rounded px-0.5">{p}</mark>
+        : p
+    );
+  };
   const formatTime = (timestamp: any) => {
     if (!timestamp) return '...';
     try {
@@ -198,7 +292,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
     return (
         <div className="flex flex-col gap-2 w-full min-w-0">
             <span className="leading-relaxed whitespace-pre-wrap break-words break-all">
-                {parts.map((part, i) => part.match(urlRegex) ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="underline text-inherit opacity-90 break-all hover:opacity-100">{part}</a> : part)}
+                {parts.map((part, i) => part.match(urlRegex) ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="underline text-inherit opacity-90 break-all hover:opacity-100">{part}</a> : <React.Fragment key={i}>{highlight(part)}</React.Fragment>)}
             </span>
             {ytId && <div className="relative w-[260px] sm:w-[320px] md:w-[400px] max-w-full aspect-video rounded-lg overflow-hidden shadow-md bg-black/5 mt-1"><iframe className="absolute inset-0 w-full h-full" src={`https://www.youtube.com/embed/${ytId}`} allowFullScreen loading="lazy"></iframe></div>}
             {previewUrl && <LinkPreview url={previewUrl} />}
@@ -255,8 +349,22 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
   };
 
   return (
-    <div id={`msg-${msg.id}`} className={`flex w-full mb-4 animate-in slide-in-from-bottom-2 duration-300 group ${isMe ? 'justify-end' : 'justify-start'}`}>
-      <div className={`flex max-w-[90%] md:max-w-[70%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 relative`}>
+    <div id={`msg-${msg.id}`} className={`relative flex w-full mb-4 animate-in slide-in-from-bottom-2 duration-300 group ${isMe ? 'justify-end' : 'justify-start'}`}>
+      {swipeX !== 0 && (
+        <div
+          className={`absolute top-1/2 -translate-y-1/2 ${swipeX > 0 ? 'left-2' : 'right-2'} text-blue-500 pointer-events-none`}
+          style={{ opacity: Math.min(1, Math.abs(swipeX) / 55) }}
+        >
+          <Reply size={20} />
+        </div>
+      )}
+      <div
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        style={{ transform: swipeX ? `translateX(${swipeX}px)` : undefined, transition: swipeX ? 'none' : 'transform 0.2s ease' }}
+        className={`flex max-w-[90%] md:max-w-[70%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 relative`}
+      >
         <img 
           src={msg.avatarURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=${isMe ? '3b82f6' : '64748b'}&color=fff&rounded=true`} 
           alt={msg.username} 
@@ -302,7 +410,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
                   </div>
                 )}
 
-                <div className={`flex items-center justify-end gap-1 mt-1 select-none ${isMe ? 'text-blue-200' : isBot ? 'text-indigo-400' : 'text-slate-400'}`}>{msg.isEdited && <span className="text-[9px] italic opacity-80">(edited)</span>}<span className="text-[10px] font-medium">{timeString}</span></div>
+                <div className={`flex items-center justify-end gap-1 mt-1 select-none ${isMe ? 'text-blue-200' : isBot ? 'text-indigo-400' : 'text-slate-400'}`}>{msg.isEdited && <span className="text-[9px] italic opacity-80">(edited)</span>}<span className="text-[10px] font-medium">{timeString}</span>{isMe && showSeen && <span className="flex items-center gap-0.5 text-[9px] font-semibold" title="Seen"><CheckCheck size={12} /></span>}</div>
             </div>
             {msg.reactions && Object.keys(msg.reactions).length > 0 && <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>{Object.entries(msg.reactions).map(([emoji, uids]) => { if (uids.length === 0) return null; const iReacted = uids.includes(currentUid); return (<button key={emoji} onClick={() => onReact(msg, emoji)} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs shadow-sm border transition-all hover:scale-105 ${iReacted ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-slate-800 dark:text-blue-100' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}><span>{emoji}</span><span className={`font-semibold text-[10px] ${iReacted ? 'text-blue-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>{uids.length}</span></button>);})}</div>}
         </div>
@@ -310,11 +418,25 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
   );
 });
 
-const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onUserClick, hasMoreOlder, onLoadEarlier }) => {
-  const [previewMedia, setPreviewMedia] = useState<{url: string; name: string; type: string} | null>(null);
+const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onUserClick, hasMoreOlder, onLoadEarlier, searchQuery, seenMessageId }) => {
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
 
-  const handleMediaPreview = useCallback((url: string, name: string, type: string) => setPreviewMedia({ url, name, type }), []);
+  // All viewable media in order, for swipe navigation in the lightbox.
+  const mediaItems = useMemo<MediaItem[]>(
+    () => messages
+      .filter((m) => m.attachment && (m.attachment.type.startsWith('image/') || m.attachment.type.startsWith('video/')))
+      .map((m) => ({ url: m.attachment!.url, name: m.attachment!.name, type: m.attachment!.type })),
+    [messages]
+  );
+  // Read via ref so the preview opener stays referentially stable (memo-friendly).
+  const mediaItemsRef = useRef(mediaItems);
+  useEffect(() => { mediaItemsRef.current = mediaItems; }, [mediaItems]);
+
+  const handleMediaPreview = useCallback((url: string) => {
+    const idx = mediaItemsRef.current.findIndex((it) => it.url === url);
+    setPreviewIndex(idx >= 0 ? idx : null);
+  }, []);
   // Stable identity so React.memo on MessageItem isn't defeated every render.
   const handleRequestDelete = useCallback((id: string) => setDeletingMsgId(id), []);
 
@@ -338,12 +460,30 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
     restoreScrollRef.current = null;
   }, [messages]);
 
+  // Search filters the (loaded) messages client-side — message text is encrypted
+  // so it can only be matched after decryption on the client.
+  const q = searchQuery?.trim().toLowerCase() || '';
+  const visibleMessages = q
+    ? messages.filter((m) => m.type !== 'system' && (((m.text || '').toLowerCase().includes(q)) || (m.username || '').toLowerCase().includes(q)))
+    : messages;
+
   return (
     <>
-        {previewMedia && <MediaPreviewModal src={previewMedia.url} alt={previewMedia.name} type={previewMedia.type} onClose={() => setPreviewMedia(null)} />}
+        {previewIndex !== null && <MediaPreviewModal items={mediaItems} index={previewIndex} onNavigate={setPreviewIndex} onClose={() => setPreviewIndex(null)} />}
         {deletingMsgId && <DeleteToast onConfirm={() => { onDelete(deletingMsgId); setDeletingMsgId(null); }} onCancel={() => setDeletingMsgId(null)} />}
         <div ref={listRef} className="flex flex-col justify-end min-h-full pb-2">
-        {messages.length === 0 ? (
+        {q ? (
+          visibleMessages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60"><Search size={28} className="mb-2 opacity-50" /><p>No matches for “{searchQuery}”.</p></div>
+          ) : (
+            <>
+              <div className="flex justify-center py-3"><span className="text-xs font-semibold text-slate-500 dark:text-slate-400 bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1">{visibleMessages.length} result{visibleMessages.length === 1 ? '' : 's'}</span></div>
+              {visibleMessages.map((msg) => (
+                <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} searchQuery={searchQuery} />
+              ))}
+            </>
+          )
+        ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60"><p>No messages yet.</p><p className="text-xs">Say hello! 👋</p></div>
         ) : (
           <>
@@ -358,7 +498,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
               </div>
             )}
             {messages.map((msg) => (
-              <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} />
+              <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} showSeen={msg.id === seenMessageId} />
             ))}
           </>
         )}

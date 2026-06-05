@@ -14,6 +14,10 @@ export const useRoomPresence = (
   const channelRef = useRef<RealtimeChannel | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
+  // Latest message timestamp this user has seen — broadcast via presence so
+  // others can show a "seen" receipt. track() replaces the whole payload, so we
+  // keep it in a ref and include it on every track call.
+  const lastReadRef = useRef<string>('');
 
   useEffect(() => {
     if (!user || !roomKey) return;
@@ -83,8 +87,16 @@ export const useRoomPresence = (
       isTyping: false,
       onlineAt: new Date().toISOString(),
       status: 'active',
+      lastReadAt: lastReadRef.current,
       ...overrides,
     });
+  };
+
+  // Mark messages up to `ts` as seen and re-broadcast (only when it advances).
+  const setLastRead = (ts?: string) => {
+    if (!ts || ts <= lastReadRef.current) return;
+    lastReadRef.current = ts;
+    trackPresence({});
   };
 
   const setTyping = (isTyping: boolean) => {
@@ -115,6 +127,7 @@ export const useRoomPresence = (
     participants,
     typingUsers,
     setTyping,
+    setLastRead,
     updatePresence: trackPresence
   };
 };

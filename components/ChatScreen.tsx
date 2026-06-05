@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef, useState, useCallback, lazy, Suspense } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom } from '../services/supabase';
 import { ChatConfig, Message, User, Subscriber, Presence } from '../types';
@@ -14,7 +14,7 @@ import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
 import AiAvatarModal from './AiAvatarModal';
 import UserProfileModal from './UserProfileModal';
-import { WifiOff, Trash2, Home, RefreshCcw } from 'lucide-react';
+import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown } from 'lucide-react';
 
 // Hooks
 import { useChatMessages } from '../hooks/useChatMessages';
@@ -122,8 +122,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const isFirstLoad = useRef(true);
   const lastMessageIdRef = useRef<string | null>(null);
+  const atBottomRef = useRef(true);
+
+  // Scroll-to-bottom affordance + in-room search.
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  const [newMessageCount, setNewMessageCount] = useState(0);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // --- CUSTOM HOOKS INTEGRATION ---
   
@@ -159,7 +167,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     uploadFile
   } = useChatMessages(config.roomKey, config.pin, user?.uid, handleNewMessageReceived, isRoomReady && !roomDeleted);
 
-  const { participants, typingUsers, setTyping } = useRoomPresence(config.roomKey, user, config);
+  const { participants, typingUsers, setTyping, setLastRead } = useRoomPresence(config.roomKey, user, config);
 
   // Kept in a ref so handleUserClick can stay referentially stable (presence
   // updates frequently; a fresh callback each time would defeat MessageList's memo).
@@ -411,19 +419,61 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       }
   }, [isRoomReady, user, config.roomKey, roomDeleted]);
 
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    setShowScrollDown(false);
+    setNewMessageCount(0);
+  }, []);
+
+  // Track whether the user is parked at the bottom; mark messages as read when so.
+  const handleMainScroll = useCallback(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    atBottomRef.current = atBottom;
+    if (atBottom) {
+        setShowScrollDown(false);
+        setNewMessageCount(0);
+        const last = messages[messages.length - 1];
+        if (last) setLastRead(last.createdAt);
+    }
+  }, [messages, setLastRead]);
+
   useEffect(() => {
     if (!messagesEndRef.current || messages.length === 0) return;
-    const lastId = messages[messages.length - 1].id;
+    const last = messages[messages.length - 1];
+    const isMine = last.uid === user?.uid;
     if (isFirstLoad.current) {
         messagesEndRef.current.scrollIntoView({ behavior: "auto" });
         isFirstLoad.current = false;
-    } else if (lastId !== lastMessageIdRef.current) {
-        // Only auto-scroll for a genuinely new message at the bottom — not when
-        // older history is prepended via "Load earlier".
-        messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+        setLastRead(last.createdAt);
+    } else if (last.id !== lastMessageIdRef.current) {
+        // New message at the bottom. Follow it only if it's mine or the user is
+        // already parked at the bottom; otherwise surface the "new messages"
+        // button instead of yanking them down. (Prepended history doesn't change
+        // the last id, so "Load earlier" never triggers this.)
+        if (isMine || atBottomRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+            setLastRead(last.createdAt);
+        } else {
+            setShowScrollDown(true);
+            setNewMessageCount((c) => c + 1);
+        }
     }
-    lastMessageIdRef.current = lastId;
-  }, [messages]);
+    lastMessageIdRef.current = last.id;
+  }, [messages, user?.uid, setLastRead]);
+
+  // "Seen" receipt: the id of my latest message that another online member has read.
+  const seenMessageId = useMemo(() => {
+    if (!user) return null;
+    let myLast: Message | undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].uid === user.uid && messages[i].type !== 'system') { myLast = messages[i]; break; }
+    }
+    if (!myLast) return null;
+    const seen = participants.some((p) => p.uid !== user.uid && p.lastReadAt && new Date(p.lastReadAt) >= new Date(myLast!.createdAt));
+    return seen ? myLast.id : null;
+  }, [messages, participants, user]);
 
   useEffect(() => {
     if (!config.roomKey || !isRoomReady || roomDeleted) return;
@@ -755,12 +805,32 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         aiEnabled={aiEnabled}
         onToggleAI={handleToggleAI}
         onOpenAiAvatar={() => setShowAiAvatarModal(true)}
+        onToggleSearch={() => { setShowSearch((s) => { const next = !s; if (!next) setSearchQuery(''); return next; }); }}
       />
 
-      <main 
-        className="flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50 dark:bg-slate-950/50" 
+      {showSearch && (
+        <div className="px-3 py-2 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 z-20 animate-in slide-in-from-top-2 duration-200">
+          <Search size={16} className="text-slate-400 shrink-0" />
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') { setSearchQuery(''); setShowSearch(false); } }}
+            placeholder="Search messages in this room…"
+            className="flex-1 bg-transparent outline-none text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+          />
+          <button onClick={() => { setSearchQuery(''); setShowSearch(false); }} aria-label="Close search" className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      <main
+        ref={mainRef}
+        onScroll={handleMainScroll}
+        className="relative flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50 dark:bg-slate-950/50"
         style={{
-            backgroundImage: `radial-gradient(${isDarkMode ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`, 
+            backgroundImage: `radial-gradient(${isDarkMode ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`,
             backgroundSize: '20px 20px'
         }}
       >
@@ -774,9 +844,24 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             onUserClick={handleUserClick}
             hasMoreOlder={hasMoreOlder}
             onLoadEarlier={loadOlderMessages}
+            searchQuery={showSearch ? searchQuery : ''}
+            seenMessageId={seenMessageId}
         />
         <div ref={messagesEndRef} />
       </main>
+
+      {showScrollDown && !roomDeleted && (
+        <button
+          onClick={() => scrollToBottom()}
+          className="absolute bottom-24 right-4 z-30 flex items-center gap-1.5 pl-3 pr-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl shadow-blue-900/30 transition-all active:scale-95 animate-in fade-in slide-in-from-bottom-2"
+          aria-label="Scroll to latest messages"
+        >
+          <ChevronDown size={18} />
+          {newMessageCount > 0 && (
+            <span className="text-xs font-bold">{newMessageCount} new</span>
+          )}
+        </button>
+      )}
 
       {!roomDeleted && (
         <ChatInput
