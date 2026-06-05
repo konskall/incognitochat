@@ -4,13 +4,12 @@ import { createPortal } from 'react-dom';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
 import { supabase } from '../services/supabase';
-import { useModalA11y } from '../hooks/useModalA11y';
+import MediaPreviewModal, { MediaItem } from './MediaPreviewModal';
+import PollMessage from './PollMessage';
 import {
   FileText, Download, Edit2,
-  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search, CheckCheck, ChevronLeft, ChevronRight
+  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search, CheckCheck, Pin, PinOff
 } from 'lucide-react';
-
-type MediaItem = { url: string; name: string; type: string };
 
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -29,6 +28,13 @@ interface MessageListProps {
   searchQuery?: string;
   seenMessageId?: string | null;
   messageTtlSeconds?: number | null;
+  roomOwnerUid?: string;
+  isOwner?: boolean;
+  pinnedMessageId?: string | null;
+  onPin?: (msg: Message) => void;
+  onUnpin?: () => void;
+  onVotePoll?: (msg: Message, optionId: string) => void;
+  onToggleClosedPoll?: (msg: Message, closed: boolean) => void;
 }
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
@@ -118,75 +124,6 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
     );
 };
 
-const MediaPreviewModal: React.FC<{ items: MediaItem[]; index: number; onClose: () => void; onNavigate: (i: number) => void; }> = ({ items, index, onClose, onNavigate }) => {
-    const dialogRef = useRef<HTMLDivElement>(null);
-    const touchStartX = useRef<number | null>(null);
-    useModalA11y(true, onClose, dialogRef);
-    useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = 'unset'; }; }, []);
-
-    const item = items[index];
-    const hasPrev = index > 0;
-    const hasNext = index < items.length - 1;
-    const go = useCallback((delta: number) => {
-        const next = index + delta;
-        if (next >= 0 && next < items.length) onNavigate(next);
-    }, [index, items.length, onNavigate]);
-
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'ArrowLeft') go(-1);
-            else if (e.key === 'ArrowRight') go(1);
-        };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [go]);
-
-    const handleDownload = async (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (!item) return;
-        try {
-            const response = await fetch(item.url);
-            const blob = await response.blob();
-            const blobUrl = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = blobUrl; link.download = item.name || 'media';
-            document.body.appendChild(link); link.click(); document.body.removeChild(link);
-            window.URL.revokeObjectURL(blobUrl);
-        } catch (e) { window.open(item.url, '_blank'); }
-    };
-
-    if (!item) return null;
-    const isVideo = item.type.startsWith('video/');
-    return createPortal(
-        <div
-          ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Media preview"
-          className="outline-none fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-in fade-in duration-200 backdrop-blur-sm"
-          onClick={onClose}
-          onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
-          onTouchEnd={(e) => {
-              if (touchStartX.current == null) return;
-              const dx = e.changedTouches[0].clientX - touchStartX.current;
-              if (dx > 50) go(-1); else if (dx < -50) go(1);
-              touchStartX.current = null;
-          }}
-        >
-            <div className="absolute top-0 left-0 right-0 z-[10000] flex justify-between items-center p-4 pt-[max(1rem,env(safe-area-inset-top))] bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
-                 <button onClick={handleDownload} aria-label="Download" className="pointer-events-auto p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"><Download size={24} /></button>
-                 {items.length > 1 && <span className="pointer-events-none text-white/80 text-sm font-medium bg-black/40 px-3 py-1 rounded-full backdrop-blur-md">{index + 1} / {items.length}</span>}
-                 <button onClick={onClose} aria-label="Close preview" className="pointer-events-auto p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"><X size={24} /></button>
-            </div>
-
-            {hasPrev && <button onClick={(e) => { e.stopPropagation(); go(-1); }} aria-label="Previous" className="hidden sm:flex absolute left-3 z-[10000] p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"><ChevronLeft size={28} /></button>}
-            {hasNext && <button onClick={(e) => { e.stopPropagation(); go(1); }} aria-label="Next" className="hidden sm:flex absolute right-3 z-[10000] p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"><ChevronRight size={28} /></button>}
-
-            <div className="w-full h-full flex items-center justify-center p-4 overflow-hidden">
-                {isVideo ? <video key={item.url} src={item.url} controls autoPlay playsInline className="max-w-full max-h-full shadow-2xl rounded-lg outline-none" onClick={(e) => e.stopPropagation()} /> : <img key={item.url} src={item.url} alt={item.name} className="max-w-full max-h-full object-contain shadow-2xl rounded-lg" onClick={(e) => e.stopPropagation()} />}
-            </div>
-        </div>,
-        document.body
-    );
-};
-
 // In-memory cache so the same URL isn't re-fetched across messages/re-renders.
 const linkPreviewCache = new Map<string, { title?: string; description?: string; image?: string; publisher?: string } | null>();
 
@@ -219,8 +156,8 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
     );
 };
 
-const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete, onReact, onReply, onPreview, onUserClick, searchQuery, showSeen }: {
-    msg: Message; isMe: boolean; currentUid: string; onEdit: (msg: Message) => void; onRequestDelete: (msgId: string) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; onPreview: (url: string, name: string, type: string) => void; onUserClick?: (uid: string, username: string, avatar: string) => void; searchQuery?: string; showSeen?: boolean;
+const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, onRequestDelete, onReact, onReply, onPreview, onUserClick, searchQuery, showSeen, isOwner, isPinned, onPin, onUnpin, onVotePoll, onToggleClosedPoll }: {
+    msg: Message; isMe: boolean; currentUid: string; roomOwnerUid?: string; onEdit: (msg: Message) => void; onRequestDelete: (msgId: string) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; onPreview: (url: string, name: string, type: string) => void; onUserClick?: (uid: string, username: string, avatar: string) => void; searchQuery?: string; showSeen?: boolean; isOwner?: boolean; isPinned?: boolean; onPin?: (msg: Message) => void; onUnpin?: () => void; onVotePoll?: (msg: Message, optionId: string) => void; onToggleClosedPoll?: (msg: Message, closed: boolean) => void;
 }) => {
   const [showReactions, setShowReactions] = useState(false);
   const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
@@ -378,13 +315,32 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
                  <button onClick={() => setShowReactions(!showReactions)} className={`p-1 text-slate-400 hover:text-orange-500 rounded-full transition-all ${showReactions ? 'opacity-100 bg-orange-50' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'}`} title="React"><SmilePlus size={16} /></button>
                  {showReactions && <><div className="fixed inset-0 z-40" onClick={() => setShowReactions(false)} /><div className={`absolute bottom-0 ${isMe ? 'right-8' : 'left-8'} flex gap-1 bg-white dark:bg-slate-800 p-1.5 rounded-full shadow-xl border border-slate-100 dark:border-slate-700 z-50 animate-in zoom-in-95 duration-200 w-max`}>{QUICK_REACTIONS.map(emoji => (<button key={emoji} onClick={() => { onReact(msg, emoji); setShowReactions(false); }} className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition hover:scale-125">{emoji}</button>))}</div></>}
              </div>
-             {isMe && <><button onClick={() => onEdit(msg)} className="p-1 text-slate-400 hover:text-blue-500 rounded-full transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100" title="Edit"><Edit2 size={16} /></button><button onClick={() => onRequestDelete(msg.id)} className="p-1 text-slate-400 hover:text-red-500 rounded-full transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100" title="Delete"><Trash2 size={16} /></button></>}
+             {isOwner && (
+                <button
+                    onClick={() => (isPinned ? onUnpin?.() : onPin?.(msg))}
+                    className={`p-1 rounded-full transition-all ${isPinned ? 'text-blue-500 opacity-100' : 'text-slate-400 hover:text-blue-500 opacity-100 md:opacity-0 md:group-hover:opacity-100'}`}
+                    title={isPinned ? 'Unpin message' : 'Pin message'}
+                >
+                    {isPinned ? <PinOff size={16} /> : <Pin size={16} />}
+                </button>
+             )}
+             {isMe && <>{!msg.poll && <button onClick={() => onEdit(msg)} className="p-1 text-slate-400 hover:text-blue-500 rounded-full transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100" title="Edit"><Edit2 size={16} /></button>}<button onClick={() => onRequestDelete(msg.id)} className="p-1 text-slate-400 hover:text-red-500 rounded-full transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100" title="Delete"><Trash2 size={16} /></button></>}
         </div>
         <div className={`chat-bubble relative px-4 py-2.5 rounded-2xl shadow-sm text-sm md:text-base min-w-0 transition-all ${isMe ? 'bg-blue-600 text-white rounded-br-none shadow-blue-500/20' : isBot ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-900 dark:text-indigo-100 rounded-bl-none shadow-indigo-500/10 border border-indigo-200 dark:border-indigo-800 ring-1 ring-indigo-400/20' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-bl-none shadow-slate-200 dark:shadow-none border border-slate-100 dark:border-slate-700'}`}>
                 {!isMe && <p className={`text-[10px] font-bold text-slate-400 mb-0.5 tracking-wide select-none flex items-center gap-1 ${!isBot ? 'cursor-pointer hover:text-blue-500 transition-colors' : ''}`} onClick={() => !isBot && onUserClick?.(msg.uid, msg.username, msg.avatarURL)}>{msg.username} {isBot && <Wand2 size={10} className="text-indigo-400 animate-pulse" />}</p>}
                 {msg.replyTo && <div onClick={() => {const el = document.getElementById(`msg-${msg.replyTo!.id}`); if(el) el.scrollIntoView({behavior:'smooth',block:'center'});}} className={`mb-2 p-2 rounded cursor-pointer opacity-90 hover:opacity-100 transition border-l-[3px] ${isMe ? 'bg-black/10 border-white/40' : 'bg-slate-100 dark:bg-slate-700 border-blue-400'}`}><span className={`text-xs font-bold block mb-0.5 ${isMe ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'}`}>{msg.replyTo.username}</span><p className="text-xs truncate max-w-[200px] opacity-80">{msg.replyTo.isAttachment ? '📎 Attachment' : msg.replyTo.text}</p></div>}
                 {renderAttachment()}
                 {renderLocation()}
+                {msg.poll && (
+                    <PollMessage
+                        poll={msg.poll}
+                        currentUid={currentUid}
+                        isMe={isMe}
+                        canManage={isMe || (!!roomOwnerUid && currentUid === roomOwnerUid)}
+                        onVote={(optionId) => onVotePoll?.(msg, optionId)}
+                        onToggleClosed={(closed) => onToggleClosedPoll?.(msg, closed)}
+                    />
+                )}
                 {msg.text && <div className={`leading-relaxed whitespace-pre-wrap break-words break-all ${(msg.attachment || msg.location) ? 'mt-2 pt-2 border-t ' + (isMe ? 'border-white/20' : 'border-slate-100 dark:border-slate-700') : ''}`}>{renderContent(msg.text)}</div>}
                 
                 {/* Grounding Sources UI */}
@@ -392,7 +348,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
                   <div className="mt-3 pt-3 border-t border-indigo-100 dark:border-indigo-900/30">
                     <div className="flex items-center gap-1.5 mb-2 text-indigo-500 dark:text-indigo-400">
                       <Search size={12} />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">Πηγές Αναζήτησης</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider">Search Sources</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {msg.groundingMetadata.map((source, idx) => (
@@ -419,7 +375,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
   );
 });
 
-const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onUserClick, hasMoreOlder, onLoadEarlier, searchQuery, seenMessageId, messageTtlSeconds }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onUserClick, hasMoreOlder, onLoadEarlier, searchQuery, seenMessageId, messageTtlSeconds, roomOwnerUid, isOwner, pinnedMessageId, onPin, onUnpin, onVotePoll, onToggleClosedPoll }) => {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
   // Ticks while disappearing-messages is on, so expired messages drop from view
@@ -495,7 +451,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
             <>
               <div className="flex justify-center py-3"><span className="text-xs font-semibold text-slate-500 dark:text-slate-400 bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1">{visibleMessages.length} result{visibleMessages.length === 1 ? '' : 's'}</span></div>
               {visibleMessages.map((msg) => (
-                <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} searchQuery={searchQuery} />
+                <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} searchQuery={searchQuery} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} />
               ))}
             </>
           )
@@ -514,7 +470,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
               </div>
             )}
             {liveMessages.map((msg) => (
-              <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} showSeen={msg.id === seenMessageId} />
+              <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} />
             ))}
           </>
         )}

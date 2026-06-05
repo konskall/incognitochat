@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../services/supabase';
-import { Message, Attachment } from '../types';
+import { Message, Attachment, Poll } from '../types';
 import { decryptMessage, encryptMessage } from '../utils/helpers';
 
 // How many messages to load per page. The initial load fetches the most recent
@@ -35,6 +35,21 @@ export const useChatMessages = (
     messagesRef.current = messages;
   }, [messages]);
 
+  // Poll question + option text are client-encrypted at rest (same AES as
+  // message text); decrypt them here. Vote uid lists stay plaintext.
+  const mapPoll = useCallback((raw: any): Poll | null => {
+    if (!raw) return null;
+    return {
+      question: decryptMessage(raw.question || '', pin, roomKey),
+      options: Array.isArray(raw.options)
+        ? raw.options.map((o: any) => ({ id: o.id, text: decryptMessage(o.text || '', pin, roomKey) }))
+        : [],
+      votes: raw.votes || {},
+      multi: !!raw.multi,
+      closed: !!raw.closed,
+    };
+  }, [pin, roomKey]);
+
   const mapRow = useCallback((d: any): Message => ({
     id: d.id,
     text: decryptMessage(d.text || '', pin, roomKey),
@@ -49,7 +64,8 @@ export const useChatMessages = (
     replyTo: d.reply_to,
     type: d.type || 'text',
     groundingMetadata: d.grounding_metadata || [],
-  }), [pin, roomKey]);
+    poll: mapPoll(d.poll),
+  }), [pin, roomKey, mapPoll]);
 
   // Initial load: the most recent page only (newest-first from the DB, reversed
   // to chronological order for display).
@@ -189,6 +205,8 @@ export const useChatMessages = (
                       // Only flag as edited when the DB row says so — a
                       // reaction-only UPDATE must not mark a message "(edited)".
                       isEdited: d.is_edited ?? m.isEdited,
+                      // Poll votes / closed-state changes propagate live.
+                      poll: d.poll ? mapPoll(d.poll) : m.poll,
                     }
                   : m
               )
@@ -225,7 +243,7 @@ export const useChatMessages = (
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', fetchNewer);
     };
-  }, [roomKey, pin, enabled, mapRow, fetchInitial, fetchNewer]);
+  }, [roomKey, pin, enabled, mapRow, mapPoll, fetchInitial, fetchNewer]);
 
   const sendMessage = useCallback(
     async (
@@ -274,6 +292,95 @@ export const useChatMessages = (
     },
     [roomKey, pin, userUid]
   );
+
+  // Create a poll as a dedicated message (type='poll'). Question + option text
+  // are encrypted just like a normal message before being written.
+  const createPoll = useCallback(
+    async (
+      question: string,
+      options: string[],
+      multi: boolean,
+      config: { username: string; avatarURL: string }
+    ) => {
+      if (!userUid || !roomKey) return;
+      const cleanOptions = options.map((t) => t.trim()).filter(Boolean);
+      if (!question.trim() || cleanOptions.length < 2) {
+        throw new Error('A poll needs a question and at least two options.');
+      }
+      const encOptions = cleanOptions.map((t, i) => ({
+        id: `o${i}_${Math.random().toString(36).slice(2, 8)}`,
+        text: encryptMessage(t, pin, roomKey),
+      }));
+      const poll = {
+        question: encryptMessage(question.trim(), pin, roomKey),
+        options: encOptions,
+        votes: {},
+        multi: !!multi,
+        closed: false,
+      };
+      const { error } = await supabase.from('messages').insert({
+        room_key: roomKey,
+        uid: userUid,
+        username: config.username,
+        avatar_url: config.avatarURL,
+        text: '',
+        type: 'poll',
+        poll,
+        reactions: {},
+      });
+      if (error) throw error;
+    },
+    [roomKey, pin, userUid]
+  );
+
+  // Toggle the current user's vote on a poll option. Optimistic; the server
+  // merge is atomic via the vote_poll RPC (no last-write-wins clobber).
+  const votePoll = useCallback(
+    async (msg: Message, optionId: string) => {
+      if (!userUid || !msg.poll || msg.poll.closed) return;
+      const original = msg.poll;
+      const votes: { [k: string]: string[] } = {};
+      for (const [k, v] of Object.entries(original.votes || {})) votes[k] = [...v];
+      const current = votes[optionId] || [];
+
+      if (current.includes(userUid)) {
+        votes[optionId] = current.filter((u) => u !== userUid);
+      } else {
+        if (!original.multi) {
+          for (const k of Object.keys(votes)) votes[k] = votes[k].filter((u) => u !== userUid);
+        }
+        votes[optionId] = [...(votes[optionId] || []), userUid];
+      }
+
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msg.id ? { ...m, poll: { ...original, votes } } : m))
+      );
+
+      const { error } = await supabase.rpc('vote_poll', {
+        p_message_id: msg.id,
+        p_option_id: optionId,
+      });
+      if (error) {
+        console.error('Vote failed', error);
+        setMessages((prev) =>
+          prev.map((m) => (m.id === msg.id ? { ...m, poll: original } : m))
+        );
+      }
+    },
+    [userUid]
+  );
+
+  // Close (or reopen) a poll — author or room owner only (enforced server-side).
+  const setPollClosed = useCallback(async (msgId: string, closed: boolean) => {
+    const { error } = await supabase.rpc('set_poll_closed', {
+      p_message_id: msgId,
+      p_closed: closed,
+    });
+    if (error) {
+      console.error('Close poll failed', error);
+      throw error;
+    }
+  }, []);
 
   const editMessage = useCallback(async (msgId: string, newText: string) => {
     const encryptedText = encryptMessage(newText, pin, roomKey);
@@ -402,6 +509,9 @@ export const useChatMessages = (
     deleteMessage,
     reactToMessage,
     uploadFile,
+    createPoll,
+    votePoll,
+    setPollClosed,
     refreshMessages: fetchInitial
   };
 };

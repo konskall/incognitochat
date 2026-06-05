@@ -27,6 +27,7 @@ export interface JoinRoomResult {
   background_type: string | null;
   background_preset: string | null;
   message_ttl_seconds: number | null;
+  pinned_message_id: string | null;
   is_new: boolean;
 }
 

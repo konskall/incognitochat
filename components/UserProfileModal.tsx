@@ -16,13 +16,13 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, subscriberInf
   useModalA11y(!!user, onClose, dialogRef);
   if (!user) return null;
 
-  const lastSeen = user.onlineAt ? new Date(user.onlineAt).toLocaleString('el-GR', {
+  const lastSeen = user.onlineAt ? new Date(user.onlineAt).toLocaleString('en-US', {
     day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
-  }) : 'Άγνωστο';
+  }) : 'Unknown';
 
-  const joinedAt = subscriberInfo?.created_at ? new Date(subscriberInfo.created_at).toLocaleDateString('el-GR', {
+  const joinedAt = subscriberInfo?.created_at ? new Date(subscriberInfo.created_at).toLocaleDateString('en-US', {
     day: 'numeric', month: 'long', year: 'numeric'
-  }) : 'Πρόσφατα';
+  }) : 'Recently';
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
@@ -35,7 +35,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, subscriberInf
         className="outline-none bg-white dark:bg-slate-900 rounded-[2.5rem] w-full max-w-[320px] overflow-hidden shadow-2xl border border-white/20 dark:border-slate-800 animate-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
-        {/* Header - Πιο χαμηλό ύψος για λιγότερο κενό */}
+        {/* Header - shorter height for less empty space */}
         <div className="relative h-24 bg-gradient-to-br from-blue-600 to-indigo-700">
           <button
             onClick={onClose}
@@ -48,7 +48,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, subscriberInf
 
         {/* Content Area */}
         <div className="relative px-5 pb-8">
-          {/* Avatar - Τοποθέτηση που δεν κρύβει το όνομα */}
+          {/* Avatar - positioned so it doesn't cover the name */}
           <div className="flex justify-center -mt-12 mb-4">
             <div className="relative inline-block">
               <img 
@@ -60,25 +60,25 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, subscriberInf
             </div>
           </div>
 
-          {/* User Info - Σωστή στοίχιση ονόματος */}
+          {/* User Info - proper name alignment */}
           <div className="text-center mb-6">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center justify-center gap-1.5 leading-tight">
               {user.username}
               {isRoomOwner && <span title="Room Owner"><ShieldCheck size={18} className="text-yellow-500 fill-yellow-500/10" /></span>}
             </h2>
             <p className="text-slate-500 dark:text-slate-400 text-xs font-semibold mt-0.5">
-              {user.status === 'active' ? 'Ενεργός τώρα' : 'Εκτός σύνδεσης'}
+              {user.status === 'active' ? 'Active now' : 'Offline'}
             </p>
           </div>
 
-          {/* Info Rows - Πιο μαζεμένο design */}
+          {/* Info Rows - more compact design */}
           <div className="space-y-2.5">
             <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800/60">
               <div className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl">
                 <Calendar size={16} />
               </div>
               <div className="flex flex-col min-w-0">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Μέλος από</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Member since</span>
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{joinedAt}</span>
               </div>
             </div>
@@ -88,7 +88,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, subscriberInf
                 <Clock size={16} />
               </div>
               <div className="flex flex-col min-w-0">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Δραστηριότητα</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Activity</span>
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{lastSeen}</span>
               </div>
             </div>
@@ -98,7 +98,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, subscriberInf
                 <Activity size={16} />
               </div>
               <div className="flex flex-col min-w-0">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Κατάσταση</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Status</span>
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">
                   {user.status === 'active' ? 'Online' : 'Offline'}
                 </span>

@@ -24,23 +24,38 @@ export interface GroundingSource {
   uri?: string;
 }
 
+export interface PollOption {
+  id: string;
+  text: string;
+}
+
+export interface Poll {
+  question: string;
+  options: PollOption[];
+  // optionId -> list of voter uids
+  votes: { [optionId: string]: string[] };
+  multi: boolean;   // allow selecting more than one option
+  closed: boolean;  // no further voting once closed
+}
+
 export interface Message {
   id: string;
   text: string;
   uid: string;
   username: string;
   avatarURL: string;
-  createdAt: string; 
+  createdAt: string;
   attachment?: Attachment;
   location?: {
     lat: number;
     lng: number;
   };
   isEdited?: boolean;
-  reactions?: { [emoji: string]: string[] }; 
+  reactions?: { [emoji: string]: string[] };
   replyTo?: ReplyInfo | null;
-  type?: 'text' | 'system';
+  type?: 'text' | 'system' | 'poll';
   groundingMetadata?: GroundingSource[];
+  poll?: Poll | null;
 }
 
 export interface ChatConfig {

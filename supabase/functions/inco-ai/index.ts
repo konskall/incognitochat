@@ -67,13 +67,13 @@ Deno.serve(async (req: Request) => {
 
     // --- Build the prompt (no geolocation: removed for privacy) ---
     const now = new Date();
-    const dateStr = now.toLocaleDateString("el-GR", {
+    const dateStr = now.toLocaleDateString("en-US", {
       weekday: "long",
       year: "numeric",
       month: "long",
       day: "numeric",
     });
-    const timeStr = now.toLocaleTimeString("el-GR", {
+    const timeStr = now.toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -86,9 +86,9 @@ BACKGROUND DATA (Internal use only):
 
 STRICT RULES:
 1. NEVER mention the current time or date in your response unless the user explicitly asks for it (e.g., "what time is it?").
-2. Respond in the language used by the user. If they write in GREEK, respond ONLY in GREEK.
+2. Always respond in English.
 3. Be concise and friendly. Use Google Search ONLY when necessary for facts or current events.
-4. Do not start your sentences with "Σήμερα είναι..." or "Η ώρα είναι..." unless relevant.`;
+4. Do not start your sentences with "Today is..." or "The time is..." unless relevant.`;
 
     const userContent =
       `Recent conversation:\n${context ?? ""}\n\nUser ${triggerUsername ?? "user"}: ${triggerText}`;

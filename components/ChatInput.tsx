@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Send, Paperclip, MapPin, Smile, Mic, Trash2, X, Image as ImageIcon, FileText, Edit2, FileVideo, FileArchive } from 'lucide-react';
+import { Send, Paperclip, MapPin, Smile, Mic, Trash2, X, Image as ImageIcon, FileText, Edit2, FileVideo, FileArchive, BarChart3 } from 'lucide-react';
 import EmojiPicker from './EmojiPicker';
 import { compressImage } from '../utils/helpers';
 import { Message } from '../types';
@@ -33,8 +33,10 @@ interface ChatInputProps {
   
   isOffline: boolean;
   isRoomReady: boolean;
-  
+
   typingUsers: string[];
+
+  onOpenPoll: () => void;
 }
 
 const MAX_FILE_SIZE = 40 * 1024 * 1024; // 40MB
@@ -61,7 +63,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   cancelReply,
   isOffline,
   isRoomReady,
-  typingUsers
+  typingUsers,
+  onOpenPoll
 }) => {
   const [showEmoji, setShowEmoji] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -241,13 +244,20 @@ const ChatInput: React.FC<ChatInputProps> = ({
                             >
                                 <Paperclip size={22} />
                             </button>
-                            <button 
+                            <button
                                 onClick={handleSendLocation}
                                 disabled={isGettingLocation}
                                 className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${isGettingLocation ? 'animate-pulse text-red-400' : 'text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
                                 title="Share Location"
                             >
                                 <MapPin size={22} />
+                            </button>
+                            <button
+                                onClick={onOpenPoll}
+                                className="w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800"
+                                title="Create Poll"
+                            >
+                                <BarChart3 size={22} />
                             </button>
                         </>
                      )}

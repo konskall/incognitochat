@@ -7,7 +7,7 @@ import MessageList from './MessageList';
 // WebRTC call logic is the heaviest component in the app (~43KB); load it
 // lazily so entering a room paints the message list first.
 const CallManager = lazy(() => import('./CallManager'));
-import { initAudio, playBeep } from '../utils/helpers';
+import { initAudio, playBeep, decryptMessage } from '../utils/helpers';
 import { subscribeToPushNotifications, unsubscribeFromPushNotifications } from '../utils/pushService';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
@@ -16,8 +16,10 @@ import AiAvatarModal from './AiAvatarModal';
 import UserProfileModal from './UserProfileModal';
 import RoomAppearanceModal from './RoomAppearanceModal';
 import EphemeralModal, { formatTtl } from './EphemeralModal';
+import PollComposerModal from './PollComposerModal';
+import MediaGalleryModal from './MediaGalleryModal';
 import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
-import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown } from 'lucide-react';
+import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin } from 'lucide-react';
 
 // Hooks
 import { useChatMessages } from '../hooks/useChatMessages';
@@ -110,6 +112,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [messageTtl, setMessageTtl] = useState<number | null>(null);
   const [showEphemeral, setShowEphemeral] = useState(false);
 
+  // Pinned message (owner-set), poll composer, and media gallery.
+  const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
+  const [pinnedFallbackText, setPinnedFallbackText] = useState('');
+  const [showPollComposer, setShowPollComposer] = useState(false);
+  const [showGallery, setShowGallery] = useState(false);
+
   // Theme State - Default to Dark Mode
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return localStorage.getItem('theme') !== 'light';
@@ -178,7 +186,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     editMessage,
     deleteMessage,
     reactToMessage,
-    uploadFile
+    uploadFile,
+    createPoll,
+    votePoll,
+    setPollClosed
   } = useChatMessages(config.roomKey, config.pin, user?.uid, handleNewMessageReceived, isRoomReady && !roomDeleted);
 
   const { participants, typingUsers, setTyping, setLastRead } = useRoomPresence(config.roomKey, user, config);
@@ -369,6 +380,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         setBgPreset(room.background_preset || 'dots');
         setBgUrl(room.background_url || '');
         setMessageTtl(room.message_ttl_seconds ?? null);
+        setPinnedMessageId(room.pinned_message_id ?? null);
         setIsRoomReady(true);
         setRoomDeleted(false);
         setAccessError(null);
@@ -494,6 +506,84 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     return seen ? myLast.id : null;
   }, [messages, participants, user]);
 
+  const isOwner = user?.uid === roomCreatorId;
+
+  // --- Pinned message ---
+  const pinnedMessage = useMemo(
+    () => messages.find((m) => m.id === pinnedMessageId) || null,
+    [messages, pinnedMessageId]
+  );
+
+  // If the pinned message is older than the loaded page, fetch a small preview
+  // for the banner (decrypting its text/poll question client-side).
+  useEffect(() => {
+    if (!pinnedMessageId || pinnedMessage) { setPinnedFallbackText(''); return; }
+    let active = true;
+    (async () => {
+      const { data } = await supabase
+        .from('messages')
+        .select('text, attachment, poll')
+        .eq('id', pinnedMessageId)
+        .maybeSingle();
+      if (!active || !data) return;
+      let preview = '';
+      if (data.poll) preview = decryptMessage((data.poll as any).question || '', config.pin, config.roomKey) || 'Poll';
+      else if (data.text) preview = decryptMessage(data.text, config.pin, config.roomKey);
+      else if (data.attachment) preview = '📎 ' + ((data.attachment as any).name || 'Attachment');
+      setPinnedFallbackText(preview);
+    })();
+    return () => { active = false; };
+  }, [pinnedMessageId, pinnedMessage, config.pin, config.roomKey]);
+
+  const pinnedPreviewText = pinnedMessage
+    ? (pinnedMessage.poll
+        ? (pinnedMessage.poll.question || 'Poll')
+        : (pinnedMessage.text || (pinnedMessage.attachment ? '📎 ' + pinnedMessage.attachment.name : 'Message')))
+    : pinnedFallbackText;
+
+  const scrollToPinned = useCallback(() => {
+    if (!pinnedMessageId) return;
+    const el = document.getElementById(`msg-${pinnedMessageId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-2', 'ring-blue-400', 'rounded-2xl');
+      setTimeout(() => el.classList.remove('ring-2', 'ring-blue-400', 'rounded-2xl'), 1600);
+    }
+  }, [pinnedMessageId]);
+
+  const handlePinMessage = useCallback(async (msg: Message) => {
+    if (user?.uid !== roomCreatorId || !config.roomKey) return;
+    setPinnedMessageId(msg.id); // optimistic; RLS only lets the owner write this
+    const { error } = await supabase.from('rooms').update({ pinned_message_id: msg.id }).eq('room_key', config.roomKey);
+    if (error) console.error('Pin failed', error);
+  }, [user, roomCreatorId, config.roomKey]);
+
+  const handleUnpinMessage = useCallback(async () => {
+    if (user?.uid !== roomCreatorId || !config.roomKey) return;
+    setPinnedMessageId(null);
+    const { error } = await supabase.from('rooms').update({ pinned_message_id: null }).eq('room_key', config.roomKey);
+    if (error) console.error('Unpin failed', error);
+  }, [user, roomCreatorId, config.roomKey]);
+
+  // --- Polls ---
+  const handleCreatePoll = useCallback(async (question: string, options: string[], multi: boolean) => {
+    await createPoll(question, options, multi, config);
+    notifySubscribers('message', 'Created a poll');
+  }, [createPoll, config]);
+
+  const handleToggleClosedPoll = useCallback((msg: Message, closed: boolean) => {
+    setPollClosed(msg.id, closed).catch(() => {});
+  }, [setPollClosed]);
+
+  // All image/video attachments in the room, newest-first, for the media gallery.
+  const galleryItems = useMemo(
+    () => [...messages]
+      .filter((m) => m.attachment && (m.attachment.type.startsWith('image/') || m.attachment.type.startsWith('video/')))
+      .reverse()
+      .map((m) => ({ url: m.attachment!.url, name: m.attachment!.name, type: m.attachment!.type })),
+    [messages]
+  );
+
   useEffect(() => {
     if (!config.roomKey || !isRoomReady || roomDeleted) return;
     const roomStatusChannel = supabase.channel(`room_status:${config.roomKey}`)
@@ -520,6 +610,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             if (payload.new.background_preset !== undefined) setBgPreset(payload.new.background_preset || 'dots');
             if (payload.new.background_url !== undefined) setBgUrl(payload.new.background_url || '');
             if (payload.new.message_ttl_seconds !== undefined) setMessageTtl(payload.new.message_ttl_seconds ?? null);
+            if (payload.new.pinned_message_id !== undefined) setPinnedMessageId(payload.new.pinned_message_id ?? null);
         }
       })
       .subscribe();
@@ -786,7 +877,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
               <div className="bg-red-500/20 p-1.5 rounded-full">
                 <WifiOff size={14} className="text-red-500 animate-pulse" />
               </div>
-              <span className="text-xs font-bold text-white dark:text-slate-900">Χωρίς Σύνδεση</span>
+              <span className="text-xs font-bold text-white dark:text-slate-900">Offline</span>
           </div>
         </div>
       )}
@@ -831,6 +922,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onToggleAI={handleToggleAI}
         onOpenAiAvatar={() => setShowAiAvatarModal(true)}
         onToggleSearch={() => { setShowSearch((s) => { const next = !s; if (!next) setSearchQuery(''); return next; }); }}
+        onOpenGallery={() => setShowGallery(true)}
         roomAvatarUrl={roomAvatarUrl}
         onOpenRoomAppearance={() => setShowRoomAppearance(true)}
         messageTtlLabel={formatTtl(messageTtl)}
@@ -854,6 +946,23 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         </div>
       )}
 
+      {pinnedMessageId && pinnedPreviewText && !roomDeleted && (
+        <div className="flex items-stretch bg-blue-50/90 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-900/40 z-10 animate-in slide-in-from-top-1 duration-200">
+          <button onClick={scrollToPinned} className="flex items-center gap-2.5 px-4 py-2 text-left flex-1 min-w-0 hover:bg-blue-100/70 dark:hover:bg-blue-900/30 transition">
+            <Pin size={15} className="text-blue-500 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-blue-500 leading-none mb-0.5">Pinned message</p>
+              <p className="text-xs text-slate-600 dark:text-slate-300 truncate">{pinnedPreviewText}</p>
+            </div>
+          </button>
+          {isOwner && (
+            <button onClick={handleUnpinMessage} aria-label="Unpin message" className="px-3 text-slate-400 hover:text-red-500 hover:bg-blue-100/70 dark:hover:bg-blue-900/30 transition">
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      )}
+
       <main
         ref={mainRef}
         onScroll={handleMainScroll}
@@ -863,6 +972,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         <MessageList
             messages={messages}
             currentUserUid={user?.uid || ''}
+            roomOwnerUid={roomCreatorId || undefined}
             onEdit={handleEditMessage}
             onDelete={deleteMessage}
             onReply={handleReply}
@@ -873,6 +983,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             searchQuery={showSearch ? searchQuery : ''}
             seenMessageId={seenMessageId}
             messageTtlSeconds={messageTtl}
+            isOwner={isOwner}
+            pinnedMessageId={pinnedMessageId}
+            onPin={handlePinMessage}
+            onUnpin={handleUnpinMessage}
+            onVotePoll={votePoll}
+            onToggleClosedPoll={handleToggleClosedPoll}
         />
         <div ref={messagesEndRef} />
       </main>
@@ -914,6 +1030,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             isOffline={isOffline}
             isRoomReady={isRoomReady}
             typingUsers={combinedTypingUsers}
+            onOpenPoll={() => setShowPollComposer(true)}
         />
       )}
 
@@ -963,6 +1080,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           const label = formatTtl(ttl);
           sendMessage(label ? `Disappearing messages set to ${label} by ${config.username}` : `Disappearing messages turned off by ${config.username}`, config, null, null, null, 'system');
         }}
+      />
+
+      <PollComposerModal
+        show={showPollComposer}
+        onClose={() => setShowPollComposer(false)}
+        onCreate={handleCreatePoll}
+      />
+
+      <MediaGalleryModal
+        show={showGallery}
+        onClose={() => setShowGallery(false)}
+        items={galleryItems}
       />
 
       {selectedUserPresence && (

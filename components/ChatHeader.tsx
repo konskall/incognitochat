@@ -29,6 +29,7 @@ interface ChatHeaderProps {
   onToggleAI: () => void;
   onOpenAiAvatar: () => void;
   onToggleSearch: () => void;
+  onOpenGallery: () => void;
   roomAvatarUrl?: string;
   onOpenRoomAppearance: () => void;
   messageTtlLabel?: string | null;
@@ -62,6 +63,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   onToggleAI,
   onOpenAiAvatar,
   onToggleSearch,
+  onOpenGallery,
   roomAvatarUrl,
   onOpenRoomAppearance,
   messageTtlLabel,
@@ -115,7 +117,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   };
 
   return (
-    <header className="glass-panel px-4 py-3 flex items-center justify-between z-10 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
+    <header className="glass-panel px-4 py-3 flex items-center justify-between z-30 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
         <div className="flex items-center gap-3 overflow-hidden">
              {roomAvatarUrl ? (
                 <img src={roomAvatarUrl} alt={config.roomName} className="w-10 h-10 rounded-full object-cover shadow-lg flex-shrink-0 bg-slate-200 dark:bg-slate-700 border border-white/40 dark:border-slate-700" />
@@ -206,6 +208,16 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             {showSettingsMenu && (
                 <>
                     <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5" ref={settingsMenuRef}>
+                        <button
+                            onClick={() => { onOpenGallery(); setShowSettingsMenu(false); }}
+                            className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition"
+                        >
+                            <ImageIcon size={18} />
+                            <span>Media Gallery</span>
+                        </button>
+
+                        <div className="h-px bg-slate-100 dark:bg-slate-700/50 my-1" />
+
                         {isOwner && (
                             <button
                                 onClick={() => { onOpenRoomAppearance(); setShowSettingsMenu(false); }}
