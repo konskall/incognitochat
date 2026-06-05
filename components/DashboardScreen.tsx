@@ -156,21 +156,31 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
   const checkUnreadMessages = async (currentRooms: Room[]) => {
       if (currentRooms.length === 0) return;
-      const newUnreadSet = new Set<string>();
-      await Promise.all(currentRooms.map(async (room) => {
-          try {
+      try {
+          // One round-trip for every room (was N+1: a query per room). The RPC
+          // returns max(created_at) per room_key, gated by membership RLS.
+          const { data, error } = await supabase.rpc('room_last_activity', {
+              p_room_keys: currentRooms.map(r => r.room_key),
+          });
+          if (error) throw error;
+
+          const lastActivity = new Map<string, number>(
+              (data || []).map((r: { room_key: string; last_message_at: string }) =>
+                  [r.room_key, new Date(r.last_message_at).getTime()])
+          );
+
+          const newUnreadSet = new Set<string>();
+          for (const room of currentRooms) {
+              const latest = lastActivity.get(room.room_key);
+              if (latest === undefined) continue;
               const lastReadTimestamp = localStorage.getItem(`lastRead_${room.room_key}`);
               const lastReadTime = lastReadTimestamp ? parseInt(lastReadTimestamp) : Date.now();
-              const { data: latestMsg, error } = await supabase.from('messages').select('created_at').eq('room_key', room.room_key).neq('type', 'system').order('created_at', { ascending: false }).limit(1).maybeSingle();
-              if (!error && latestMsg) {
-                  const msgTime = new Date(latestMsg.created_at).getTime();
-                  if (msgTime > lastReadTime) newUnreadSet.add(room.room_key);
-              }
-          } catch (err) {
-              console.error(`Error checking unread for ${room.room_name}`, err);
+              if (latest > lastReadTime) newUnreadSet.add(room.room_key);
           }
-      }));
-      setUnreadRooms(newUnreadSet);
+          setUnreadRooms(newUnreadSet);
+      } catch (err) {
+          console.error('Error checking unread messages', err);
+      }
   };
 
   const handleSaveProfile = async () => {

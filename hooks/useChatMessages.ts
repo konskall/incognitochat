@@ -4,6 +4,11 @@ import { supabase } from '../services/supabase';
 import { Message, Attachment } from '../types';
 import { decryptMessage, encryptMessage } from '../utils/helpers';
 
+// How many messages to load per page. The initial load fetches the most recent
+// page; older history is pulled in on demand instead of downloading + decrypting
+// the entire room history up-front (PERF-4).
+const MESSAGES_PAGE_SIZE = 50;
+
 export const useChatMessages = (
   roomKey: string,
   pin: string,
@@ -15,65 +20,142 @@ export const useChatMessages = (
 ) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
 
   const onNewMessageRef = useRef(onNewMessage);
-
   useEffect(() => {
     onNewMessageRef.current = onNewMessage;
   }, [onNewMessage]);
 
-  const fetchMessages = useCallback(async () => {
+  // Mirror of `messages` so the stable load-older / fetch-newer callbacks can
+  // read the current oldest/latest row without stale closures.
+  const messagesRef = useRef<Message[]>([]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const mapRow = useCallback((d: any): Message => ({
+    id: d.id,
+    text: decryptMessage(d.text || '', pin, roomKey),
+    uid: d.uid,
+    username: d.username,
+    avatarURL: d.avatar_url,
+    createdAt: d.created_at,
+    attachment: d.attachment,
+    location: d.location,
+    isEdited: d.is_edited ?? false,
+    reactions: d.reactions || {},
+    replyTo: d.reply_to,
+    type: d.type || 'text',
+    groundingMetadata: d.grounding_metadata || [],
+  }), [pin, roomKey]);
+
+  // Initial load: the most recent page only (newest-first from the DB, reversed
+  // to chronological order for display).
+  const fetchInitial = useCallback(async () => {
     if (!roomKey || !enabled) return;
 
     const { data, error } = await supabase
       .from('messages')
       .select('*')
       .eq('room_key', roomKey)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: false })
+      .limit(MESSAGES_PAGE_SIZE);
 
     if (error) {
       console.error("Fetch error:", error);
       return;
     }
-
     if (data) {
-      const msgs: Message[] = data.map((d) => ({
-        id: d.id,
-        text: decryptMessage(d.text || '', pin, roomKey),
-        uid: d.uid,
-        username: d.username,
-        avatarURL: d.avatar_url,
-        createdAt: d.created_at,
-        attachment: d.attachment,
-        location: d.location,
-        isEdited: d.is_edited ?? false,
-        reactions: d.reactions || {},
-        replyTo: d.reply_to,
-        type: d.type || 'text',
-        groundingMetadata: d.grounding_metadata || [],
-      }));
-      
-      setMessages(msgs);
+      setMessages(data.map(mapRow).reverse());
+      setHasMoreOlder(data.length === MESSAGES_PAGE_SIZE);
     }
-  }, [roomKey, pin, enabled]);
+  }, [roomKey, enabled, mapRow]);
+
+  // Pull the previous page of older messages and prepend them (the UI calls this
+  // from the "Load earlier" button).
+  const loadOlderMessages = useCallback(async () => {
+    if (!roomKey || !enabled || isLoadingOlder) return;
+    const oldest = messagesRef.current[0]?.createdAt;
+    if (!oldest) return;
+
+    setIsLoadingOlder(true);
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('room_key', roomKey)
+        .lt('created_at', oldest)
+        .order('created_at', { ascending: false })
+        .limit(MESSAGES_PAGE_SIZE);
+
+      if (error) {
+        console.error("Load older failed", error);
+        return;
+      }
+      if (data) {
+        const older = data.map(mapRow).reverse();
+        setMessages((prev) => {
+          const seen = new Set(prev.map((m) => m.id));
+          const fresh = older.filter((m) => !seen.has(m.id));
+          return fresh.length ? [...fresh, ...prev] : prev;
+        });
+        setHasMoreOlder(data.length === MESSAGES_PAGE_SIZE);
+      }
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  }, [roomKey, enabled, isLoadingOlder, mapRow]);
+
+  // On tab refocus, recover only messages newer than what we already have —
+  // realtime can miss inserts while the socket is asleep, and this is far
+  // cheaper than the old full refetch of the whole history (PERF-4).
+  const fetchNewer = useCallback(async () => {
+    if (!roomKey || !enabled) return;
+    const latest = messagesRef.current[messagesRef.current.length - 1]?.createdAt;
+    if (!latest) {
+      fetchInitial();
+      return;
+    }
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('room_key', roomKey)
+      .gt('created_at', latest)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error("Fetch newer failed", error);
+      return;
+    }
+    if (data && data.length) {
+      const newer = data.map(mapRow);
+      setMessages((prev) => {
+        const seen = new Set(prev.map((m) => m.id));
+        const fresh = newer.filter((m) => !seen.has(m.id));
+        return fresh.length ? [...prev, ...fresh] : prev;
+      });
+    }
+  }, [roomKey, enabled, mapRow, fetchInitial]);
 
   useEffect(() => {
-    fetchMessages();
+    fetchInitial();
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        fetchMessages();
+        fetchNewer();
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleVisibilityChange);
+    window.addEventListener('focus', fetchNewer);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleVisibilityChange);
+      window.removeEventListener('focus', fetchNewer);
     };
-  }, [fetchMessages]);
+  }, [fetchInitial, fetchNewer]);
 
   useEffect(() => {
     if (!roomKey || !enabled) return;
@@ -90,22 +172,8 @@ export const useChatMessages = (
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const d = payload.new;
-            const newMsg: Message = {
-              id: d.id,
-              text: decryptMessage(d.text || '', pin, roomKey),
-              uid: d.uid,
-              username: d.username,
-              avatarURL: d.avatar_url,
-              createdAt: d.created_at,
-              attachment: d.attachment,
-              location: d.location,
-              reactions: d.reactions || {},
-              replyTo: d.reply_to,
-              type: d.type || 'text',
-              groundingMetadata: d.grounding_metadata || [],
-            };
-            
+            const newMsg = mapRow(payload.new);
+
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
@@ -144,7 +212,7 @@ export const useChatMessages = (
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [roomKey, pin, enabled]);
+  }, [roomKey, pin, enabled, mapRow]);
 
   const sendMessage = useCallback(
     async (
@@ -297,11 +365,14 @@ export const useChatMessages = (
   return {
     messages,
     isUploading,
+    hasMoreOlder,
+    isLoadingOlder,
+    loadOlderMessages,
     sendMessage,
     editMessage,
     deleteMessage,
     reactToMessage,
     uploadFile,
-    refreshMessages: fetchMessages
+    refreshMessages: fetchInitial
   };
 };

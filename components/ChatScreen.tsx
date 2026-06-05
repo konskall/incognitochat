@@ -121,7 +121,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isFirstLoad = useRef(true);
-  const prevMessageCount = useRef(0);
+  const lastMessageIdRef = useRef<string | null>(null);
 
   // --- CUSTOM HOOKS INTEGRATION ---
   
@@ -145,17 +145,24 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   }, [user, soundEnabled, vibrationEnabled, notificationsEnabled, canVibrate]);
 
-  const { 
-    messages, 
-    isUploading, 
-    sendMessage, 
-    editMessage, 
-    deleteMessage, 
-    reactToMessage, 
+  const {
+    messages,
+    isUploading,
+    hasMoreOlder,
+    loadOlderMessages,
+    sendMessage,
+    editMessage,
+    deleteMessage,
+    reactToMessage,
     uploadFile
   } = useChatMessages(config.roomKey, config.pin, user?.uid, handleNewMessageReceived, isRoomReady && !roomDeleted);
 
   const { participants, typingUsers, setTyping } = useRoomPresence(config.roomKey, user, config);
+
+  // Kept in a ref so handleUserClick can stay referentially stable (presence
+  // updates frequently; a fresh callback each time would defeat MessageList's memo).
+  const participantsRef = useRef(participants);
+  useEffect(() => { participantsRef.current = participants; }, [participants]);
 
   const handleRecordingComplete = async (blob: Blob, mimeType: string) => {
       try {
@@ -403,14 +410,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, [isRoomReady, user, config.roomKey, roomDeleted]);
 
   useEffect(() => {
-    if (!messagesEndRef.current) return;
-    if (isFirstLoad.current && messages.length > 0) {
+    if (!messagesEndRef.current || messages.length === 0) return;
+    const lastId = messages[messages.length - 1].id;
+    if (isFirstLoad.current) {
         messagesEndRef.current.scrollIntoView({ behavior: "auto" });
         isFirstLoad.current = false;
-    } else if (messages.length > prevMessageCount.current) {
+    } else if (lastId !== lastMessageIdRef.current) {
+        // Only auto-scroll for a genuinely new message at the bottom — not when
+        // older history is prepended via "Load earlier".
         messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-    prevMessageCount.current = messages.length;
+    lastMessageIdRef.current = lastId;
   }, [messages]);
 
   useEffect(() => {
@@ -613,11 +623,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   };
 
-  const handleUserClick = async (uid: string, username: string, avatar: string) => {
+  const handleUserClick = useCallback(async (uid: string, username: string, avatar: string) => {
       if (uid === INCO_BOT_UUID) return;
-      
-      const activeUser = participants.find(p => p.uid === uid);
-      
+
+      const activeUser = participantsRef.current.find(p => p.uid === uid);
+
       const userToDisplay: Presence = activeUser || {
           uid,
           username,
@@ -628,7 +638,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       };
 
       setSelectedUserPresence(userToDisplay);
-      
+
       try {
           const { data } = await supabase
             .from('subscribers')
@@ -636,7 +646,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             .eq('room_key', config.roomKey)
             .eq('uid', uid)
             .maybeSingle();
-          
+
           if (data) {
               setSelectedUserSubscriber(data as Subscriber);
               if (!activeUser) {
@@ -646,7 +656,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       } catch (e) {
           console.error("Failed to fetch user subscriber info", e);
       }
-  };
+  }, [config.roomKey]);
 
   return (
     <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
@@ -734,14 +744,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             backgroundSize: '20px 20px'
         }}
       >
-        <MessageList 
-            messages={messages} 
-            currentUserUid={user?.uid || ''} 
+        <MessageList
+            messages={messages}
+            currentUserUid={user?.uid || ''}
             onEdit={handleEditMessage}
             onDelete={deleteMessage}
             onReply={handleReply}
             onReact={reactToMessage}
             onUserClick={handleUserClick}
+            hasMoreOlder={hasMoreOlder}
+            onLoadEarlier={loadOlderMessages}
         />
         <div ref={messagesEndRef} />
       </main>

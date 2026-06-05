@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
@@ -12,10 +12,12 @@ interface MessageListProps {
   messages: Message[];
   currentUserUid: string;
   onEdit: (msg: Message) => void;
-  onDelete: (msgId: string) => void; 
+  onDelete: (msgId: string) => void;
   onReact: (msg: Message, emoji: string) => void;
   onReply: (msg: Message) => void;
   onUserClick?: (uid: string, username: string, avatar: string) => void;
+  hasMoreOlder?: boolean;
+  onLoadEarlier?: () => void | Promise<void>;
 }
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
@@ -305,19 +307,64 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
   );
 });
 
-const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onUserClick }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onUserClick, hasMoreOlder, onLoadEarlier }) => {
   const [previewMedia, setPreviewMedia] = useState<{url: string; name: string; type: string} | null>(null);
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
+
   const handleMediaPreview = useCallback((url: string, name: string, type: string) => setPreviewMedia({ url, name, type }), []);
+  // Stable identity so React.memo on MessageItem isn't defeated every render.
+  const handleRequestDelete = useCallback((id: string) => setDeletingMsgId(id), []);
+
+  const listRef = useRef<HTMLDivElement>(null);
+  // Distance-from-bottom captured before older messages are prepended, so we can
+  // restore the scroll position afterwards and avoid a jarring jump.
+  const restoreScrollRef = useRef<number | null>(null);
+
+  const loadEarlier = useCallback(() => {
+    const scroller = listRef.current?.parentElement;
+    restoreScrollRef.current = scroller ? scroller.scrollHeight - scroller.scrollTop : null;
+    onLoadEarlier?.();
+  }, [onLoadEarlier]);
+
+  // Runs after the prepended page lands (messages prop grows). Guarded so it's a
+  // no-op for ordinary new-message-at-bottom renders, where restoreScrollRef is null.
+  useLayoutEffect(() => {
+    if (restoreScrollRef.current == null) return;
+    const scroller = listRef.current?.parentElement;
+    if (scroller) scroller.scrollTop = scroller.scrollHeight - restoreScrollRef.current;
+    restoreScrollRef.current = null;
+  }, [messages]);
+
   return (
     <>
         {previewMedia && <MediaPreviewModal src={previewMedia.url} alt={previewMedia.name} type={previewMedia.type} onClose={() => setPreviewMedia(null)} />}
         {deletingMsgId && <DeleteToast onConfirm={() => { onDelete(deletingMsgId); setDeletingMsgId(null); }} onCancel={() => setDeletingMsgId(null)} />}
-        <div className="flex flex-col justify-end min-h-full pb-2">
-        {messages.length === 0 ? <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60"><p>No messages yet.</p><p className="text-xs">Say hello! 👋</p></div> : messages.map((msg) => (<MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} onEdit={onEdit} onRequestDelete={(id) => setDeletingMsgId(id)} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} />))}
+        <div ref={listRef} className="flex flex-col justify-end min-h-full pb-2">
+        {messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60"><p>No messages yet.</p><p className="text-xs">Say hello! 👋</p></div>
+        ) : (
+          <>
+            {hasMoreOlder && (
+              <div className="flex justify-center py-3">
+                <button
+                  onClick={loadEarlier}
+                  className="px-4 py-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 bg-white/70 dark:bg-slate-800/70 hover:bg-white dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full shadow-sm backdrop-blur-sm transition-colors active:scale-95"
+                >
+                  Load earlier messages
+                </button>
+              </div>
+            )}
+            {messages.map((msg) => (
+              <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} />
+            ))}
+          </>
+        )}
         </div>
     </>
   );
 };
 
-export default MessageList;
+// Memoized: the parent (ChatScreen) re-renders on every keystroke/presence/typing
+// change. With stable callbacks + a stable `messages` reference, this skips the
+// whole list (map + reconciliation) on those renders entirely.
+export default React.memo(MessageList);
