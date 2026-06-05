@@ -237,6 +237,28 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                  return;
               }
 
+              // Glare: both peers dialed each other at the same time (both are
+              // 'calling'). Deterministic tie-break by uid so it doesn't dead-lock
+              // — the higher uid abandons its outgoing attempt and answers the
+              // incoming offer; the lower uid keeps calling and ignores this offer.
+              if (currentStatus === 'calling') {
+                  if (user.uid > data.fromUid) {
+                      if (pc.current) { pc.current.close(); pc.current = null; }
+                      if (localStream.current) {
+                          localStream.current.getTracks().forEach((t) => t.stop());
+                          localStream.current = null;
+                      }
+                      candidateQueue.current = [];
+                      remoteUidRef.current = data.fromUid;
+                      isCallerRef.current = false;
+                      setViewState((prev) => ({ ...prev, status: 'idle' }));
+                      setIncomingCall(data);
+                      initAudio();
+                      startRingtone();
+                  }
+                  return;
+              }
+
               if (currentStatus !== 'idle' && currentStatus !== 'incoming') {
                   console.log("[WebRTC] Busy, ignoring offer");
                   return;

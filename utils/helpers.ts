@@ -46,8 +46,10 @@ export function encryptMessage(text: string, pin: string, roomKey: string): stri
     // We use Hex for IV and standard string for ciphertext container
     return `${iv.toString()}:${encrypted.toString()}`;
   } catch (e) {
+    // Never silently fall back to storing plaintext — fail the send instead so
+    // the caller can surface it and the message is never written unencrypted.
     console.error("Encryption error", e);
-    return text; // Fallback (should ideally never happen)
+    throw new Error("Message encryption failed");
   }
 }
 
