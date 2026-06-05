@@ -1,7 +1,8 @@
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { X, Calendar, Clock, ShieldCheck, Activity } from 'lucide-react';
 import { Presence, Subscriber } from '../types';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 interface UserProfileModalProps {
   user: Presence | null;
@@ -11,6 +12,8 @@ interface UserProfileModalProps {
 }
 
 const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, subscriberInfo, isRoomOwner, onClose }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(!!user, onClose, dialogRef);
   if (!user) return null;
 
   const lastSeen = user.onlineAt ? new Date(user.onlineAt).toLocaleString('el-GR', {
@@ -23,14 +26,20 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, subscriberInf
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
-      <div 
-        className="bg-white dark:bg-slate-900 rounded-[2.5rem] w-full max-w-[320px] overflow-hidden shadow-2xl border border-white/20 dark:border-slate-800 animate-in zoom-in-95 duration-200"
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${user.username} profile`}
+        className="outline-none bg-white dark:bg-slate-900 rounded-[2.5rem] w-full max-w-[320px] overflow-hidden shadow-2xl border border-white/20 dark:border-slate-800 animate-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
         {/* Header - Πιο χαμηλό ύψος για λιγότερο κενό */}
         <div className="relative h-24 bg-gradient-to-br from-blue-600 to-indigo-700">
-          <button 
+          <button
             onClick={onClose}
+            aria-label="Close"
             className="absolute top-4 right-4 p-1.5 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors backdrop-blur-md z-10"
           >
             <X size={18} />

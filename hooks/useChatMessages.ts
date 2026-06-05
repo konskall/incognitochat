@@ -140,26 +140,20 @@ export const useChatMessages = (
   }, [roomKey, enabled, mapRow, fetchInitial]);
 
   useEffect(() => {
-    fetchInitial();
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchNewer();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', fetchNewer);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', fetchNewer);
-    };
-  }, [fetchInitial, fetchNewer]);
-
-  useEffect(() => {
     if (!roomKey || !enabled) return;
 
+    let didInitialFetch = false;
+    const runInitialFetch = () => {
+      if (didInitialFetch) return;
+      didInitialFetch = true;
+      fetchInitial();
+    };
+
+    // Subscribe BEFORE loading history and only fetch once the channel is live,
+    // so a message inserted in the gap between the initial read and the live
+    // subscription can't slip through (BUG-9). Dedup in the INSERT/fetch handlers
+    // absorbs the overlap. A timeout fallback still loads history if realtime is
+    // slow or unavailable, so the room is never left stuck empty.
     const channel = supabase
       .channel(`messages:${roomKey}`)
       .on(
@@ -178,7 +172,7 @@ export const useChatMessages = (
               if (prev.some((m) => m.id === newMsg.id)) return prev;
               return [...prev, newMsg];
             });
-            
+
             if (onNewMessageRef.current) {
                 onNewMessageRef.current(newMsg);
             }
@@ -207,12 +201,31 @@ export const useChatMessages = (
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return;
+        // First connect: load the initial page. On a later reconnect: only pull
+        // what we missed, so already-loaded older history isn't reset.
+        if (!didInitialFetch) runInitialFetch();
+        else fetchNewer();
+      });
+
+    const fallbackTimer = setTimeout(runInitialFetch, 2500);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchNewer();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', fetchNewer);
 
     return () => {
+      clearTimeout(fallbackTimer);
       supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', fetchNewer);
     };
-  }, [roomKey, pin, enabled, mapRow]);
+  }, [roomKey, pin, enabled, mapRow, fetchInitial, fetchNewer]);
 
   const sendMessage = useCallback(
     async (
@@ -263,26 +276,42 @@ export const useChatMessages = (
   );
 
   const editMessage = useCallback(async (msgId: string, newText: string) => {
-    try {
-      const encryptedText = encryptMessage(newText, pin, roomKey);
-      await supabase
-        .from('messages')
-        .update({
-          text: encryptedText,
-          is_edited: true,
-        })
-        .eq('id', msgId);
-    } catch (e) {
-      console.error('Edit failed', e);
+    const encryptedText = encryptMessage(newText, pin, roomKey);
+    const { error } = await supabase
+      .from('messages')
+      .update({
+        text: encryptedText,
+        is_edited: true,
+      })
+      .eq('id', msgId);
+    // Rethrow so the caller can restore the edit input instead of losing it.
+    if (error) {
+      console.error('Edit failed', error);
+      throw error;
     }
   }, [pin, roomKey]);
 
   const deleteMessage = useCallback(async (msgId: string) => {
+    // Optimistically remove, then roll back if the server rejects it — otherwise
+    // the message silently vanishes from this client while still living in the DB
+    // (BUG-2).
+    const removed = messagesRef.current.find((m) => m.id === msgId);
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
-    try {
-      await supabase.from('messages').delete().eq('id', msgId);
-    } catch (e) {
-      console.error('Delete failed', e);
+
+    const { error } = await supabase.from('messages').delete().eq('id', msgId);
+    if (error) {
+      console.error('Delete failed', error);
+      if (removed) {
+        setMessages((prev) =>
+          prev.some((m) => m.id === msgId)
+            ? prev
+            : [...prev, removed].sort(
+                (a, b) =>
+                  new Date(a.createdAt as any).getTime() -
+                  new Date(b.createdAt as any).getTime()
+              )
+        );
+      }
     }
   }, []);
 

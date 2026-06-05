@@ -467,23 +467,39 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const handleSend = async (e?: React.FormEvent) => {
       e?.preventDefault();
       if ((!inputText.trim() && !selectedFile) || !user || roomDeleted) return;
-      
+
+      // Snapshot what the user is sending so we can restore it if the send fails
+      // — clearing the composer optimistically must not silently eat their
+      // message/file/reply on error (BUG-2).
       const textToSend = inputText.trim();
+      const fileToSend = selectedFile;
+      const replyToSend = replyingTo;
+      const editingId = editingMessageId;
+
       setInputText('');
       setTyping(false);
       setSelectedFile(null);
       setReplyingTo(null);
 
-      if (editingMessageId) {
-          await editMessage(editingMessageId, textToSend);
-          setEditingMessageId(null);
-      } else {
-          let attachment = null;
-          if (selectedFile) {
-              attachment = await uploadFile(selectedFile);
+      try {
+          if (editingId) {
+              await editMessage(editingId, textToSend);
+              setEditingMessageId(null);
+          } else {
+              let attachment = null;
+              if (fileToSend) {
+                  attachment = await uploadFile(fileToSend);
+              }
+              await sendMessage(textToSend, config, attachment, replyToSend, null, 'text');
+              notifySubscribers('message', textToSend || 'Sent a file');
           }
-          await sendMessage(textToSend, config, attachment, replyingTo, null, 'text');
-          notifySubscribers('message', textToSend || 'Sent a file');
+      } catch (err) {
+          console.error('Send failed', err);
+          // Put the composer back the way it was so nothing is lost.
+          setInputText(textToSend);
+          setSelectedFile(fileToSend);
+          setReplyingTo(replyToSend);
+          if (editingId) setEditingMessageId(editingId);
       }
   };
 

@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { X, RefreshCw, Upload, Link as LinkIcon, Save, Loader2, Wand2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { compressImage } from '../utils/helpers';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 const DEFAULT_BOT_AVATAR = 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1';
 
@@ -19,6 +20,8 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
   const [isSaving, setIsSaving] = useState(false);
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkValue, setLinkValue] = useState('');
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(show, onClose, dialogRef);
 
   if (!show) return null;
 
@@ -68,12 +71,12 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-sm:p-4 max-w-sm w-full shadow-2xl border border-white/10 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Customize Inco avatar" className="outline-none bg-white dark:bg-slate-900 rounded-3xl p-6 max-sm:p-4 max-w-sm w-full shadow-2xl border border-white/10 dark:border-slate-800 animate-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
             <Wand2 size={24} className="text-purple-500" /> Customize Inco
           </h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition">
+          <button onClick={onClose} aria-label="Close" className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition">
             <X size={20} className="text-slate-400" />
           </button>
         </div>
@@ -112,8 +115,9 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
                   placeholder="https://..."
                   className="w-full pl-3 pr-10 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-950 outline-none focus:ring-2 focus:ring-purple-500"
                 />
-                <button 
+                <button
                   onClick={() => { if(linkValue.startsWith('http')) setTempUrl(linkValue); setShowLinkInput(false); }}
+                  aria-label="Use this image URL"
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-purple-500 text-white rounded-lg"
                 >
                   <Save size={14} />

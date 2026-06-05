@@ -3,6 +3,7 @@ import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMe
 import { createPortal } from 'react-dom';
 import { Message } from '../types';
 import { getYouTubeId } from '../utils/helpers';
+import { useModalA11y } from '../hooks/useModalA11y';
 import { 
   FileText, Download, Edit2, 
   File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, X, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search
@@ -92,7 +93,7 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
     return (
         <div className={`flex items-center gap-3 p-2.5 rounded-xl w-full sm:w-[260px] max-w-full select-none ${isMe ? 'text-white' : 'text-slate-800 dark:text-slate-200'}`}>
             <audio ref={audioRef} src={src} preload="metadata" />
-            <button onClick={togglePlay} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full transition-all shadow-sm ${isMe ? 'bg-white text-blue-600 hover:bg-blue-50' : 'bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-500'}`}>{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-0.5"/>}</button>
+            <button onClick={togglePlay} aria-label={isPlaying ? 'Pause' : 'Play'} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full transition-all shadow-sm ${isMe ? 'bg-white text-blue-600 hover:bg-blue-50' : 'bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-500'}`}>{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-0.5"/>}</button>
             <div className="flex-1 flex flex-col justify-center gap-1.5 min-w-0">
                 <div ref={waveformRef} className="flex items-center justify-between h-8 cursor-pointer w-full pr-1" onClick={handleSeek}>
                     {bars.map((height, index) => {
@@ -108,6 +109,8 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
 };
 
 const MediaPreviewModal: React.FC<{ src: string; alt: string; type: string; onClose: () => void; }> = ({ src, alt, type, onClose }) => {
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useModalA11y(true, onClose, dialogRef);
     useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = 'unset'; }; }, []);
     const handleDownload = async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -123,10 +126,10 @@ const MediaPreviewModal: React.FC<{ src: string; alt: string; type: string; onCl
     };
     const isVideo = type.startsWith('video/');
     return createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-in fade-in duration-200 backdrop-blur-sm" onClick={onClose}>
+        <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Media preview" className="outline-none fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center animate-in fade-in duration-200 backdrop-blur-sm" onClick={onClose}>
             <div className="absolute top-0 left-0 right-0 z-[10000] flex justify-between items-center p-4 pt-[max(1rem,env(safe-area-inset-top))] bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
-                 <button onClick={handleDownload} className="pointer-events-auto p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"><Download size={24} /></button>
-                 <button onClick={onClose} className="pointer-events-auto p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"><X size={24} /></button>
+                 <button onClick={handleDownload} aria-label="Download" className="pointer-events-auto p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"><Download size={24} /></button>
+                 <button onClick={onClose} aria-label="Close preview" className="pointer-events-auto p-3 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-90"><X size={24} /></button>
             </div>
             <div className="w-full h-full flex items-center justify-center p-4 overflow-hidden">
                 {isVideo ? <video src={src} controls autoPlay playsInline className="max-w-full max-h-full shadow-2xl rounded-lg outline-none" onClick={(e) => e.stopPropagation()} /> : <img src={src} alt={alt} className="max-w-full max-h-full object-contain shadow-2xl rounded-lg" onClick={(e) => e.stopPropagation()} />}
@@ -221,9 +224,9 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, onEdit, onRequestDelete
                     {type.startsWith('image/') ? <img src={url} alt={name} className="max-w-full max-h-[300px] w-auto object-contain block" /> : <video src={`${url}#t=0.001`} className="max-w-full max-h-[300px] w-auto object-contain block" />}
                     <div className="absolute inset-0 flex items-center justify-center transition-all duration-200 opacity-100 md:opacity-0 md:group-hover:opacity-100 bg-black/10">
                         <div className="flex items-center gap-2 p-2 bg-black/60 backdrop-blur-md rounded-full shadow-xl border border-white/20 transform scale-100 hover:scale-105 transition-transform" onClick={(e) => e.stopPropagation()}>
-                            <button onClick={() => onPreview(url, name, type)} className="p-2 text-white hover:bg-white/20 rounded-full transition-colors">{type.startsWith('image/') ? <Eye size={20} /> : <Play size={20} fill="currentColor" />}</button>
+                            <button onClick={() => onPreview(url, name, type)} aria-label="Open preview" className="p-2 text-white hover:bg-white/20 rounded-full transition-colors">{type.startsWith('image/') ? <Eye size={20} /> : <Play size={20} fill="currentColor" />}</button>
                             <div className="w-px h-5 bg-white/30"></div>
-                            <button onClick={(e) => { e.stopPropagation(); window.open(url, '_blank'); }} className="p-2 text-white hover:bg-white/20 rounded-full transition-colors"><Download size={20} /></button>
+                            <button onClick={(e) => { e.stopPropagation(); window.open(url, '_blank'); }} aria-label="Download" className="p-2 text-white hover:bg-white/20 rounded-full transition-colors"><Download size={20} /></button>
                         </div>
                     </div>
                 </div>

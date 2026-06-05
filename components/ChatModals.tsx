@@ -1,6 +1,7 @@
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { ShieldAlert, Mail, X } from 'lucide-react';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 interface DeleteModalProps {
   show: boolean;
@@ -21,11 +22,13 @@ interface EmailModalProps {
 }
 
 export const DeleteChatModal: React.FC<DeleteModalProps> = ({ show, onCancel, onConfirm, isDeleting }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(show, onCancel, dialogRef);
   if (!show) return null;
-  
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-white/10 dark:border-slate-800">
+        <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Delete conversation" className="outline-none bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-white/10 dark:border-slate-800">
             <div className="flex flex-col items-center text-center gap-4">
                 <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center text-red-500">
                     <ShieldAlert size={32} />
@@ -62,21 +65,23 @@ export const EmailAlertModal: React.FC<EmailModalProps> = ({
     isSaving, 
     emailAlertsEnabled, 
     onToggleOff, 
-    emailAddress, 
-    setEmailAddress 
+    emailAddress,
+    setEmailAddress
 }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(show, onCancel, dialogRef);
   if (!show) return null;
 
   return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-white/10 dark:border-slate-800">
+          <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Email alerts" className="outline-none bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-white/10 dark:border-slate-800">
               <div className="flex flex-col gap-4">
                   <div className="flex items-center justify-between">
                       <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                           <Mail size={20} className="text-blue-500"/>
                           Email Alerts
                       </h3>
-                      <button onClick={onCancel} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full">
+                      <button onClick={onCancel} aria-label="Close" className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full">
                           <X size={18} className="text-slate-400"/>
                       </button>
                   </div>

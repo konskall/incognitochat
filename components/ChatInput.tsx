@@ -270,8 +270,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
                         </>
                      )}
 
-                     <button 
+                     <button
                         onClick={() => setShowEmoji(!showEmoji)}
+                        aria-label="Emoji picker"
+                        aria-expanded={showEmoji}
                         className="w-10 h-10 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full flex items-center justify-center transition flex-shrink-0"
                      >
                          <Smile size={22} />
@@ -299,9 +301,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
                              <Mic size={22} />
                         </button>
                      ) : (
-                         <button 
+                         <button
                             onClick={() => handleSend()}
                             disabled={isOffline || isUploading || !isRoomReady}
+                            aria-label="Send message"
                             className="w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
                          >
                              {isUploading ? (
