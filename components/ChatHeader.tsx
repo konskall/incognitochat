@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut, Wand2, Palette, Search } from 'lucide-react';
+import { Share2, Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Mail, Sun, Moon, Trash2, LogOut, Wand2, Palette, Search, Image as ImageIcon } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
 
 interface ChatHeaderProps {
@@ -29,6 +29,8 @@ interface ChatHeaderProps {
   onToggleAI: () => void;
   onOpenAiAvatar: () => void;
   onToggleSearch: () => void;
+  roomAvatarUrl?: string;
+  onOpenRoomAppearance: () => void;
 }
 
 const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -57,7 +59,9 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   aiEnabled,
   onToggleAI,
   onOpenAiAvatar,
-  onToggleSearch
+  onToggleSearch,
+  roomAvatarUrl,
+  onOpenRoomAppearance
 }) => {
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -109,9 +113,13 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   return (
     <header className="glass-panel px-4 py-3 flex items-center justify-between z-10 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
         <div className="flex items-center gap-3 overflow-hidden">
-             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
-                {config.roomName.substring(0,2).toUpperCase()}
-             </div>
+             {roomAvatarUrl ? (
+                <img src={roomAvatarUrl} alt={config.roomName} className="w-10 h-10 rounded-full object-cover shadow-lg flex-shrink-0 bg-slate-200 dark:bg-slate-700 border border-white/40 dark:border-slate-700" />
+             ) : (
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
+                    {config.roomName.substring(0,2).toUpperCase()}
+                </div>
+             )}
              <div className="min-w-0 flex flex-col justify-center">
                  <h2 className="font-bold text-slate-800 dark:text-slate-100 leading-tight truncate text-sm md:text-base flex items-center gap-1.5">
                     {config.roomName}
@@ -189,6 +197,16 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             {showSettingsMenu && (
                 <>
                     <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5" ref={settingsMenuRef}>
+                        {isOwner && (
+                            <button
+                                onClick={() => { onOpenRoomAppearance(); setShowSettingsMenu(false); }}
+                                className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition"
+                            >
+                                <ImageIcon size={18} />
+                                <span>Room Appearance</span>
+                            </button>
+                        )}
+
                         {isOwner && isGoogleUser && (
                             <button 
                                 onClick={() => { onOpenAiAvatar(); setShowSettingsMenu(false); }}

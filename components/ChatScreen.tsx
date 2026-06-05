@@ -14,6 +14,8 @@ import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
 import AiAvatarModal from './AiAvatarModal';
 import UserProfileModal from './UserProfileModal';
+import RoomAppearanceModal from './RoomAppearanceModal';
+import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
 import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown } from 'lucide-react';
 
 // Hooks
@@ -95,7 +97,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [roomCreatorId, setRoomCreatorId] = useState<string | null>(null);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiAvatarUrl, setAiAvatarUrl] = useState('');
-  
+
+  // Room appearance (icon + wallpaper), owner-editable, propagated via realtime.
+  const [roomAvatarUrl, setRoomAvatarUrl] = useState('');
+  const [bgType, setBgType] = useState('preset');
+  const [bgPreset, setBgPreset] = useState('dots');
+  const [bgUrl, setBgUrl] = useState('');
+  const [showRoomAppearance, setShowRoomAppearance] = useState(false);
+
   // Theme State - Default to Dark Mode
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return localStorage.getItem('theme') !== 'light';
@@ -350,6 +359,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         setRoomCreatorId(room.created_by);
         setAiEnabled(!!room.ai_enabled);
         setAiAvatarUrl(room.ai_avatar_url || '');
+        setRoomAvatarUrl(room.avatar_url || '');
+        setBgType(room.background_type || 'preset');
+        setBgPreset(room.background_preset || 'dots');
+        setBgUrl(room.background_url || '');
         setIsRoomReady(true);
         setRoomDeleted(false);
         setAccessError(null);
@@ -495,6 +508,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         if (payload.new) {
             if (payload.new.ai_enabled !== undefined) setAiEnabled(payload.new.ai_enabled);
             if (payload.new.ai_avatar_url !== undefined) setAiAvatarUrl(payload.new.ai_avatar_url || '');
+            // Room appearance changes propagate live to everyone in the room.
+            if (payload.new.avatar_url !== undefined) setRoomAvatarUrl(payload.new.avatar_url || '');
+            if (payload.new.background_type !== undefined) setBgType(payload.new.background_type || 'preset');
+            if (payload.new.background_preset !== undefined) setBgPreset(payload.new.background_preset || 'dots');
+            if (payload.new.background_url !== undefined) setBgUrl(payload.new.background_url || '');
         }
       })
       .subscribe();
@@ -806,6 +824,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onToggleAI={handleToggleAI}
         onOpenAiAvatar={() => setShowAiAvatarModal(true)}
         onToggleSearch={() => { setShowSearch((s) => { const next = !s; if (!next) setSearchQuery(''); return next; }); }}
+        roomAvatarUrl={roomAvatarUrl}
+        onOpenRoomAppearance={() => setShowRoomAppearance(true)}
       />
 
       {showSearch && (
@@ -828,11 +848,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       <main
         ref={mainRef}
         onScroll={handleMainScroll}
-        className="relative flex-1 overflow-y-auto overscroll-contain p-4 pb-20 bg-slate-50/50 dark:bg-slate-950/50"
-        style={{
-            backgroundImage: `radial-gradient(${isDarkMode ? '#334155' : '#cbd5e1'} 1px, transparent 1px)`,
-            backgroundSize: '20px 20px'
-        }}
+        className="relative flex-1 overflow-y-auto overscroll-contain p-4 pb-20 transition-colors"
+        style={getRoomBackgroundStyle({ type: bgType, preset: bgPreset, url: bgUrl }, isDarkMode)}
       >
         <MessageList
             messages={messages}
@@ -914,6 +931,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         currentAvatarUrl={aiAvatarUrl}
         roomKey={config.roomKey}
         onUpdate={(newUrl) => setAiAvatarUrl(newUrl)}
+      />
+
+      <RoomAppearanceModal
+        show={showRoomAppearance}
+        onClose={() => setShowRoomAppearance(false)}
+        roomKey={config.roomKey}
+        roomName={config.roomName}
+        isDarkMode={isDarkMode}
+        current={{ avatarUrl: roomAvatarUrl, bgType, bgPreset, bgUrl }}
+        onUpdate={(next) => { setRoomAvatarUrl(next.avatarUrl); setBgType(next.bgType); setBgPreset(next.bgPreset); setBgUrl(next.bgUrl); }}
       />
 
       {selectedUserPresence && (
