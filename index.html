@@ -8,10 +8,8 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 
-    <!-- Updated favicons with relative paths.
-         NOTE: favicon.svg was ~1 MB (an embedded raster) and modern browsers
-         prefer the SVG, so it was downloaded on every first visit. Dropped in
-         favour of the 17 KB PNG / ICO. -->
+    <!-- Favicons (relative paths). The 1 MB favicon.svg was removed — modern
+         browsers preferred it, downloading it on every first visit. -->
     <link rel="icon" type="image/png" href="./favicon-96x96.png" sizes="96x96" />
     <link rel="shortcut icon" href="./favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
@@ -45,21 +43,58 @@
     <title id="pageTitle">Incognito Chat - Speak Free</title>
     <meta name="description" content="Real-time encrypted chat with PIN-based private rooms. Share freely, anonymously." />
 
-    <!-- Optimized Google Fonts Loading -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link 
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" 
-      rel="stylesheet"
-      media="print" 
-      onload="this.media='all'"
-    >
-    <noscript>
-      <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
-        rel="stylesheet"
-      >
-    </noscript>
+    <!-- Structured data for rich results -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "SoftwareApplication",
+          "name": "Incognito Chat",
+          "applicationCategory": "CommunicationApplication",
+          "operatingSystem": "Web, iOS, Android",
+          "url": "https://konskall.github.io/incognitochat/",
+          "description": "Privacy-first, anonymous messaging in PIN-locked private rooms, with audio/video calls. No phone number or sign-up required. Installable as a PWA.",
+          "browserRequirements": "Requires JavaScript. Requires a modern browser.",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+          "author": { "@type": "Person", "name": "KonsKall" }
+        },
+        {
+          "@type": "FAQPage",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "Do I need an account to use Incognito Chat?",
+              "acceptedAnswer": { "@type": "Answer", "text": "No. Just pick a username and a room — no phone number, email, or sign-up required. A Google login is optional and only used to save your rooms." }
+            },
+            {
+              "@type": "Question",
+              "name": "Are my messages encrypted?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Messages are scrambled with your room's PIN, and only members who join with the correct PIN can read them. This is strong access control rather than end-to-end encryption — treat the PIN like a shared password." }
+            },
+            {
+              "@type": "Question",
+              "name": "How do the audio and video calls work?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Calls connect directly between participants (peer-to-peer) when the network allows, and fall back to a secure relay when a direct connection isn't possible. Both group and 1-on-1 calls are supported." }
+            },
+            {
+              "@type": "Question",
+              "name": "What happens when a room is deleted?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Any member can delete the room. Deleting it permanently removes every message and shared file for everyone — there is no archive." }
+            },
+            {
+              "@type": "Question",
+              "name": "Can I install it on my phone?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Yes. It's a Progressive Web App — add it to your home screen from your browser to launch it like a native app, with optional push notifications." }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
+
+    <!-- Inter is self-hosted (see @font-face in index.css) — no third-party
+         Google Fonts request on first paint. -->
     <!-- Warm up the avatar API origin (used on the login / dashboard / chat
          screens). Kept as dns-prefetch only so the landing — which has no
          avatars — doesn't open an unused connection. Previously these were

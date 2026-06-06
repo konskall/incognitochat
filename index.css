@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Self-hosted Inter (variable, latin subset) — removes the third-party Google
+   Fonts hop (DNS+TLS to fonts.googleapis/gstatic on first paint). Vite hashes
+   the woff2 for immutable caching. The 100–900 range covers every weight the UI
+   uses, so one ~48 KB file replaces five remote requests. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./fonts/inter-latin-wght-normal.woff2') format('woff2');
+}
+
 /* Reset & Mobile Optimizations */
 html, body {
   -webkit-text-size-adjust: 100%;

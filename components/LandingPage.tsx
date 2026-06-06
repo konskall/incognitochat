@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare } from 'lucide-react';
+import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown } from 'lucide-react';
 import InstallButton from './InstallButton';
 
 interface LandingPageProps {
@@ -54,6 +54,30 @@ const STEPS = [
     icon: <MessagesSquare size={22} className="text-emerald-500" />,
     title: 'Chat & call privately',
     description: 'Message, share media, run polls, and start audio/video calls. Delete the room to wipe it for everyone.',
+  },
+];
+
+// Kept in sync with the FAQPage JSON-LD in index.html.
+const FAQS = [
+  {
+    q: 'Do I need an account to use Incognito Chat?',
+    a: 'No. Just pick a username and a room — no phone number, email, or sign-up required. A Google login is optional and only used to save your rooms.',
+  },
+  {
+    q: 'Are my messages encrypted?',
+    a: "Messages are scrambled with your room's PIN, and only members who join with the correct PIN can read them. This is strong access control rather than end-to-end encryption — treat the PIN like a shared password.",
+  },
+  {
+    q: 'How do the audio and video calls work?',
+    a: "Calls connect directly between participants (peer-to-peer) when the network allows, and fall back to a secure relay when a direct connection isn't possible. Both group and 1-on-1 calls are supported.",
+  },
+  {
+    q: 'What happens when a room is deleted?',
+    a: 'Any member can delete the room. Deleting it permanently removes every message and shared file for everyone — there is no archive.',
+  },
+  {
+    q: 'Can I install it on my phone?',
+    a: "Yes. It's a Progressive Web App — add it to your home screen from your browser to launch it like a native app, with optional push notifications.",
   },
 ];
 
@@ -166,6 +190,22 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
               </li>
             ))}
           </ol>
+        </section>
+
+        {/* FAQ */}
+        <section aria-labelledby="faq-title" className="max-w-3xl mx-auto px-6 py-12 lg:py-20">
+          <h2 id="faq-title" className="text-3xl font-bold text-center mb-10 lg:mb-14">Frequently asked questions</h2>
+          <div className="space-y-3">
+            {FAQS.map((f) => (
+              <details key={f.q} className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                <summary className={`flex items-center justify-between gap-4 cursor-pointer list-none px-5 py-4 font-semibold text-slate-800 dark:text-slate-100 rounded-2xl [&::-webkit-details-marker]:hidden ${focusRing}`}>
+                  <span>{f.q}</span>
+                  <ChevronDown size={18} className="shrink-0 text-slate-400 transition-transform duration-200 group-open:rotate-180" />
+                </summary>
+                <p className="px-5 pb-5 text-sm text-slate-500 dark:text-slate-400 leading-relaxed">{f.a}</p>
+              </details>
+            ))}
+          </div>
         </section>
 
         {/* Trust Section */}
