@@ -76,15 +76,18 @@ export interface Presence {
   lastReadAt?: string; // ISO timestamp of the latest message this user has seen
 }
 
-// Webrtc Signaling Data
+// WebRTC mesh signaling (broadcast on the `calls:<roomKey>` channel).
+// - join:    "I'm in the room call now" (broadcast to everyone)
+// - present: "I'm already in the call" (directed reply to a newcomer)
+// - offer/answer/candidate: standard per-peer negotiation (directed via toUid)
+// - leave:   "I left the call" (broadcast)
 export interface SignalData {
-  type: 'offer' | 'answer' | 'candidate' | 'bye' | 'reject';
-  payload: any;
+  type: 'offer' | 'answer' | 'candidate' | 'join' | 'present' | 'leave';
+  payload?: RTCSessionDescriptionInit | RTCIceCandidateInit | null;
   fromUid: string;
   fromName: string;
   fromAvatar: string;
-  toUid?: string; 
-  callId?: string;
+  toUid?: string;
   callType?: 'audio' | 'video';
 }
 
