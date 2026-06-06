@@ -44,15 +44,16 @@ export const useRoomPresence = (
           // A user may be connected from several tabs: treat them as active if
           // ANY tab is active (and use that tab's payload) so a backgrounded
           // second tab can't mislabel them as idle.
-          const p = userPresences.find((u) => u.status === 'active') || userPresences[0];
-          // Keep everyone who is in the room — including backgrounded ("inactive"/idle)
-          // members — so they stay visible (rendered with an idle dot) instead of
-          // vanishing the moment they switch tabs. The status field carries the nuance.
+          // Pick this user's FRESHEST presence (latest track wins). Prefer an
+          // active tab so a backgrounded second tab can't mislabel them as idle,
+          // but among the candidates take the most recent onlineAt: a stale entry
+          // left behind by a reconnect must not pin someone as "typing" forever or
+          // report an outdated status. Keep idle members visible (idle dot).
+          const actives = userPresences.filter((u) => u.status === 'active');
+          const pool = actives.length ? actives : userPresences;
+          const p = pool.reduce((a, b) => ((b.onlineAt || '') > (a.onlineAt || '') ? b : a), pool[0]);
           members.push(p);
-          // "Typing" is read across ALL of a user's presence entries: a rapid
-          // second track() (e.g. a read-receipt update) can momentarily produce a
-          // stale entry, and `find(active)` might pick the one without the flag.
-          if (p.uid !== user.uid && userPresences.some((u) => u.isTyping)) {
+          if (p.uid !== user.uid && p.isTyping && p.status === 'active') {
             typers.push(p.username);
           }
         }

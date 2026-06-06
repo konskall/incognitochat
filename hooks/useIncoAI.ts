@@ -12,7 +12,8 @@ export const useIncoAI = (
   messages: Message[],
   config: ChatConfig,
   aiEnabled: boolean,
-  aiAvatarUrl?: string
+  aiAvatarUrl?: string,
+  userUid?: string
 ) => {
   const lastProcessedId = useRef<string | null>(null);
   const isBusy = useRef<boolean>(false);
@@ -25,7 +26,12 @@ export const useIncoAI = (
     const lastMsg = messages[messages.length - 1];
     
     if (!lastMsg || !lastMsg.text || lastMsg.type === 'system') return;
-    if (lastMsg.uid === INCO_BOT_UUID) return; 
+    if (lastMsg.uid === INCO_BOT_UUID) return;
+    // Only the author of the triggering message generates the reply. The bot
+    // response is inserted client-side, so without this every member who has Inco
+    // enabled would answer — producing one duplicate per online client. Gating on
+    // the author guarantees exactly one responder.
+    if (!userUid || lastMsg.uid !== userUid) return;
     if (lastMsg.id === lastProcessedId.current) return;
     if (isBusy.current) return;
 
@@ -45,7 +51,7 @@ export const useIncoAI = (
 
       return () => clearTimeout(timer);
     }
-  }, [messages, aiEnabled, isQuotaExhausted]);
+  }, [messages, aiEnabled, isQuotaExhausted, userUid]);
 
   const handleBotResponse = async (chatHistory: Message[], triggerMsg: Message) => {
     try {

@@ -226,7 +226,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       cancelRecording
   } = useAudioRecorder(handleRecordingComplete);
 
-  const isBotResponding = useIncoAI(config.roomKey, config.pin, messages, config, aiEnabled, aiAvatarUrl);
+  const isBotResponding = useIncoAI(config.roomKey, config.pin, messages, config, aiEnabled, aiAvatarUrl, user?.uid);
 
   const combinedTypingUsers = isBotResponding ? [...typingUsers, 'inco'] : typingUsers;
 
