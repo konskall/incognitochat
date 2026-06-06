@@ -212,7 +212,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   if (showParticipants) {
     return (
       <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-start justify-end p-4 sm:p-6" onClick={onCloseParticipants}>
-        <div className="bg-white dark:bg-slate-800 w-full max-w-xs rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden animate-in slide-in-from-right-4 mt-14" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-white dark:bg-slate-800 w-full max-w-[15rem] rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden animate-in slide-in-from-right-4 mt-14" onClick={(e) => e.stopPropagation()}>
           <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
             <h3 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
               <UserIcon size={18} /> Participants ({users.length})
