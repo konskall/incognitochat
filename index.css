@@ -22,6 +22,13 @@ html, body {
   overscroll-behavior-y: none;
 }
 
+/* Gentle continuous float for hero accents (logo). Paused for reduce-motion. */
+@keyframes ic-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.animate-float { animation: ic-float 5s ease-in-out infinite; }
+
 /* Respect the OS "Reduce Motion" setting (iOS/Android accessibility). Neutralizes
    the entrance animations, the infinite pulse glow, and hover scale/translate
    across the whole app for users with vestibular sensitivity (WCAG 2.3.3). */

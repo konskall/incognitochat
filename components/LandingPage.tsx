@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown, Sun, Moon } from 'lucide-react';
 import InstallButton from './InstallButton';
 
@@ -81,6 +81,44 @@ const FAQS = [
   },
 ];
 
+// Fades/slides its children in the first time they scroll into view. Opacity-only
+// motion on this wrapper, so inner cards keep their own hover transforms without
+// fighting it. Reduce-motion users get an instant reveal (the global CSS guard
+// zeroes the duration) — content is never left hidden.
+const Reveal: React.FC<{ children: React.ReactNode; className?: string; delay?: number; as?: 'div' | 'li' }> = ({
+  children,
+  className = '',
+  delay = 0,
+  as: Tag = 'div',
+}) => {
+  const ref = useRef<HTMLElement | null>(null);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setShown(true);
+          io.disconnect();
+        }
+      },
+      { threshold: 0.12, rootMargin: '0px 0px -8% 0px' }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return (
+    <Tag
+      ref={ref as React.Ref<HTMLDivElement & HTMLLIElement>}
+      style={{ transitionDelay: `${delay}ms` }}
+      className={`transition-all duration-700 ease-out ${shown ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'} ${className}`}
+    >
+      {children}
+    </Tag>
+  );
+};
+
 const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
   // Self-contained dark/light toggle. The boot script in index.html already set
   // the initial class from localStorage, so we seed from the live DOM state and
@@ -124,9 +162,11 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
           <InstallButton />
           <button
             onClick={onStart}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition active:scale-95 ${focusRing}`}
+            title="Log in"
+            aria-label="Log in"
+            className={`p-2 rounded-full text-slate-500 hover:text-blue-600 hover:bg-slate-200/70 dark:text-slate-400 dark:hover:text-blue-400 dark:hover:bg-slate-800 transition-colors active:scale-90 ${focusRing}`}
           >
-            <LogIn size={16} /> Log in
+            <LogIn size={20} />
           </button>
         </div>
       </header>
@@ -137,12 +177,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
           {/* Background blob (decorative, clipped by overflow-hidden) */}
           <div
             aria-hidden="true"
-            className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-4xl h-96 bg-blue-500/10 dark:bg-blue-600/5 rounded-full blur-3xl pointer-events-none"
+            style={{ animationDuration: '7s' }}
+            className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-4xl h-96 bg-blue-500/10 dark:bg-blue-600/5 rounded-full blur-3xl pointer-events-none animate-pulse"
           ></div>
 
           <div className="max-w-7xl mx-auto px-6 relative z-10 text-center">
             <div className="flex justify-center mb-8 animate-in fade-in zoom-in duration-700">
-              <div className="relative">
+              <div className="relative animate-float">
                 <div aria-hidden="true" className="absolute -inset-4 bg-blue-500/20 rounded-full blur-xl animate-pulse"></div>
                 <img
                   src={LOGO}
@@ -180,55 +221,58 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
 
         {/* Features Grid */}
         <section aria-labelledby="features-title" className="max-w-7xl mx-auto px-6 py-12 lg:py-20">
-          <h2 id="features-title" className="text-3xl font-bold text-center mb-10 lg:mb-14">Why Incognito Chat</h2>
+          <Reveal><h2 id="features-title" className="text-3xl font-bold text-center mb-10 lg:mb-14">Why Incognito Chat</h2></Reveal>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {FEATURES.map((f) => (
-              <FeatureCard key={f.title} icon={f.icon} title={f.title} description={f.description} />
+            {FEATURES.map((f, i) => (
+              <Reveal key={f.title} delay={i * 90}>
+                <FeatureCard icon={f.icon} title={f.title} description={f.description} />
+              </Reveal>
             ))}
           </div>
         </section>
 
         {/* How it works */}
         <section aria-labelledby="how-title" className="max-w-5xl mx-auto px-6 py-12 lg:py-20">
-          <h2 id="how-title" className="text-3xl font-bold text-center mb-10 lg:mb-14">How it works</h2>
+          <Reveal><h2 id="how-title" className="text-3xl font-bold text-center mb-10 lg:mb-14">How it works</h2></Reveal>
           <ol className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {STEPS.map((s, i) => (
-              <li
-                key={s.title}
-                className="relative bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
-              >
-                <span className="absolute -top-3 -left-3 w-9 h-9 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center shadow-lg shadow-blue-600/30">
-                  {i + 1}
-                </span>
-                <div className="w-12 h-12 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center mb-4 shadow-inner">
-                  {s.icon}
+              <Reveal as="li" key={s.title} delay={i * 110}>
+                <div className="group relative h-full bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
+                  <span className="absolute -top-3 -left-3 w-9 h-9 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center shadow-lg shadow-blue-600/30 transition-transform duration-300 group-hover:scale-110">
+                    {i + 1}
+                  </span>
+                  <div className="w-12 h-12 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center mb-4 shadow-inner transition-transform duration-300 group-hover:scale-110">
+                    {s.icon}
+                  </div>
+                  <h3 className="text-lg font-bold mb-2">{s.title}</h3>
+                  <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">{s.description}</p>
                 </div>
-                <h3 className="text-lg font-bold mb-2">{s.title}</h3>
-                <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">{s.description}</p>
-              </li>
+              </Reveal>
             ))}
           </ol>
         </section>
 
         {/* FAQ */}
         <section aria-labelledby="faq-title" className="max-w-3xl mx-auto px-6 py-12 lg:py-20">
-          <h2 id="faq-title" className="text-3xl font-bold text-center mb-10 lg:mb-14">Frequently asked questions</h2>
+          <Reveal><h2 id="faq-title" className="text-3xl font-bold text-center mb-10 lg:mb-14">Frequently asked questions</h2></Reveal>
           <div className="space-y-3">
-            {FAQS.map((f) => (
-              <details key={f.q} className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm transition-colors duration-200 hover:border-blue-200 dark:hover:border-blue-900/50">
+            {FAQS.map((f, i) => (
+              <Reveal key={f.q} delay={i * 70}>
+              <details className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm transition-colors duration-200 hover:border-blue-200 dark:hover:border-blue-900/50">
                 <summary className={`flex items-center justify-between gap-4 cursor-pointer list-none px-5 py-4 font-semibold text-slate-800 dark:text-slate-100 rounded-2xl [&::-webkit-details-marker]:hidden ${focusRing}`}>
                   <span>{f.q}</span>
                   <ChevronDown size={18} className="shrink-0 text-slate-400 transition-transform duration-200 group-open:rotate-180" />
                 </summary>
                 <p className="px-5 pb-5 text-sm text-slate-500 dark:text-slate-400 leading-relaxed">{f.a}</p>
               </details>
+              </Reveal>
             ))}
           </div>
         </section>
 
         {/* Trust Section */}
         <section aria-labelledby="trust-title" className="max-w-4xl mx-auto px-6 py-12 lg:py-20 text-center">
-          <div className="bg-blue-50 dark:bg-blue-900/10 rounded-3xl p-8 lg:p-12 border border-blue-100 dark:border-blue-900/30">
+          <Reveal className="bg-blue-50 dark:bg-blue-900/10 rounded-3xl p-8 lg:p-12 border border-blue-100 dark:border-blue-900/30">
             <div className="inline-flex p-3 bg-blue-600 text-white rounded-2xl mb-6 shadow-lg shadow-blue-600/20">
               <Zap size={32} />
             </div>
@@ -236,7 +280,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
             <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-0">
               Rooms are created instantly — just share the name and PIN to start talking. When a member deletes the room, every message and shared file is wiped for everyone.
             </p>
-          </div>
+          </Reveal>
         </section>
       </main>
 
@@ -251,8 +295,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
 };
 
 const FeatureCard = ({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) => (
-  <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-    <div className="w-14 h-14 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center mb-6 shadow-inner">
+  <div className="group h-full bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl hover:-translate-y-1 hover:border-blue-200 dark:hover:border-blue-900/50 transition-all duration-300">
+    <div className="w-14 h-14 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center mb-6 shadow-inner transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6">
       {icon}
     </div>
     <h3 className="text-xl font-bold mb-3">{title}</h3>
