@@ -49,7 +49,10 @@ export const useRoomPresence = (
           // members — so they stay visible (rendered with an idle dot) instead of
           // vanishing the moment they switch tabs. The status field carries the nuance.
           members.push(p);
-          if (p.uid !== user.uid && p.isTyping && p.status === 'active') {
+          // "Typing" is read across ALL of a user's presence entries: a rapid
+          // second track() (e.g. a read-receipt update) can momentarily produce a
+          // stale entry, and `find(active)` might pick the one without the flag.
+          if (p.uid !== user.uid && userPresences.some((u) => u.isTyping)) {
             typers.push(p.username);
           }
         }
@@ -89,7 +92,12 @@ export const useRoomPresence = (
       uid: user.uid,
       username: config.username,
       avatar: config.avatarURL,
-      isTyping: false,
+      // Preserve the live typing state by default. track() replaces the whole
+      // payload, so a non-typing-related re-broadcast (e.g. setLastRead's
+      // read-receipt update) must NOT silently flip isTyping back to false —
+      // that's what was killing the "is typing…" indicator. Callers that mean to
+      // change it (setTyping) pass an explicit override.
+      isTyping: isTypingRef.current,
       onlineAt: new Date().toISOString(),
       status: 'active',
       lastReadAt: lastReadRef.current,

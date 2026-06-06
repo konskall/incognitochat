@@ -36,6 +36,8 @@ export interface IncomingCall {
   fromName: string;
   fromAvatar: string;
   callType: CallType;
+  // true ⇒ a 1-on-1 call aimed only at me; false ⇒ a room-wide group call.
+  direct?: boolean;
 }
 
 interface PeerEntry {
@@ -267,8 +269,9 @@ export function useWebRTC(user: User, config: ChatConfig) {
           const entry = createPeer(data.fromUid, data.fromName, data.fromAvatar);
           if (user.uid < data.fromUid) makeOffer(entry);
         } else if (statusRef.current === 'idle') {
-          // Someone started/extended a call — ring me so I can join.
-          setIncoming({ fromUid: data.fromUid, fromName: data.fromName, fromAvatar: data.fromAvatar, callType: data.callType || 'audio' });
+          // Someone started/extended a call — ring me so I can join. A `toUid` on
+          // the join means it was aimed only at me (1-on-1); otherwise it's a group ring.
+          setIncoming({ fromUid: data.fromUid, fromName: data.fromName, fromAvatar: data.fromAvatar, callType: data.callType || 'audio', direct: !!data.toUid });
           setStatus('ringing');
           initAudio();
           startRingtone();
@@ -397,7 +400,8 @@ export function useWebRTC(user: User, config: ChatConfig) {
   }, []);
 
   // --- Public actions ---
-  const enterCall = useCallback(async (type: CallType) => {
+  // `targetUid` set ⇒ ring only that person (1-on-1); omitted ⇒ ring the whole room (group).
+  const enterCall = useCallback(async (type: CallType, targetUid?: string) => {
     try {
       await getMedia(type === 'video');
       setCallType(type);
@@ -408,7 +412,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
       stopRingtone();
       setNotice(null);
       // Announce; existing members reply with `present` and the smaller uid offers.
-      sendSignal({ type: 'join', callType: type });
+      sendSignal({ type: 'join', callType: type, toUid: targetUid });
     } catch (e) {
       console.error('Could not start/join call', e);
       setNotice({ kind: 'error', text: mediaErrorMessage(e) });
@@ -416,11 +420,14 @@ export function useWebRTC(user: User, config: ChatConfig) {
     }
   }, [getMedia, sendSignal, cleanup]);
 
-  const startCall = useCallback((type: CallType) => enterCall(type), [enterCall]);
+  const startCall = useCallback((type: CallType, targetUid?: string) => enterCall(type, targetUid), [enterCall]);
 
   const acceptCall = useCallback(() => {
-    const type = incomingRef.current?.callType || 'audio';
-    return enterCall(type);
+    const inc = incomingRef.current;
+    const type = inc?.callType || 'audio';
+    // Answer a direct call only to the caller (keeps it 1-on-1); a group call is
+    // announced to the whole room so the mesh forms with everyone present.
+    return enterCall(type, inc?.direct ? inc.fromUid : undefined);
   }, [enterCall]);
 
   const declineCall = useCallback(() => {

@@ -150,6 +150,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const isFirstLoad = useRef(true);
   const lastMessageIdRef = useRef<string | null>(null);
   const atBottomRef = useRef(true);
+  // The shared room-status channel, kept in a ref so the owner can broadcast a
+  // "room deleted" event on it right before deleting the room (see handleDeleteChat).
+  const roomStatusChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // Scroll-to-bottom affordance + in-room search.
   const [showScrollDown, setShowScrollDown] = useState(false);
@@ -593,6 +596,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   useEffect(() => {
     if (!config.roomKey || !isRoomReady || roomDeleted) return;
     const roomStatusChannel = supabase.channel(`room_status:${config.roomKey}`)
+      // Primary deletion signal: the owner broadcasts this the moment they delete
+      // the room. Realtime postgres_changes DELETE events are unreliable here —
+      // `rooms` uses the default replica identity, so the old record omits
+      // `room_key`, the `room_key=eq.…` filter can never match, and RLS can't
+      // re-check membership after the cascade. A broadcast reaches every member.
+      .on('broadcast', { event: 'room_deleted' }, () => {
+        setRoomDeleted(true);
+      })
       .on('postgres_changes', {
         event: 'DELETE',
         schema: 'public',
@@ -620,7 +631,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         }
       })
       .subscribe();
-    return () => { supabase.removeChannel(roomStatusChannel); };
+    roomStatusChannelRef.current = roomStatusChannel;
+    return () => { roomStatusChannelRef.current = null; supabase.removeChannel(roomStatusChannel); };
   }, [config.roomKey, isRoomReady, roomDeleted]);
 
   const handleExitChat = async () => {
@@ -714,17 +726,32 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       setIsDeleting(true);
       try {
            await notifySubscribers('deleted', 'Room was deleted by host');
-           
+
            const { data: files } = await supabase.storage.from('attachments').list(config.roomKey);
            if (files && files.length > 0) {
                const filesToRemove = files.map(x => `${config.roomKey}/${x.name}`);
                await supabase.storage.from('attachments').remove(filesToRemove);
            }
-           
-           await supabase.from('rooms').delete().eq('room_key', config.roomKey);
+
+           // Deleting the room cascades to its messages and subscribers (FK ON
+           // DELETE CASCADE). Surface RLS/network failures instead of silently
+           // "succeeding" — otherwise the room lingers and reappears on re-entry.
+           const { error } = await supabase.from('rooms').delete().eq('room_key', config.roomKey);
+           if (error) throw error;
+
+           // Kick everyone still in the room (the postgres_changes DELETE event is
+           // unreliable here — see the room_status channel comment).
+           try {
+               await roomStatusChannelRef.current?.send({ type: 'broadcast', event: 'room_deleted', payload: {} });
+           } catch { /* best-effort; the recipient also falls back to checkRoomStatus on focus */ }
+
+           // Clear the session "joined" flag so a later re-entry creates a fresh
+           // room instead of being told the (now-gone) room was deleted.
+           sessionStorage.removeItem(`joined_${config.roomKey}`);
            onExit();
       } catch(e) {
           console.error("Delete failed", e);
+          alert('Could not delete the room. Please try again.');
           setIsDeleting(false);
       }
   };

@@ -97,9 +97,10 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
 
   const formatTime = (secs: number) => `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}`;
 
-  const beginCall = (type: CallType) => {
+  // targetUid set ⇒ ring just that person (1-on-1); omitted ⇒ ring the whole room.
+  const beginCall = (type: CallType, targetUid?: string) => {
     onCloseParticipants();
-    startCall(type);
+    startCall(type, targetUid);
   };
 
   const renderContent = (): React.ReactNode => {
@@ -115,7 +116,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           <div>
             <h3 className="text-3xl font-bold text-white mb-2">{incoming.fromName}</h3>
             <p className="text-blue-200 font-medium animate-pulse text-lg">
-              Incoming group {incoming.callType === 'video' ? 'video' : 'audio'} call…
+              Incoming {incoming.direct ? '' : 'group '}{incoming.callType === 'video' ? 'video' : 'audio'} call…
             </p>
           </div>
           <div className="flex items-center justify-between w-full px-8 mt-4">
@@ -234,7 +235,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   if (showParticipants) {
     return (
       <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-start justify-end p-4 sm:p-6" onClick={onCloseParticipants}>
-        <div className="bg-white dark:bg-slate-800 w-full max-w-[15rem] rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden animate-in slide-in-from-right-4 mt-14" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-white dark:bg-slate-800 w-full max-w-[18rem] rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden animate-in slide-in-from-right-4 mt-14" onClick={(e) => e.stopPropagation()}>
           <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
             <h3 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
               <UserIcon size={18} /> Participants ({users.length})
@@ -260,20 +261,31 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               const isMe = u.uid === user.uid;
               const lastSeen = u.onlineAt ? new Date(u.onlineAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
               return (
-                <div key={u.uid} className="flex items-center justify-between p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-xl transition group">
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    <div className="relative">
+                <div key={u.uid} className="flex items-center justify-between gap-2 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-xl transition group">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="relative shrink-0">
                       <img src={u.avatar} className="w-10 h-10 rounded-full bg-slate-200 object-cover border border-slate-100 dark:border-slate-600" alt={u.username} />
                       <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 border-2 border-white dark:border-slate-800 rounded-full ${u.status === 'active' ? 'bg-green-500' : 'bg-orange-400'}`} />
                     </div>
-                    <div className="flex flex-col">
+                    <div className="flex flex-col min-w-0">
                       <span className="font-medium text-slate-700 dark:text-slate-200 truncate flex items-center gap-1 text-sm">
                         {u.username} {isMe && '(You)'}
-                        {roomCreatorId === u.uid && <Crown size={12} className="text-yellow-500 fill-yellow-500" />}
+                        {roomCreatorId === u.uid && <Crown size={12} className="text-yellow-500 fill-yellow-500 shrink-0" />}
                       </span>
-                      <span className="text-[10px] text-slate-400">{u.status === 'active' ? 'Online' : 'Idle'} • {lastSeen}</span>
+                      <span className="text-[10px] text-slate-400 truncate">{u.status === 'active' ? 'Online' : 'Idle'} • {lastSeen}</span>
                     </div>
                   </div>
+                  {/* 1-on-1 call: ring just this person (audio or video). */}
+                  {!isMe && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => beginCall('audio', u.uid)} title={`Audio call ${u.username}`} className="p-1.5 rounded-full text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 transition active:scale-95">
+                        <Phone size={17} />
+                      </button>
+                      <button onClick={() => beginCall('video', u.uid)} title={`Video call ${u.username}`} className="p-1.5 rounded-full text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition active:scale-95">
+                        <Video size={17} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
