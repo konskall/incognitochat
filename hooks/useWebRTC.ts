@@ -48,6 +48,23 @@ interface PeerEntry {
   makingOffer: boolean;
 }
 
+export interface CallNotice {
+  kind: 'error' | 'info';
+  text: string;
+}
+
+// Friendly, specific message for a getUserMedia failure.
+export function mediaErrorMessage(err: unknown): string {
+  const name = (err as { name?: string })?.name || '';
+  if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError')
+    return 'Camera/microphone access was blocked. Allow permission in your browser to join the call.';
+  if (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'DevicesNotFoundError')
+    return 'No microphone or camera found on this device — the call could not start.';
+  if (name === 'NotReadableError' || name === 'TrackStartError')
+    return 'Your microphone or camera is already in use by another app.';
+  return 'Could not start the call. Check your microphone/camera and try again.';
+}
+
 export function useWebRTC(user: User, config: ChatConfig) {
   const [status, setStatus] = useState<CallStatus>('idle');
   const [callType, setCallType] = useState<CallType>('video');
@@ -62,6 +79,9 @@ export function useWebRTC(user: User, config: ChatConfig) {
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [networkQuality, setNetworkQuality] = useState<'good' | 'poor' | 'bad'>('good');
   const [callDuration, setCallDuration] = useState(0);
+  // Transient banner for call/media problems (no mic/cam, blocked perms, …).
+  const [notice, setNotice] = useState<CallNotice | null>(null);
+  const dismissNotice = useCallback(() => setNotice(null), []);
 
   // Refs mirror state so the signaling callbacks (registered once) never read stale values.
   const statusRef = useRef(status);
@@ -333,10 +353,20 @@ export function useWebRTC(user: User, config: ChatConfig) {
 
   // --- Media ---
   const getMedia = useCallback(async (video: boolean) => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true },
-      video: video ? { facingMode } : false,
-    });
+    const audio = { echoCancellation: true, noiseSuppression: true };
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio, video: video ? { facingMode } : false });
+    } catch (err) {
+      // A video call on a device without a (working) camera shouldn't fail
+      // outright — fall back to audio-only so the user can still join.
+      if (video) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+        setNotice({ kind: 'info', text: 'No camera available — you joined with audio only.' });
+      } else {
+        throw err;
+      }
+    }
     rawStreamRef.current = stream;
     sendStreamRef.current = stream;
     setLocalStream(stream);
@@ -376,11 +406,12 @@ export function useWebRTC(user: User, config: ChatConfig) {
       statusRef.current = 'incall';
       setIncoming(null);
       stopRingtone();
+      setNotice(null);
       // Announce; existing members reply with `present` and the smaller uid offers.
       sendSignal({ type: 'join', callType: type });
     } catch (e) {
       console.error('Could not start/join call', e);
-      alert('Could not access camera/microphone. Check permissions.');
+      setNotice({ kind: 'error', text: mediaErrorMessage(e) });
       cleanup();
     }
   }, [getMedia, sendSignal, cleanup]);
@@ -507,6 +538,8 @@ export function useWebRTC(user: User, config: ChatConfig) {
     voiceFilter,
     networkQuality,
     callDuration,
+    notice,
+    dismissNotice,
     startCall,
     acceptCall,
     declineCall,

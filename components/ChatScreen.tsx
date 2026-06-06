@@ -443,11 +443,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, [isRoomReady, user, config.roomKey, roomDeleted]);
 
   useEffect(() => {
+      // Mark this room as joined for the session (used by initRoom to avoid
+      // silently recreating a deleted room). We intentionally no longer post a
+      // "joined the room" system message — they spammed the chat.
       if (isRoomReady && user && config.roomKey && !roomDeleted) {
           const sessionKey = `joined_${config.roomKey}`;
           if (!sessionStorage.getItem(sessionKey)) {
-              sendMessage(`${config.username} joined the room`, config, null, null, null, 'system');
-              notifySubscribers('joined', `${config.username} has entered the room.`);
               sessionStorage.setItem(sessionKey, 'true');
           }
       }
@@ -621,9 +622,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, [config.roomKey, isRoomReady, roomDeleted]);
 
   const handleExitChat = async () => {
-      if (config.roomKey && !roomDeleted) {
-          await sendMessage(`${config.username} left the room`, config, null, null, null, 'system');
-      }
+      // No "left the room" system message — it spammed the chat.
       sessionStorage.removeItem(`joined_${config.roomKey}`);
       onExit();
   };

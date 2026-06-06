@@ -1,7 +1,27 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon } from 'lucide-react';
 import { User, ChatConfig, Presence } from '../types';
-import { useWebRTC, RemotePeer, CallType } from '../hooks/useWebRTC';
+import { useWebRTC, RemotePeer, CallType, CallNotice } from '../hooks/useWebRTC';
+
+// Transient banner for call/media problems or info (no camera, blocked perms, …).
+const NoticeToast: React.FC<{ notice: CallNotice; onClose: () => void }> = ({ notice, onClose }) => {
+  useEffect(() => {
+    const t = setTimeout(onClose, 5000);
+    return () => clearTimeout(t);
+  }, [notice, onClose]);
+  const isErr = notice.kind === 'error';
+  return createPortal(
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-[92%] sm:max-w-md animate-in fade-in slide-in-from-top-2 duration-200">
+      <div className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-2xl border text-sm font-medium ${isErr ? 'bg-red-600 text-white border-red-500/60' : 'bg-slate-900 text-white border-white/10'}`}>
+        {isErr ? <AlertCircle size={18} className="shrink-0" /> : <Mic size={18} className="shrink-0 text-blue-300" />}
+        <span className="flex-1">{notice.text}</span>
+        <button onClick={onClose} aria-label="Dismiss" className="p-1 rounded-full hover:bg-white/15 transition"><X size={16} /></button>
+      </div>
+    </div>,
+    document.body
+  );
+};
 
 interface CallManagerProps {
   user: User;
@@ -70,7 +90,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const {
     status, callType, incoming, peers, localStream,
     isMuted, isVideoOff, isSpeakerMuted, setIsSpeakerMuted, voiceFilter,
-    networkQuality, callDuration,
+    networkQuality, callDuration, notice, dismissNotice,
     startCall, acceptCall, declineCall, hangup,
     toggleMute, toggleVideo, switchCamera, cycleVoiceFilter,
   } = useWebRTC(user, config);
@@ -82,6 +102,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     startCall(type);
   };
 
+  const renderContent = (): React.ReactNode => {
   // --- Incoming (ringing) ---
   if (status === 'ringing' && incoming) {
     return (
@@ -119,6 +140,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   // --- Active call (grid) ---
   if (status === 'incall') {
     const isVideo = callType === 'video';
+    const hasLocalVideo = !!localStream && localStream.getVideoTracks().length > 0;
     const tileCount = peers.length + 1;
     return (
       <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col">
@@ -169,7 +191,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
             avatar={config.avatarURL}
             muted
             mirror
-            showVideo={isVideo && !isVideoOff}
+            showVideo={isVideo && !isVideoOff && hasLocalVideo}
           />
         </div>
 
@@ -184,12 +206,12 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           <button onClick={toggleMute} className={`p-3.5 rounded-full transition-all shadow-lg ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}>
             {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
           </button>
-          {isVideo && (
+          {isVideo && hasLocalVideo && (
             <button onClick={toggleVideo} className={`p-3.5 rounded-full transition-all shadow-lg ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}>
               {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
             </button>
           )}
-          {isVideo && (
+          {isVideo && hasLocalVideo && (
             <button onClick={switchCamera} title="Switch camera" className="p-3.5 rounded-full transition-all shadow-lg bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700">
               <RotateCcw size={24} />
             </button>
@@ -268,6 +290,14 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   }
 
   return null;
+  };
+
+  return (
+    <>
+      {notice && <NoticeToast notice={notice} onClose={dismissNotice} />}
+      {renderContent()}
+    </>
+  );
 };
 
 export default CallManager;
