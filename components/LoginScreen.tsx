@@ -19,6 +19,19 @@ interface NotificationState {
   visible: boolean;
 }
 
+// Shared keyboard focus ring (tap-highlight is disabled globally in index.css).
+const focusRing =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900';
+
+// A custom avatar URL is broadcast to every room member and fetched by their
+// browsers, so only allow https images (blocks javascript:/data:/blob: and
+// avoids mixed-content + third-party beacon URLs).
+const isHttpsUrl = (value: string): boolean => {
+  try { return new URL(value).protocol === 'https:'; } catch { return false; }
+};
+
+const LOGO = `${import.meta.env.BASE_URL}favicon-96x96.png`;
+
 const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
   const [username, setUsername] = useState(localStorage.getItem('chatUsername') || '');
   const [avatar, setAvatar] = useState(localStorage.getItem('chatAvatarURL') || '');
@@ -31,6 +44,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
   // Custom Notification State
   const [notification, setNotification] = useState<NotificationState | null>(null);
   const notificationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Room History State
   const [roomHistory, setRoomHistory] = useState<string[]>([]);
@@ -82,6 +96,15 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
           console.error("Failed to load room history", e);
       }
 
+      // Warm the avatar API connection — this screen always renders avatars.
+      if (!document.querySelector('link[data-dicebear-preconnect]')) {
+          const link = document.createElement('link');
+          link.rel = 'preconnect';
+          link.href = 'https://api.dicebear.com';
+          link.setAttribute('data-dicebear-preconnect', '');
+          document.head.appendChild(link);
+      }
+
       const handleClickOutside = (event: MouseEvent) => {
           if (historyRef.current && !historyRef.current.contains(event.target as Node)) {
               setShowHistory(false);
@@ -90,6 +113,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
 
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Clear pending timers on unmount (the submit delay + the toast auto-hide),
+  // so they don't fire setState after the screen has navigated away.
+  useEffect(() => () => {
+      if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
+      if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current);
   }, []);
 
   const toggleTheme = () => {
@@ -160,7 +190,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
 
   const handleGoogleLogin = async () => {
     try {
-        const redirectUrl = window.location.origin + window.location.pathname;
+        // Pin to the app's canonical base URL rather than echoing the live
+        // pathname/hash, so the OAuth return target is always the known origin.
+        const redirectUrl = window.location.origin + import.meta.env.BASE_URL;
 
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
@@ -189,22 +221,35 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return; // guard against double-submit (Enter key during the delay)
 
-    if (username.length < 2) {
+    // Trim once and use the trimmed values everywhere (validation, storage, the
+    // room key, and the encryption PIN) so a stray space can't desync anything.
+    const uname = username.trim();
+    const room = roomName.trim();
+    const code = pin.trim();
+
+    if (uname.length < 2) {
       showToast("Username must have at least 2 characters.", 'error');
       return;
     }
-    if (!pin.match(/^[\w\d]{4,}$/)) {
-      showToast("PIN must be at least 4 characters (letters/numbers).", 'error');
+    if (!/^[A-Za-z0-9_]{4,12}$/.test(code)) {
+      showToast("PIN must be 4–12 characters: letters, numbers or underscore.", 'error');
       return;
     }
-    if (!roomName.match(/^[\w\d]{3,}$/)) {
-      showToast("Room name must be at least 3 Latin characters.", 'error');
+    if (!/^[A-Za-z0-9_]{3,30}$/.test(room)) {
+      showToast("Room name must be 3–30 characters: letters, numbers or underscore.", 'error');
+      return;
+    }
+
+    const finalAvatar = useCustomUrl ? avatar.trim() : getDiceBearUrl(avatarStyle, avatarSeed);
+    if (useCustomUrl && !isHttpsUrl(finalAvatar)) {
+      showToast("Avatar URL must be a valid https:// link.", 'error');
       return;
     }
 
     setLoading(true);
-    initAudio();
+    initAudio(); // must stay in the click gesture to unlock audio on iOS
 
     // Authenticate with Supabase anonymously if not already logged in
     const { data: { session } } = await supabase.auth.getSession();
@@ -218,40 +263,46 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
         }
     }
 
-    const roomKey = generateRoomKey(pin, roomName);
-    const finalAvatar = useCustomUrl ? avatar : getDiceBearUrl(avatarStyle, avatarSeed);
+    const roomKey = generateRoomKey(code, room);
 
     // Save to local storage
-    localStorage.setItem('chatUsername', username);
+    localStorage.setItem('chatUsername', uname);
     localStorage.setItem('chatAvatarURL', finalAvatar);
-    localStorage.setItem('chatRoomName', roomName);
-    localStorage.setItem('chatPin', pin); 
+    localStorage.setItem('chatRoomName', room);
+    localStorage.setItem('chatPin', code);
 
-    const newHistory = [roomName, ...roomHistory.filter(r => r !== roomName)].slice(0, 10);
+    // Dedupe history case-insensitively (room keys are lowercased).
+    const newHistory = [room, ...roomHistory.filter(r => r.toLowerCase() !== room.toLowerCase())].slice(0, 10);
     setRoomHistory(newHistory);
     localStorage.setItem('chatRoomHistory', JSON.stringify(newHistory));
 
     showToast("Joining secure room...", "success");
-    
-    // Small delay to show success message before transition
-    setTimeout(() => {
+
+    // Small delay to show success message before transition.
+    submitTimeoutRef.current = setTimeout(() => {
         setLoading(false);
         onJoin({
-          username,
+          username: uname,
           avatarURL: finalAvatar,
-          roomName,
-          pin,
+          roomName: room,
+          pin: code,
           roomKey
         });
     }, 500);
   };
 
   return (
-    <div className="flex flex-col items-center justify-start min-h-[100dvh] p-4 pt-2 md:pt-6 w-full max-w-md mx-auto animate-in slide-in-from-bottom-4 duration-500 relative">
-      
+    <div
+      className="flex flex-col items-center justify-start min-h-[100dvh] p-4 pt-2 md:pt-6 w-full max-w-md mx-auto animate-in slide-in-from-bottom-4 duration-500 relative"
+      style={{ paddingLeft: 'max(1rem, env(safe-area-inset-left))', paddingRight: 'max(1rem, env(safe-area-inset-right))' }}
+    >
+
       {/* Toast Notification Container - Centered */}
       {notification && (
-        <div className={`
+        <div
+          role={notification.type === 'error' ? 'alert' : 'status'}
+          aria-live={notification.type === 'error' ? 'assertive' : 'polite'}
+          className={`
             fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-auto max-w-[90vw]
             flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl
             backdrop-blur-md border animate-in zoom-in-95 fade-in duration-300
@@ -283,24 +334,29 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
 
         {/* Top Right Control (Theme) */}
         <div className="absolute top-6 right-6 z-10">
-            <button 
+            <button
                 onClick={toggleTheme}
-                className="p-2 rounded-full text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className={`p-2 rounded-full text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${focusRing}`}
                 title="Toggle Theme"
+                aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             >
                 {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
         </div>
 
-        <button 
+        <button
             type="button"
             onClick={onShowLanding}
-            className="w-full flex flex-col items-center mb-6 group transition-all hover:scale-105"
+            className={`w-fit mx-auto flex flex-col items-center mb-6 group transition-all hover:scale-105 rounded-2xl p-1 ${focusRing}`}
             title="Back to info page"
+            aria-label="Back to info page"
         >
-           <img 
-            src="https://konskall.github.io/incognitochat/favicon-96x96.png" 
-            alt="Logo"
+           <img
+            src={LOGO}
+            alt=""
+            width={64}
+            height={64}
+            decoding="async"
             className="w-16 h-16 rounded-2xl shadow-lg mb-4 ring-0 group-hover:ring-4 ring-blue-500/20 transition-all"
           />
           <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">Incognito Chat</h1>
@@ -309,11 +365,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1 block uppercase">Identity</label>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1 block uppercase">Identity</span>
             <input
+              id="login-username"
               type="text"
               placeholder="Username"
               aria-label="Username"
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               maxLength={20}
@@ -323,11 +384,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
           
           <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
              <div className="flex justify-between items-center mb-2">
-                 <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Avatar</label>
-                 <button 
-                    type="button" 
+                 <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Avatar</span>
+                 <button
+                    type="button"
                     onClick={toggleCustomUrl}
-                    className="text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline py-1 px-2 -mr-2 rounded-lg hover:bg-blue-50 dark:hover:bg-slate-700/50 transition-colors"
+                    className={`text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline py-1 px-2 -mr-2 rounded-lg hover:bg-blue-50 dark:hover:bg-slate-700/50 transition-colors ${focusRing}`}
                  >
                      {useCustomUrl ? 'Use Generator' : 'Use Custom URL'}
                  </button>
@@ -335,19 +396,27 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
 
              {useCustomUrl ? (
                 <input
-                    type="text"
-                    placeholder="Image URL (http://...)"
+                    type="url"
+                    placeholder="Image URL (https://...)"
                     aria-label="Custom Avatar URL"
+                    inputMode="url"
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
                     value={avatar}
                     onChange={(e) => setAvatar(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:border-blue-500 outline-none text-base"
+                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:border-blue-500 outline-none text-base"
                 />
              ) : (
                 <div className="flex items-center gap-3">
-                    <img 
-                        src={getDiceBearUrl(avatarStyle, avatarSeed)} 
-                        alt="Avatar Preview" 
-                        className="w-16 h-16 rounded-full bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600"
+                    <img
+                        src={getDiceBearUrl(avatarStyle, avatarSeed)}
+                        alt="Avatar preview"
+                        width={64}
+                        height={64}
+                        decoding="async"
+                        className="w-16 h-16 rounded-full bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 shrink-0"
                     />
                     <div className="flex-1 flex flex-col gap-2">
                         <select 
@@ -360,10 +429,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
                                 <option key={style.id} value={style.id}>{style.label}</option>
                             ))}
                         </select>
-                        <button 
+                        <button
                             type="button"
                             onClick={regenerateAvatar}
-                            className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 py-2 px-3 rounded-lg font-bold hover:bg-blue-200 dark:hover:bg-blue-900/60 transition"
+                            className={`text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 py-2 px-3 rounded-lg font-bold hover:bg-blue-200 dark:hover:bg-blue-900/60 transition ${focusRing}`}
                         >
                             🔀 Shuffle Look
                         </button>
@@ -375,13 +444,17 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
           <div className="h-px bg-slate-200 dark:bg-slate-700 my-2"></div>
 
           <div>
-             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1 block uppercase">Destination</label>
-             
+             <span className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1 block uppercase">Destination</span>
+
              <div className="relative" ref={historyRef}>
                 <input
                     type="text"
                     placeholder="Room Name (e.g. secretbase)"
                     aria-label="Room Name"
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
                     value={roomName}
                     onChange={(e) => setRoomName(e.target.value)}
                     onFocus={() => setShowHistory(true)}
@@ -393,19 +466,24 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
                     <div className="absolute top-[calc(100%-12px)] left-0 right-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-b-xl shadow-xl z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
                          <div className="max-h-40 overflow-y-auto">
                              {roomHistory.map((room) => (
-                                 <div 
+                                 <div
                                     key={room}
-                                    onClick={() => handleRoomSelect(room)}
-                                    className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer group transition-colors"
+                                    className="flex items-center hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
                                  >
-                                     <div className="flex items-center gap-3">
-                                         <History size={14} className="text-slate-400" />
-                                         <span className="text-sm text-slate-700 dark:text-slate-200 font-medium">{room}</span>
-                                     </div>
-                                     <button 
+                                     <button
+                                        type="button"
+                                        onClick={() => handleRoomSelect(room)}
+                                        className={`flex items-center gap-3 flex-1 min-w-0 px-4 py-2.5 text-left ${focusRing}`}
+                                     >
+                                         <History size={14} className="text-slate-400 shrink-0" />
+                                         <span className="text-sm text-slate-700 dark:text-slate-200 font-medium truncate">{room}</span>
+                                     </button>
+                                     <button
+                                        type="button"
                                         onClick={(e) => deleteFromHistory(e, room)}
-                                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-all opacity-0 group-hover:opacity-100"
-                                        title="Remove from history"
+                                        className={`p-2 mr-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors shrink-0 ${focusRing}`}
+                                        title={`Remove ${room} from history`}
+                                        aria-label={`Remove ${room} from history`}
                                      >
                                          <X size={14} />
                                      </button>
@@ -413,9 +491,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
                              ))}
                          </div>
                          <div className="border-t border-slate-100 dark:border-slate-700/50 p-1 bg-slate-50/50 dark:bg-slate-900/50">
-                            <button 
+                            <button
+                                type="button"
                                 onClick={clearHistory}
-                                className="w-full py-2.5 text-xs text-slate-500 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400 flex items-center justify-center gap-1 transition-colors"
+                                className={`w-full py-2.5 text-xs text-slate-500 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400 flex items-center justify-center gap-1 transition-colors ${focusRing}`}
                             >
                                 <Trash2 size={12} />
                                 Clear History
@@ -430,15 +509,20 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
                   type={showPin ? "text" : "password"}
                   placeholder="Room PIN"
                   aria-label="Room PIN"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   value={pin}
                   onChange={(e) => setPin(e.target.value)}
+                  onFocus={() => setShowHistory(false)}
                   maxLength={12}
                   className="w-full px-4 py-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all text-base pr-14"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPin(!showPin)}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 p-2.5 text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className={`absolute right-1 top-1/2 -translate-y-1/2 p-2.5 text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 ${focusRing}`}
                   aria-label={showPin ? "Hide PIN" : "Show PIN"}
                 >
                   {showPin ? <EyeOff size={20} /> : <Eye size={20} />}
@@ -449,7 +533,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
           <button
             type="submit"
             disabled={loading}
-            className="mt-4 w-full py-3.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 transform transition active:scale-95 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+            className={`mt-4 w-full py-3.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 transform transition active:scale-95 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed ${focusRing}`}
           >
             {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Enter Room'}
           </button>
@@ -462,12 +546,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
         </div>
 
         <div className="flex items-center gap-2">
-            <button 
+            <button
                 type="button"
                 onClick={handleGoogleLogin}
-                className="flex-1 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-xl transition flex items-center justify-center gap-3"
+                className={`flex-1 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-xl transition flex items-center justify-center gap-3 ${focusRing}`}
             >
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <path
                         d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
                         fill="#4285F4"
@@ -490,10 +574,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
         </div>
 
         <div className="mt-6 border border-blue-100 dark:border-blue-900/30 bg-blue-50/50 dark:bg-blue-900/10 rounded-xl overflow-hidden">
-            <button 
+            <button
                 type="button"
                 onClick={() => setShowGuide(!showGuide)}
-                className="w-full flex items-center justify-between p-3 text-blue-600 dark:text-blue-400 font-bold text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 transition"
+                aria-expanded={showGuide}
+                className={`w-full flex items-center justify-between p-3 text-blue-600 dark:text-blue-400 font-bold text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 transition ${focusRing}`}
             >
                 <div className="flex items-center gap-2">
                     <Info size={16} />
@@ -515,7 +600,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
       
       <footer className="mt-8 text-center text-slate-500 dark:text-slate-500 text-xs pb-[calc(1.5rem+env(safe-area-inset-bottom))] font-medium">
         <p>
-          Incognito Chat © 2025 • Powered by{' '}
+          Incognito Chat © {new Date().getFullYear()} • Powered by{' '}
           <a 
             href="http://linkedin.com/in/konstantinos-kalliakoudis-902b90103" 
             target="_blank" 

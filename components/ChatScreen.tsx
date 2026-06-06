@@ -376,6 +376,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         } else {
           setAccessError('Could not join the room. Please try again.');
         }
+        // Drop the stored room+PIN on an access failure so a refresh doesn't
+        // re-route straight back into the failing room (the wrong PIN would
+        // otherwise loop). Username is kept so the login form stays prefilled.
+        if (error.code !== 'ROOM_DELETED') {
+          localStorage.removeItem('chatPin');
+          localStorage.removeItem('chatRoomName');
+        }
         return;
       }
 
