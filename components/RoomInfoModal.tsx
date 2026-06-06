@@ -65,7 +65,11 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   const onlineCount = participants.filter((p) => p.status === 'active').length;
   const total = participants.length;
   const initials = config.roomName.substring(0, 2).toUpperCase();
-  const showAi = isOwner && isGoogleUser;
+  // Collaborative room: any logged-in member (not only the creator) can manage
+  // room settings and toggle Inco; the original creator keeps access even when
+  // anonymous. Deleting the room is open to every member (see Delete row below).
+  const showAi = isGoogleUser;                  // Inco needs a logged-in account
+  const canManage = isOwner || isGoogleUser;    // appearance / disappearing messages
 
   // open a sub-screen: close this hub first so modals don't stack awkwardly
   const go = (fn: () => void) => { onClose(); setTimeout(fn, 0); };
@@ -157,10 +161,10 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
 
         {/* Room settings */}
         <SectionLabel>Room</SectionLabel>
-        {isOwner && (
+        {canManage && (
           <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => go(onOpenRoomAppearance)} tint="bg-blue-500/10 text-blue-500" />
         )}
-        {isOwner && (
+        {canManage && (
           <Row
             icon={<Timer size={18} />}
             label="Disappearing messages"
@@ -187,13 +191,9 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
           }
         />
 
-        {/* Danger zone */}
-        {isOwner && (
-          <>
-            <div className="h-px bg-slate-100 dark:bg-slate-800 my-2" />
-            <Row icon={<Trash2 size={18} />} label="Delete room" onClick={() => go(onDeleteRoom)} danger />
-          </>
-        )}
+        {/* Danger zone — any member can delete the room. */}
+        <div className="h-px bg-slate-100 dark:bg-slate-800 my-2" />
+        <Row icon={<Trash2 size={18} />} label="Delete room" onClick={() => go(onDeleteRoom)} danger />
 
         <div className="h-[env(safe-area-inset-bottom)] shrink-0" />
       </div>

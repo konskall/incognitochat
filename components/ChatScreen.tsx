@@ -822,8 +822,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   };
 
   const handleToggleAI = async () => {
-    const isOwner = user?.uid === roomCreatorId;
-    if (!isOwner || !config.roomKey) return;
+    // Inco is open to any logged-in member of the room, not just the creator —
+    // but it does require an account (anonymous guests can't toggle it).
+    if (!user || user.isAnonymous || !config.roomKey) return;
     const newState = !aiEnabled;
     try {
       await supabase
