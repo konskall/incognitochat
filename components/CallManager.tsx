@@ -221,16 +221,16 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           </div>
 
           {/* Start a group call (rings everyone in the room) */}
-          <div className="p-3 border-b border-slate-100 dark:border-slate-700">
-            <div className="flex gap-2">
-              <button onClick={() => beginCall('audio')} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white bg-green-600 hover:bg-green-700 transition active:scale-95">
-                <Phone size={16} /> Audio
+          <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between gap-2">
+            <span className="text-[11px] text-slate-400 dark:text-slate-500">Start group call</span>
+            <div className="flex gap-1.5">
+              <button onClick={() => beginCall('audio')} title="Audio call" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 transition active:scale-95">
+                <Phone size={14} /> Audio
               </button>
-              <button onClick={() => beginCall('video')} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition active:scale-95">
-                <Video size={16} /> Video
+              <button onClick={() => beginCall('video')} title="Video call" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition active:scale-95">
+                <Video size={14} /> Video
               </button>
             </div>
-            <p className="text-[10px] text-slate-400 text-center mt-2">Starts a group call — everyone in the room can join.</p>
           </div>
 
           <div className="max-h-[55vh] overflow-y-auto p-2 space-y-1">
