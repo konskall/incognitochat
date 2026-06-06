@@ -18,6 +18,7 @@ import RoomAppearanceModal from './RoomAppearanceModal';
 import EphemeralModal, { formatTtl } from './EphemeralModal';
 import PollComposerModal from './PollComposerModal';
 import MediaGalleryModal from './MediaGalleryModal';
+import RoomInfoModal from './RoomInfoModal';
 import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
 import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin } from 'lucide-react';
 
@@ -117,6 +118,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [pinnedFallbackText, setPinnedFallbackText] = useState('');
   const [showPollComposer, setShowPollComposer] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
+  const [showRoomInfo, setShowRoomInfo] = useState(false);
 
   // Theme State - Default to Dark Mode
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -901,8 +903,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         config={config}
         participants={participants}
         isRoomReady={isRoomReady && !roomDeleted}
-        showParticipantsList={showParticipantsList}
-        setShowParticipantsList={setShowParticipantsList}
         showSettingsMenu={showSettingsMenu}
         setShowSettingsMenu={setShowSettingsMenu}
         canVibrate={canVibrate}
@@ -912,23 +912,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         setSoundEnabled={setSoundEnabled}
         notificationsEnabled={notificationsEnabled}
         toggleNotifications={toggleNotifications}
-        emailAlertsEnabled={emailAlertsEnabled}
-        setShowEmailModal={setShowEmailModal}
         isDarkMode={isDarkMode}
         toggleTheme={toggleTheme}
-        setShowDeleteModal={setShowDeleteModal}
         onExit={handleExitChat}
-        isOwner={user?.uid === roomCreatorId}
-        isGoogleUser={user ? !user.isAnonymous : false}
-        aiEnabled={aiEnabled}
-        onToggleAI={handleToggleAI}
-        onOpenAiAvatar={() => setShowAiAvatarModal(true)}
-        onToggleSearch={() => { setShowSearch((s) => { const next = !s; if (!next) setSearchQuery(''); return next; }); }}
-        onOpenGallery={() => setShowGallery(true)}
         roomAvatarUrl={roomAvatarUrl}
-        onOpenRoomAppearance={() => setShowRoomAppearance(true)}
         messageTtlLabel={formatTtl(messageTtl)}
-        onOpenEphemeral={() => setShowEphemeral(true)}
+        onOpenRoomInfo={() => setShowRoomInfo(true)}
+        onOpenParticipants={() => setShowParticipantsList(true)}
       />
 
       {showSearch && (
@@ -1088,6 +1078,28 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         show={showPollComposer}
         onClose={() => setShowPollComposer(false)}
         onCreate={handleCreatePoll}
+      />
+
+      <RoomInfoModal
+        show={showRoomInfo}
+        onClose={() => setShowRoomInfo(false)}
+        config={config}
+        participants={participants}
+        roomAvatarUrl={roomAvatarUrl}
+        isOwner={user?.uid === roomCreatorId}
+        isGoogleUser={user ? !user.isAnonymous : false}
+        aiEnabled={aiEnabled}
+        messageTtlLabel={formatTtl(messageTtl)}
+        emailAlertsEnabled={emailAlertsEnabled}
+        onToggleSearch={() => { setShowSearch((s) => { const next = !s; if (!next) setSearchQuery(''); return next; }); }}
+        onOpenGallery={() => setShowGallery(true)}
+        onOpenParticipants={() => setShowParticipantsList(true)}
+        onToggleAI={handleToggleAI}
+        onOpenAiAvatar={() => setShowAiAvatarModal(true)}
+        onOpenRoomAppearance={() => setShowRoomAppearance(true)}
+        onOpenEphemeral={() => setShowEphemeral(true)}
+        onOpenEmail={() => setShowEmailModal(true)}
+        onDeleteRoom={() => setShowDeleteModal(true)}
       />
 
       <MediaGalleryModal
