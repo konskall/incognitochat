@@ -148,14 +148,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
 
   return (
     <div
-      className="min-h-[100dvh] overflow-x-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300 selection:bg-blue-500 selection:text-white"
+      className="min-h-[100dvh] overflow-x-clip bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300 selection:bg-blue-500 selection:text-white"
       style={{ paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}
     >
-      {/* Top nav */}
+      {/* Top nav (sticky, glass) */}
       <header
-        className="relative z-20 max-w-7xl mx-auto flex items-center justify-between px-6 pb-4"
-        style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}
+        className="sticky top-0 z-30 border-b border-slate-200/60 dark:border-slate-800/60 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md"
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
+        <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-3">
         <button
           type="button"
           onClick={scrollToTop}
@@ -183,6 +184,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
           >
             <LogIn size={20} />
           </button>
+        </div>
         </div>
       </header>
 
