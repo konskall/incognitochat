@@ -1,8 +1,35 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../services/supabase';
-import { Message, Attachment, Poll } from '../types';
+import { Message, Attachment, Poll, ReplyInfo, GroundingSource } from '../types';
 import { decryptMessage, encryptMessage } from '../utils/helpers';
+
+// Shape of a raw `messages` row as it comes back from Postgres / realtime
+// (snake_case, encrypted text, jsonb columns) before `mapRow` decrypts + maps it.
+interface RawPoll {
+  question: string;
+  options: { id: string; text: string }[];
+  votes: { [optionId: string]: string[] };
+  multi?: boolean;
+  closed?: boolean;
+}
+
+interface MessageRow {
+  id: string;
+  text: string | null;
+  uid: string;
+  username: string;
+  avatar_url: string | null;
+  created_at: string;
+  attachment?: Attachment | null;
+  location?: { lat: number; lng: number } | null;
+  is_edited?: boolean | null;
+  reactions?: { [emoji: string]: string[] } | null;
+  reply_to?: ReplyInfo | null;
+  type?: string | null;
+  grounding_metadata?: GroundingSource[] | null;
+  poll?: RawPoll | null;
+}
 
 // How many messages to load per page. The initial load fetches the most recent
 // page; older history is pulled in on demand instead of downloading + decrypting
@@ -37,12 +64,12 @@ export const useChatMessages = (
 
   // Poll question + option text are client-encrypted at rest (same AES as
   // message text); decrypt them here. Vote uid lists stay plaintext.
-  const mapPoll = useCallback((raw: any): Poll | null => {
+  const mapPoll = useCallback((raw: RawPoll | null | undefined): Poll | null => {
     if (!raw) return null;
     return {
       question: decryptMessage(raw.question || '', pin, roomKey),
       options: Array.isArray(raw.options)
-        ? raw.options.map((o: any) => ({ id: o.id, text: decryptMessage(o.text || '', pin, roomKey) }))
+        ? raw.options.map((o) => ({ id: o.id, text: decryptMessage(o.text || '', pin, roomKey) }))
         : [],
       votes: raw.votes || {},
       multi: !!raw.multi,
@@ -50,19 +77,19 @@ export const useChatMessages = (
     };
   }, [pin, roomKey]);
 
-  const mapRow = useCallback((d: any): Message => ({
+  const mapRow = useCallback((d: MessageRow): Message => ({
     id: d.id,
     text: decryptMessage(d.text || '', pin, roomKey),
     uid: d.uid,
     username: d.username,
-    avatarURL: d.avatar_url,
+    avatarURL: d.avatar_url || '',
     createdAt: d.created_at,
-    attachment: d.attachment,
-    location: d.location,
+    attachment: d.attachment || undefined,
+    location: d.location || undefined,
     isEdited: d.is_edited ?? false,
     reactions: d.reactions || {},
-    replyTo: d.reply_to,
-    type: d.type || 'text',
+    replyTo: d.reply_to ?? null,
+    type: (d.type || 'text') as Message['type'],
     groundingMetadata: d.grounding_metadata || [],
     poll: mapPoll(d.poll),
   }), [pin, roomKey, mapPoll]);
@@ -182,7 +209,7 @@ export const useChatMessages = (
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const newMsg = mapRow(payload.new);
+            const newMsg = mapRow(payload.new as MessageRow);
 
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
