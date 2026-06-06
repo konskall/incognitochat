@@ -1,5 +1,5 @@
-import React from 'react';
-import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown } from 'lucide-react';
+import React, { useState } from 'react';
+import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown, Sun, Moon } from 'lucide-react';
 import InstallButton from './InstallButton';
 
 interface LandingPageProps {
@@ -82,6 +82,22 @@ const FAQS = [
 ];
 
 const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
+  // Self-contained dark/light toggle. The boot script in index.html already set
+  // the initial class from localStorage, so we seed from the live DOM state and
+  // keep localStorage + the theme-color meta in sync (the rest of the app reads
+  // the same localStorage key on entry).
+  const [isDark, setIsDark] = useState(() =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+  );
+
+  const toggleTheme = () => {
+    const next = !isDark;
+    setIsDark(next);
+    document.documentElement.classList.toggle('dark', next);
+    localStorage.setItem('theme', next ? 'dark' : 'light');
+    document.querySelector("meta[name='theme-color']")?.setAttribute('content', next ? '#020617' : '#f8fafc');
+  };
+
   return (
     <div
       className="min-h-[100dvh] overflow-x-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300 selection:bg-blue-500 selection:text-white"
@@ -97,6 +113,14 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
           <span className="font-extrabold tracking-tight text-slate-900 dark:text-white">Incognito Chat</span>
         </a>
         <div className="flex items-center gap-1.5 sm:gap-2">
+          <button
+            onClick={toggleTheme}
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            className={`p-2 rounded-full text-slate-500 hover:text-blue-600 hover:bg-slate-200/70 dark:text-slate-400 dark:hover:text-blue-400 dark:hover:bg-slate-800 transition-colors active:scale-90 ${focusRing}`}
+          >
+            {isDark ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
           <InstallButton />
           <button
             onClick={onStart}
@@ -142,19 +166,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
               Incognito Chat is a privacy-first messaging app. Spin up a room, lock it with a PIN, and only the people you invite can read along — no phone number, no sign-up.
             </p>
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-in slide-in-from-bottom-8 duration-700 delay-200">
+            <div className="flex justify-center animate-in slide-in-from-bottom-8 duration-700 delay-200">
               <button
                 onClick={onStart}
                 className={`group relative px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-xl shadow-blue-500/30 transition-all hover:scale-105 active:scale-95 flex items-center gap-2 ${focusRing}`}
               >
                 Start Chatting Now
                 <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
-              </button>
-              <button
-                onClick={onStart}
-                className={`px-6 py-4 rounded-2xl font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition active:scale-95 ${focusRing}`}
-              >
-                I already have a room
               </button>
             </div>
           </div>
@@ -177,7 +195,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
             {STEPS.map((s, i) => (
               <li
                 key={s.title}
-                className="relative bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm"
+                className="relative bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
               >
                 <span className="absolute -top-3 -left-3 w-9 h-9 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center shadow-lg shadow-blue-600/30">
                   {i + 1}
@@ -197,7 +215,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
           <h2 id="faq-title" className="text-3xl font-bold text-center mb-10 lg:mb-14">Frequently asked questions</h2>
           <div className="space-y-3">
             {FAQS.map((f) => (
-              <details key={f.q} className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+              <details key={f.q} className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm transition-colors duration-200 hover:border-blue-200 dark:hover:border-blue-900/50">
                 <summary className={`flex items-center justify-between gap-4 cursor-pointer list-none px-5 py-4 font-semibold text-slate-800 dark:text-slate-100 rounded-2xl [&::-webkit-details-marker]:hidden ${focusRing}`}>
                   <span>{f.q}</span>
                   <ChevronDown size={18} className="shrink-0 text-slate-400 transition-transform duration-200 group-open:rotate-180" />

@@ -100,12 +100,23 @@ const App: React.FC = () => {
 
   const handleStartApp = () => {
     sessionStorage.setItem('hasSeenLanding', 'true');
+    // Push a history entry for the landing→app transition so the browser Back
+    // button returns to the marketing page instead of leaving the site (handled
+    // by the popstate listener below). This is the only entry we push.
+    window.history.pushState({ icAppEntry: true }, '');
     if (currentUser && !currentUser.isAnonymous) {
       setCurrentView('dashboard');
     } else {
       setCurrentView('login');
     }
   };
+
+  // Browser Back from the login/dashboard reached via the landing returns here.
+  useEffect(() => {
+    const onPopState = () => setCurrentView('landing');
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
