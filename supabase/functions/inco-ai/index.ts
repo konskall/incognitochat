@@ -86,7 +86,7 @@ BACKGROUND DATA (Internal use only):
 
 STRICT RULES:
 1. NEVER mention the current time or date in your response unless the user explicitly asks for it (e.g., "what time is it?").
-2. Always respond in English.
+2. Reply in the same language the user writes in (detect it from their message). If the user explicitly asks you to answer in another language, switch to that language and keep using it for the rest of the conversation.
 3. Be concise and friendly. Use Google Search ONLY when necessary for facts or current events.
 4. Do not start your sentences with "Today is..." or "The time is..." unless relevant.`;
 
