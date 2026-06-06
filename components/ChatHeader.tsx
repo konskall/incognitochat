@@ -137,7 +137,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                             <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isRoomReady ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
                         </span>
                         <span className="text-xs text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">
-                            {participants.length} Online
+                            {participants.filter((p) => p.status === 'active').length} Online
                         </span>
                      </div>
                      <span className="text-[10px] sm:text-xs text-slate-400 dark:text-slate-500 truncate font-medium">

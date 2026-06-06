@@ -35,22 +35,27 @@ export const useRoomPresence = (
     channel
       .on('presence', { event: 'sync' }, () => {
         const newState = channel.presenceState();
-        const activeUsers: Presence[] = [];
+        const members: Presence[] = [];
         const typers: string[] = [];
 
         for (const key in newState) {
           const userPresences = newState[key] as unknown as Presence[];
-          if (userPresences && userPresences.length > 0) {
-            const p = userPresences[0];
-            if (p.status !== 'inactive') {
-              activeUsers.push(p);
-            }
-            if (p.uid !== user.uid && p.isTyping && p.status !== 'inactive') {
-              typers.push(p.username);
-            }
+          if (!userPresences || userPresences.length === 0) continue;
+          // A user may be connected from several tabs: treat them as active if
+          // ANY tab is active (and use that tab's payload) so a backgrounded
+          // second tab can't mislabel them as idle.
+          const p = userPresences.find((u) => u.status === 'active') || userPresences[0];
+          // Keep everyone who is in the room — including backgrounded ("inactive"/idle)
+          // members — so they stay visible (rendered with an idle dot) instead of
+          // vanishing the moment they switch tabs. The status field carries the nuance.
+          members.push(p);
+          if (p.uid !== user.uid && p.isTyping && p.status === 'active') {
+            typers.push(p.username);
           }
         }
-        setParticipants(activeUsers);
+        // Active members first, then idle — stable otherwise.
+        members.sort((a, b) => (a.status === b.status ? 0 : a.status === 'active' ? -1 : 1));
+        setParticipants(members);
         setTypingUsers(typers);
       })
       .subscribe(async (status) => {

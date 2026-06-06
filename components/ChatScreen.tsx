@@ -266,7 +266,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       if (!config.roomKey || !user) return;
       if (action === 'joined') return;
 
-      const excludeUids = participants.map(p => p.uid);
+      // Only skip notifying members who are ACTIVELY in the room right now;
+      // backgrounded/idle members stay in `participants` but should still get a
+      // push/email since they aren't looking at the chat.
+      const excludeUids = participants.filter(p => p.status === 'active').map(p => p.uid);
       const pushTitle = action === 'deleted'
           ? `Room "${config.roomName}" was deleted`
           : `New message in ${config.roomName}`;
