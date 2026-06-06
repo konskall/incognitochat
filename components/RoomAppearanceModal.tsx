@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Upload, Link as LinkIcon, RotateCcw, Save, Loader2, Image as ImageIcon, Check, Palette } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { compressImage } from '../utils/helpers';
@@ -27,6 +27,23 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
   const [linkValue, setLinkValue] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [uploading, setUploading] = useState<null | 'avatar' | 'bg'>(null);
+
+  // Re-sync the editor from the room's current appearance every time it opens.
+  // The modal stays mounted (just renders null when closed), so without this the
+  // internal state would keep its first-mount value (usually empty, before the
+  // room loaded) and a later save would wipe the existing icon/wallpaper.
+  // Depends only on `show` so it snapshots on open and never clobbers in-progress edits.
+  useEffect(() => {
+    if (show) {
+      setAvatarUrl(current.avatarUrl);
+      setBgType(current.bgType || 'preset');
+      setBgPreset(current.bgPreset || 'dots');
+      setBgUrl(current.bgUrl);
+      setShowLink(false);
+      setLinkValue('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show]);
 
   if (!show) return null;
 
