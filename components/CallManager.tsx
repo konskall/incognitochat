@@ -221,8 +221,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           </div>
 
           {/* Start a group call (rings everyone in the room) */}
-          <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between gap-2">
-            <span className="text-[11px] text-slate-400 dark:text-slate-500">Start group call</span>
+          <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700">
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mb-1.5">Start group call</p>
             <div className="flex gap-1.5">
               <button onClick={() => beginCall('audio')} title="Audio call" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 transition active:scale-95">
                 <Phone size={14} /> Audio
