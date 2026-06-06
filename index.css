@@ -9,6 +9,18 @@ html, body {
      the user out of a room / re-running anonymous sign-in). */
   overscroll-behavior-y: none;
 }
+
+/* Respect the OS "Reduce Motion" setting (iOS/Android accessibility). Neutralizes
+   the entrance animations, the infinite pulse glow, and hover scale/translate
+   across the whole app for users with vestibular sensitivity (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 body {
   /* dvh is the correct mobile viewport unit; the first two are fallbacks for
      iOS Safari < 15.4 which doesn't support dvh. */

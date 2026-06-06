@@ -5,11 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#f8fafc" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 
-    <!-- Updated favicons with relative paths -->
+    <!-- Updated favicons with relative paths.
+         NOTE: favicon.svg was ~1 MB (an embedded raster) and modern browsers
+         prefer the SVG, so it was downloaded on every first visit. Dropped in
+         favour of the 17 KB PNG / ICO. -->
     <link rel="icon" type="image/png" href="./favicon-96x96.png" sizes="96x96" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="shortcut icon" href="./favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-title" content="Incognito Chat" />
@@ -52,14 +55,18 @@
       onload="this.media='all'"
     >
     <noscript>
-      <link 
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" 
+      <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
         rel="stylesheet"
       >
-    <!-- Preconnect to Avatar API for faster LCP -->
-    <link rel="preconnect" href="https://api.dicebear.com" />
-    <link rel="dns-prefetch" href="https://api.dicebear.com" />
     </noscript>
+    <!-- Warm up the avatar API origin (used on the login / dashboard / chat
+         screens). Kept as dns-prefetch only so the landing — which has no
+         avatars — doesn't open an unused connection. Previously these were
+         trapped inside <noscript>, so they did nothing with JS enabled. -->
+    <link rel="dns-prefetch" href="https://api.dicebear.com" />
+    <!-- Preload the landing hero logo (LCP element). -->
+    <link rel="preload" as="image" href="./favicon-96x96.png" fetchpriority="high" />
         <!-- PWA Install Prompt Capture - Must be before React loads -->
     <script>
       window.deferredPrompt = null;
@@ -76,13 +83,12 @@
     <script>
       if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage))) {
         document.documentElement.classList.add('dark');
-        document.querySelector("meta[name='theme-color']").setAttribute("content", "#020617");
+        document.querySelector("meta[name='theme-color']")?.setAttribute("content", "#020617");
       } else {
         document.documentElement.classList.remove('dark');
-        document.querySelector("meta[name='theme-color']").setAttribute("content", "#f8fafc");
+        document.querySelector("meta[name='theme-color']")?.setAttribute("content", "#f8fafc");
       }
     </script>
-<link rel="stylesheet" href="/index.css">
 </head>
   <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased selection:bg-primary-200 selection:text-primary-900">
     <div id="root" class="w-full"></div>
