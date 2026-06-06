@@ -300,10 +300,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
       </main>
 
       <footer
-        className="py-12 border-t border-slate-200 dark:border-slate-900 text-center text-slate-600 dark:text-slate-500 text-sm"
+        className="py-12 px-6 border-t border-slate-200 dark:border-slate-900 text-center text-slate-600 dark:text-slate-500 text-sm"
         style={{ paddingBottom: 'max(3rem, env(safe-area-inset-bottom))' }}
       >
-        <p>© {new Date().getFullYear()} Incognito Chat. Private, anonymous, ephemeral.</p>
+        {/* Stacks on phones (© line, then tagline); single line on ≥sm with a dot. */}
+        <p className="flex flex-col sm:flex-row items-center justify-center gap-x-2 gap-y-0.5">
+          <span>© {new Date().getFullYear()} Incognito Chat</span>
+          <span aria-hidden="true" className="hidden sm:inline text-slate-300 dark:text-slate-700">·</span>
+          <span>Private, anonymous, ephemeral.</span>
+        </p>
       </footer>
 
       {/* Scroll-to-top */}
