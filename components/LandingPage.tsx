@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown, Sun, Moon } from 'lucide-react';
+import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown, Sun, Moon, ArrowUp } from 'lucide-react';
 import InstallButton from './InstallButton';
 
 interface LandingPageProps {
@@ -136,6 +136,16 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
     document.querySelector("meta[name='theme-color']")?.setAttribute('content', next ? '#020617' : '#f8fafc');
   };
 
+  // Scroll-to-top affordance — appears once the user has scrolled past the hero.
+  const [showTop, setShowTop] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setShowTop(window.scrollY > 500);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+
   return (
     <div
       className="min-h-[100dvh] overflow-x-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300 selection:bg-blue-500 selection:text-white"
@@ -146,10 +156,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
         className="relative z-20 max-w-7xl mx-auto flex items-center justify-between px-6 pb-4"
         style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top))' }}
       >
-        <a href="#top" className={`flex items-center gap-2.5 rounded-xl -m-1 p-1 ${focusRing}`}>
+        <button
+          type="button"
+          onClick={scrollToTop}
+          aria-label="Back to top"
+          className={`flex items-center gap-2.5 rounded-xl -m-1 p-1 ${focusRing}`}
+        >
           <img src={LOGO} alt="" width={32} height={32} className="w-8 h-8 rounded-lg shadow-sm" />
           <span className="font-extrabold tracking-tight text-slate-900 dark:text-white">Incognito Chat</span>
-        </a>
+        </button>
         <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             onClick={toggleTheme}
@@ -290,6 +305,17 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
       >
         <p>© {new Date().getFullYear()} Incognito Chat. Private, anonymous, ephemeral.</p>
       </footer>
+
+      {/* Scroll-to-top */}
+      <button
+        type="button"
+        onClick={scrollToTop}
+        aria-label="Scroll to top"
+        style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom))', right: 'max(1.5rem, env(safe-area-inset-right))' }}
+        className={`fixed z-40 p-3 rounded-full bg-blue-600 text-white shadow-xl shadow-blue-600/30 hover:bg-blue-700 transition-all duration-300 active:scale-90 ${focusRing} ${showTop ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none'}`}
+      >
+        <ArrowUp size={20} />
+      </button>
     </div>
   );
 };

@@ -111,9 +111,16 @@ const App: React.FC = () => {
     }
   };
 
+  // Show the marketing landing again, and clear the "seen" flag so a subsequent
+  // refresh stays on the landing instead of routing back to login.
+  const goToLanding = () => {
+    sessionStorage.removeItem('hasSeenLanding');
+    setCurrentView('landing');
+  };
+
   // Browser Back from the login/dashboard reached via the landing returns here.
   useEffect(() => {
-    const onPopState = () => setCurrentView('landing');
+    const onPopState = () => goToLanding();
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
@@ -154,7 +161,7 @@ const App: React.FC = () => {
           ) : currentView === 'dashboard' && currentUser ? (
             <DashboardScreen user={currentUser} onJoinRoom={handleJoin} onLogout={handleLogout} />
           ) : (
-            <LoginScreen onJoin={handleJoin} onShowLanding={() => setCurrentView('landing')} />
+            <LoginScreen onJoin={handleJoin} onShowLanding={goToLanding} />
           )}
         </Suspense>
       )}
