@@ -21,16 +21,33 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 export async function subscribeToPushNotifications(userId: string, roomKey: string) {
-  if (!('serviceWorker' in navigator)) return false;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
 
   try {
     const registration = await navigator.serviceWorker.ready;
-    
-    // Subscribe to push manager
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-    });
+    if (!registration.pushManager) return false;
+
+    const appKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+
+    // Reuse an existing push subscription if there is one. If it was created with
+    // a DIFFERENT applicationServerKey (e.g. the VAPID key changed, or a stale
+    // subscription from another deploy), pushManager.subscribe() throws — so drop
+    // the old one first. This is a common cause of "couldn't enable" on iOS/Android.
+    let subscription = await registration.pushManager.getSubscription();
+    if (subscription) {
+      const existingKey = new Uint8Array((subscription.options.applicationServerKey as ArrayBuffer) || new ArrayBuffer(0));
+      const sameKey = existingKey.length === appKey.length && existingKey.every((b, i) => b === appKey[i]);
+      if (!sameKey) {
+        try { await subscription.unsubscribe(); } catch { /* ignore */ }
+        subscription = null;
+      }
+    }
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: appKey,
+      });
+    }
 
     // Serialize subscription
     const subJson = JSON.parse(JSON.stringify(subscription));

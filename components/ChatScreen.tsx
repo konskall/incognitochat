@@ -883,25 +883,42 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           if (user) await unsubscribeFromPushNotifications(user.uid, config.roomKey);
           return;
       }
-      // The Notification API is absent on bare iOS Safari (only works inside an
-      // installed PWA). Guard + try/catch so a tap on an unsupported browser
-      // fails gracefully with feedback instead of throwing uncaught.
-      if (!('Notification' in window)) {
-          flashToast('Notifications need the installed app on this device.');
+      // Web Push needs a service worker, the Push API, and the Notification API.
+      // On iOS these exist ONLY inside the Home-Screen (standalone) app on iOS
+      // 16.4+ — NOT in a normal Safari tab. The single most common reason this
+      // "isn't supported" on an installed PWA is that the user opened the site in
+      // Safari instead of launching it from the Home-Screen icon, so detect that
+      // and give an actionable message instead of a generic "not supported".
+      const isIOS = /iP(ad|hone|od)/.test(navigator.userAgent) && !(window as unknown as { MSStream?: unknown }).MSStream;
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+          || (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+      const pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+      if (!pushSupported) {
+          if (isIOS && !isStandalone) {
+              flashToast('On iPhone/iPad: open the app from your Home Screen, then turn on notifications.');
+          } else if (isIOS) {
+              flashToast('Notifications require iOS 16.4 or newer.');
+          } else {
+              flashToast('This browser does not support notifications.');
+          }
           return;
       }
+
       try {
           const p = await Notification.requestPermission();
           if (p !== 'granted') {
-              if (p === 'denied') flashToast('Notifications are blocked in your browser settings.');
+              flashToast(p === 'denied'
+                  ? 'Notifications are blocked — enable them in your device settings.'
+                  : 'Notification permission was dismissed.');
               return;
           }
           // Only flip the toggle ON if the push subscription actually succeeds —
           // otherwise the UI would claim notifications are enabled while push
-          // silently fails (e.g. iOS PWA limitations, network/DB error).
+          // silently fails (network/DB error, or a stale subscription).
           const ok = user ? await subscribeToPushNotifications(user.uid, config.roomKey) : false;
           setNotificationsEnabled(ok);
-          if (!ok) flashToast('Could not enable push notifications on this device.');
+          if (!ok) flashToast('Could not register for push on this device. Please try again.');
       } catch (e) {
           console.warn('Enable notifications failed', e);
           setNotificationsEnabled(false);
