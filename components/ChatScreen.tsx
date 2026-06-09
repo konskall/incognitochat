@@ -476,13 +476,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const handleMainScroll = useCallback(() => {
     const el = mainRef.current;
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const atBottom = distanceFromBottom < 80;
     atBottomRef.current = atBottom;
     if (atBottom) {
         setShowScrollDown(false);
         setNewMessageCount(0);
         const last = messages[messages.length - 1];
         if (last) setLastRead(last.createdAt);
+    } else {
+        // Surface the jump-to-bottom button whenever the user has scrolled up a
+        // screenful, even with no new message (classic chat behaviour). The
+        // new-message effect keeps the unread count badge in sync.
+        setShowScrollDown(distanceFromBottom > 240);
     }
   }, [messages, setLastRead]);
 
@@ -591,14 +597,35 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     setPollClosed(msg.id, closed).catch(() => {});
   }, [setPollClosed]);
 
-  // All image/video attachments in the room, newest-first, for the media gallery.
-  const galleryItems = useMemo(
+  // Room "Media, links & files" content, all newest-first.
+  // Media = image/video attachments (grid + lightbox).
+  const galleryMedia = useMemo(
     () => [...messages]
       .filter((m) => m.attachment && (m.attachment.type.startsWith('image/') || m.attachment.type.startsWith('video/')))
       .reverse()
       .map((m) => ({ url: m.attachment!.url, name: m.attachment!.name, type: m.attachment!.type })),
     [messages]
   );
+  // Files = every other attachment (documents, archives, voice notes…).
+  const galleryFiles = useMemo(
+    () => [...messages]
+      .filter((m) => m.attachment && !m.attachment.type.startsWith('image/') && !m.attachment.type.startsWith('video/'))
+      .reverse()
+      .map((m) => ({ url: m.attachment!.url, name: m.attachment!.name, type: m.attachment!.type, size: m.attachment!.size })),
+    [messages]
+  );
+  // Links = every http(s) URL found in (decrypted) message text.
+  const galleryLinks = useMemo(() => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const out: { url: string; username: string; createdAt: any }[] = [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.type === 'system' || !m.text) continue;
+      const found = m.text.match(urlRegex);
+      if (found) found.forEach((u) => out.push({ url: u, username: m.username, createdAt: m.createdAt }));
+    }
+    return out;
+  }, [messages]);
 
   useEffect(() => {
     if (!config.roomKey || !isRoomReady || roomDeleted) return;
@@ -993,7 +1020,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       <main
         ref={mainRef}
         onScroll={handleMainScroll}
-        className="relative flex-1 overflow-y-auto overscroll-contain p-4 pb-20 transition-colors"
+        className="relative flex-1 overflow-y-auto overflow-x-clip overscroll-contain p-4 pb-20 transition-colors"
         style={getRoomBackgroundStyle({ type: bgType, preset: bgPreset, url: bgUrl }, isDarkMode)}
       >
         <MessageList
@@ -1140,7 +1167,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       <MediaGalleryModal
         show={showGallery}
         onClose={() => setShowGallery(false)}
-        items={galleryItems}
+        media={galleryMedia}
+        files={galleryFiles}
+        links={galleryLinks}
       />
 
       {selectedUserPresence && (
