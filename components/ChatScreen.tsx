@@ -16,6 +16,7 @@ import AiAvatarModal from './AiAvatarModal';
 import UserProfileModal from './UserProfileModal';
 import RoomAppearanceModal from './RoomAppearanceModal';
 import EphemeralModal, { formatTtl } from './EphemeralModal';
+import RoomExpiryModal from './RoomExpiryModal';
 import PollComposerModal from './PollComposerModal';
 import MediaGalleryModal from './MediaGalleryModal';
 import RoomInfoModal from './RoomInfoModal';
@@ -112,6 +113,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   // Disappearing messages: per-room TTL in seconds (null = off).
   const [messageTtl, setMessageTtl] = useState<number | null>(null);
   const [showEphemeral, setShowEphemeral] = useState(false);
+  // Auto-delete room: the whole room self-destructs after this much inactivity.
+  const [roomExpiry, setRoomExpiry] = useState<number | null>(null);
+  const [showRoomExpiry, setShowRoomExpiry] = useState(false);
 
   // Pinned message (owner-set), poll composer, and media gallery.
   const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
@@ -395,6 +399,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         setBgPreset(room.background_preset || 'dots');
         setBgUrl(room.background_url || '');
         setMessageTtl(room.message_ttl_seconds ?? null);
+        setRoomExpiry(room.auto_delete_seconds ?? null);
         setPinnedMessageId(room.pinned_message_id ?? null);
         setIsRoomReady(true);
         setRoomDeleted(false);
@@ -661,6 +666,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             if (payload.new.background_preset !== undefined) setBgPreset(payload.new.background_preset || 'dots');
             if (payload.new.background_url !== undefined) setBgUrl(payload.new.background_url || '');
             if (payload.new.message_ttl_seconds !== undefined) setMessageTtl(payload.new.message_ttl_seconds ?? null);
+            if (payload.new.auto_delete_seconds !== undefined) setRoomExpiry(payload.new.auto_delete_seconds ?? null);
             if (payload.new.pinned_message_id !== undefined) setPinnedMessageId(payload.new.pinned_message_id ?? null);
         }
       })
@@ -1136,6 +1142,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         }}
       />
 
+      <RoomExpiryModal
+        show={showRoomExpiry}
+        onClose={() => setShowRoomExpiry(false)}
+        roomKey={config.roomKey}
+        currentSeconds={roomExpiry}
+        onUpdate={(secs) => {
+          setRoomExpiry(secs);
+          const label = formatTtl(secs);
+          sendMessage(label ? `Auto-delete room set to ${label} of inactivity by ${config.username}` : `Auto-delete room turned off by ${config.username}`, config, null, null, null, 'system');
+        }}
+      />
+
       <PollComposerModal
         show={showPollComposer}
         onClose={() => setShowPollComposer(false)}
@@ -1152,6 +1170,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         isGoogleUser={user ? !user.isAnonymous : false}
         aiEnabled={aiEnabled}
         messageTtlLabel={formatTtl(messageTtl)}
+        roomExpiryLabel={formatTtl(roomExpiry)}
         emailAlertsEnabled={emailAlertsEnabled}
         onToggleSearch={() => { setShowSearch((s) => { const next = !s; if (!next) setSearchQuery(''); return next; }); }}
         onOpenGallery={() => setShowGallery(true)}
@@ -1160,6 +1179,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onOpenAiAvatar={() => setShowAiAvatarModal(true)}
         onOpenRoomAppearance={() => setShowRoomAppearance(true)}
         onOpenEphemeral={() => setShowEphemeral(true)}
+        onOpenRoomExpiry={() => setShowRoomExpiry(true)}
         onOpenEmail={() => setShowEmailModal(true)}
         onDeleteRoom={() => setShowDeleteModal(true)}
       />

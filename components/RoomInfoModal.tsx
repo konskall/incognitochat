@@ -16,6 +16,7 @@ interface RoomInfoModalProps {
   isGoogleUser: boolean;
   aiEnabled: boolean;
   messageTtlLabel?: string | null;
+  roomExpiryLabel?: string | null;
   emailAlertsEnabled: boolean;
   // actions (all wired to the existing ChatScreen handlers)
   onToggleSearch: () => void;
@@ -25,6 +26,7 @@ interface RoomInfoModalProps {
   onOpenAiAvatar: () => void;
   onOpenRoomAppearance: () => void;
   onOpenEphemeral: () => void;
+  onOpenRoomExpiry: () => void;
   onOpenEmail: () => void;
   onDeleteRoom: () => void;
 }
@@ -54,9 +56,9 @@ const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
 const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   show, onClose, config, participants, roomAvatarUrl, isOwner, isGoogleUser,
-  aiEnabled, messageTtlLabel, emailAlertsEnabled,
+  aiEnabled, messageTtlLabel, roomExpiryLabel, emailAlertsEnabled,
   onToggleSearch, onOpenGallery, onOpenParticipants, onToggleAI, onOpenAiAvatar,
-  onOpenRoomAppearance, onOpenEphemeral, onOpenEmail, onDeleteRoom,
+  onOpenRoomAppearance, onOpenEphemeral, onOpenRoomExpiry, onOpenEmail, onDeleteRoom,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
@@ -173,6 +175,21 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
             trailing={
               <span className="flex items-center gap-1 text-slate-400">
                 <span className="text-xs font-semibold">{messageTtlLabel || 'Off'}</span>
+                <ChevronRight size={18} className="text-slate-300 dark:text-slate-600" />
+              </span>
+            }
+          />
+        )}
+        {/* Auto-delete room — logged-in users only (per request). */}
+        {isGoogleUser && (
+          <Row
+            icon={<Trash2 size={18} />}
+            label="Auto-delete room"
+            onClick={() => go(onOpenRoomExpiry)}
+            tint="bg-red-500/10 text-red-500"
+            trailing={
+              <span className="flex items-center gap-1 text-slate-400">
+                <span className="text-xs font-semibold">{roomExpiryLabel || 'Off'}</span>
                 <ChevronRight size={18} className="text-slate-300 dark:text-slate-600" />
               </span>
             }
