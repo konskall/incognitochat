@@ -55,13 +55,17 @@ const MessageActionMenu: React.FC<MessageActionMenuProps> = ({
   useLayoutEffect(() => {
     const el = liftRef.current;
     if (!el) return;
+    // The container is capped to the viewport height (max-h below) and the
+    // bubble preview can shrink, so lh never exceeds the viewport — the clamp
+    // then always lands the whole menu (reaction row + actions) on screen, even
+    // for very tall messages that previously overflowed and got clipped.
     const lw = el.offsetWidth, lh = el.offsetHeight;
     const vw = window.innerWidth, vh = window.innerHeight;
     const r = anchorRect;
     let left = isMe ? r.right - lw : r.left;
     left = Math.max(8, Math.min(left, vw - lw - 8));
     let top = r.top - 52;               // lift a little so the reaction row clears the bubble
-    top = Math.max(12, Math.min(top, vh - lh - 12));
+    top = Math.max(8, Math.min(top, vh - lh - 8));
     setPos({ left, top });
   }, [anchorRect, isMe]);
 
@@ -83,25 +87,26 @@ const MessageActionMenu: React.FC<MessageActionMenuProps> = ({
       <div
         ref={liftRef}
         style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, visibility: pos ? 'visible' : 'hidden' }}
-        className={`fixed flex flex-col gap-2.5 ${isMe ? 'items-end' : 'items-start'} animate-in zoom-in-95 fade-in duration-150`}
+        className={`fixed flex flex-col gap-2.5 max-h-[calc(100dvh_-_1rem)] ${isMe ? 'items-end' : 'items-start'} animate-in zoom-in-95 fade-in duration-150`}
       >
         {/* Reaction row */}
-        <div className="flex items-center gap-0.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full px-1.5 py-1 shadow-2xl">
+        <div className="shrink-0 flex items-center gap-0.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full px-1.5 py-1 shadow-2xl">
           {QUICK_REACTIONS.map((e) => (
             <button key={e} onClick={() => run(() => onReact(e))} className="text-2xl leading-none p-1 rounded-full hover:scale-125 transition-transform">{e}</button>
           ))}
           <button onClick={() => setShowPicker(true)} aria-label="More emojis" className="w-8 h-8 ml-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 flex items-center justify-center text-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition">＋</button>
         </div>
 
-        {/* Lifted snapshot of the bubble */}
+        {/* Lifted snapshot of the bubble. Capped + shrinkable so a long message
+            can't push the reaction row / actions off-screen (it just clips). */}
         <div
-          className={`${bubbleClass} shadow-2xl pointer-events-none`}
-          style={{ width: 'fit-content', maxWidth: '80vw' }}
+          className={`${bubbleClass} shadow-2xl pointer-events-none shrink min-h-0 overflow-hidden`}
+          style={{ width: 'fit-content', maxWidth: '80vw', maxHeight: '40vh' }}
           dangerouslySetInnerHTML={{ __html: bubbleHTML }}
         />
 
         {/* Action list */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-2xl min-w-[212px] divide-y divide-slate-100 dark:divide-slate-700/60">
+        <div className="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-2xl min-w-[212px] divide-y divide-slate-100 dark:divide-slate-700/60">
           <button onClick={() => run(onReply)} className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left">
             <Reply size={18} /> Reply
           </button>

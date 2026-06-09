@@ -988,6 +988,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onExit={handleExitChat}
         roomAvatarUrl={roomAvatarUrl}
         messageTtlLabel={formatTtl(messageTtl)}
+        roomExpiryLabel={formatTtl(roomExpiry)}
         onOpenRoomInfo={() => setShowRoomInfo(true)}
         onOpenParticipants={() => setShowParticipantsList(true)}
       />

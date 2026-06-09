@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Sun, Moon, LogOut, Timer } from 'lucide-react';
+import { Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Sun, Moon, LogOut, Timer, Trash2 } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
 
 interface ChatHeaderProps {
@@ -20,6 +20,7 @@ interface ChatHeaderProps {
   onExit: () => void;
   roomAvatarUrl?: string;
   messageTtlLabel?: string | null;
+  roomExpiryLabel?: string | null;
   // Tapping the room identity opens the consolidated Room Info hub.
   onOpenRoomInfo: () => void;
   // The members icon opens the participants/calls panel directly.
@@ -44,6 +45,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   onExit,
   roomAvatarUrl,
   messageTtlLabel,
+  roomExpiryLabel,
   onOpenRoomInfo,
   onOpenParticipants,
 }) => {
@@ -105,6 +107,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             {messageTtlLabel && (
               <span className="flex items-center gap-1 text-[10px] font-bold text-orange-500 bg-orange-500/10 px-1.5 py-0.5 rounded-full" title={`Messages disappear after ${messageTtlLabel}`}>
                 <Timer size={11} /> {messageTtlLabel}
+              </span>
+            )}
+            {roomExpiryLabel && (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-full" title={`Room auto-deletes after ${roomExpiryLabel} of inactivity`}>
+                <Trash2 size={11} /> {roomExpiryLabel}
               </span>
             )}
           </div>
