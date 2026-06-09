@@ -77,7 +77,13 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   const go = (fn: () => void) => { onClose(); setTimeout(fn, 0); };
 
   const handleShare = async () => {
-    const inviteUrl = window.location.href.split('?')[0];
+    // Build the invite link from origin + pathname only. The old
+    // href.split('?')[0] stripped the query string but NOT the hash fragment —
+    // so after a Google OAuth return (Supabase puts the session in the URL hash)
+    // the "invite" link became …/#access_token=…&refresh_token=…, which is both
+    // the wrong URL and a leak of the sharer's auth tokens. PIN-join sessions had
+    // no hash, which is why mobile looked fine.
+    const inviteUrl = window.location.origin + window.location.pathname;
     const shareText = `🔒 Join my secure room on Incognito Chat!\n\n🏠 Room: ${config.roomName}\n🔑 PIN: ${config.pin}`;
     try {
       if (navigator.share) await navigator.share({ title: 'Incognito Chat Invite', text: shareText, url: inviteUrl });
