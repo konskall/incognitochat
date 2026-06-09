@@ -5,9 +5,24 @@ import { useState, useRef, useEffect } from 'react';
 // upload limit). 5 minutes is plenty for a voice message.
 const MAX_RECORDING_SECONDS = 300;
 
+// Friendly, specific message for a getUserMedia (microphone) failure — surfaced
+// in a modal instead of a raw alert().
+function micErrorMessage(err: unknown): string {
+  const name = (err as { name?: string })?.name || '';
+  if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError')
+    return 'Microphone access is blocked. Allow microphone permission in your browser settings, then try again.';
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError')
+    return "No microphone was found on this device, so you can't record a voice message.";
+  if (name === 'NotReadableError' || name === 'TrackStartError')
+    return 'Your microphone is already in use by another app. Close it and try again.';
+  return "Couldn't access the microphone. Check your device and browser settings, then try again.";
+}
+
 export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: string) => void) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  // Set when the mic can't be accessed; the UI shows it in a modal (was alert()).
+  const [micError, setMicError] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -31,6 +46,11 @@ export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: str
 
   const startRecording = async () => {
     try {
+      setMicError(null);
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setMicError("This browser can't record audio, so voice messages aren't available here.");
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
@@ -77,7 +97,7 @@ export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: str
       }, 1000);
     } catch (e) {
       console.error('Microphone error', e);
-      alert('Could not access microphone.');
+      setMicError(micErrorMessage(e));
       releaseStream();
     }
   };
@@ -128,5 +148,7 @@ export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: str
     startRecording,
     stopRecording,
     cancelRecording,
+    micError,
+    dismissMicError: () => setMicError(null),
   };
 };

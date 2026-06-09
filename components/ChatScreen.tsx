@@ -17,6 +17,7 @@ import UserProfileModal from './UserProfileModal';
 import RoomAppearanceModal from './RoomAppearanceModal';
 import EphemeralModal, { formatTtl } from './EphemeralModal';
 import RoomExpiryModal from './RoomExpiryModal';
+import MicErrorModal from './MicErrorModal';
 import PollComposerModal from './PollComposerModal';
 import MediaGalleryModal from './MediaGalleryModal';
 import RoomInfoModal from './RoomInfoModal';
@@ -227,7 +228,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       recordingDuration,
       startRecording,
       stopRecording,
-      cancelRecording
+      cancelRecording,
+      micError,
+      dismissMicError
   } = useAudioRecorder(handleRecordingComplete);
 
   const isBotResponding = useIncoAI(config.roomKey, config.pin, messages, config, aiEnabled, aiAvatarUrl, user?.uid);
@@ -1153,6 +1156,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           sendMessage(label ? `Auto-delete room set to ${label} of inactivity by ${config.username}` : `Auto-delete room turned off by ${config.username}`, config, null, null, null, 'system');
         }}
       />
+
+      <MicErrorModal show={!!micError} message={micError || ''} onClose={dismissMicError} />
 
       <PollComposerModal
         show={showPollComposer}
