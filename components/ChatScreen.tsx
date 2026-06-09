@@ -224,6 +224,24 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   const { participants, typingUsers, setTyping, setLastRead } = useRoomPresence(config.roomKey, user, config);
 
+  // Keep the dashboard's per-room "unread" baseline honest. While this room is
+  // open we record the newest message's SERVER timestamp as the last-read marker
+  // (the dashboard compares this against max(created_at) per room). Previously
+  // lastRead was only set to the client-side entry time and never updated, so
+  // (a) your own messages, (b) messages you read in-room, and (c) client/server
+  // clock skew all made the room show a phantom "New messages" dot after you
+  // entered, looked around and left. Using the latest message's server time —
+  // not Date.now() — fixes all three.
+  useEffect(() => {
+    if (!config.roomKey || messages.length === 0) return;
+    let maxTs = 0;
+    for (const m of messages) {
+      const t = new Date(m.createdAt as unknown as string).getTime();
+      if (!Number.isNaN(t) && t > maxTs) maxTs = t;
+    }
+    if (maxTs > 0) localStorage.setItem(`lastRead_${config.roomKey}`, String(maxTs));
+  }, [messages, config.roomKey]);
+
   // Kept in a ref so handleUserClick can stay referentially stable (presence
   // updates frequently; a fresh callback each time would defeat MessageList's memo).
   const participantsRef = useRef(participants);
