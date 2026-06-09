@@ -7,9 +7,10 @@ import { supabase } from '../services/supabase';
 import MediaPreviewModal, { MediaItem } from './MediaPreviewModal';
 import PollMessage from './PollMessage';
 import {
-  FileText, Download, Edit2,
-  File, FileVideo, FileCode, FileArchive, SmilePlus, Reply, ExternalLink, MapPin, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search, CheckCheck, Pin, PinOff
+  FileText, Download,
+  File, FileVideo, FileCode, FileArchive, Reply, ExternalLink, MapPin, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search, CheckCheck
 } from 'lucide-react';
+import MessageActionMenu from './MessageActionMenu';
 
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -159,8 +160,35 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
 const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, onRequestDelete, onReact, onReply, onPreview, onUserClick, searchQuery, showSeen, isOwner, isPinned, onPin, onUnpin, onVotePoll, onToggleClosedPoll, isFirstOfGroup = true, isLastOfGroup = true }: {
     msg: Message; isMe: boolean; currentUid: string; roomOwnerUid?: string; onEdit: (msg: Message) => void; onRequestDelete: (msgId: string) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; onPreview: (url: string, name: string, type: string) => void; onUserClick?: (uid: string, username: string, avatar: string) => void; searchQuery?: string; showSeen?: boolean; isOwner?: boolean; isPinned?: boolean; onPin?: (msg: Message) => void; onUnpin?: () => void; onVotePoll?: (msg: Message, optionId: string) => void; onToggleClosedPoll?: (msg: Message, closed: boolean) => void; isFirstOfGroup?: boolean; isLastOfGroup?: boolean;
 }) => {
-  const [showReactions, setShowReactions] = useState(false);
-  const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+  // Long-press / right-click opens the action menu (replaces the inline button column).
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState<{ rect: DOMRect; html: string; cls: string } | null>(null);
+  const pressTimer = useRef<number | null>(null);
+  const pressFired = useRef(false);
+  const pressOrigin = useRef<{ x: number; y: number } | null>(null);
+
+  const openActionMenu = () => {
+    const el = bubbleRef.current;
+    if (!el) return;
+    setMenu({ rect: el.getBoundingClientRect(), html: el.innerHTML, cls: el.className });
+  };
+  const startPress = (x: number, y: number) => {
+    pressOrigin.current = { x, y };
+    pressFired.current = false;
+    pressTimer.current = window.setTimeout(() => {
+      pressFired.current = true;
+      if (navigator.vibrate) navigator.vibrate(15);
+      openActionMenu();
+      window.setTimeout(() => { pressFired.current = false; }, 600);
+    }, 450);
+  };
+  const movePress = (x: number, y: number) => {
+    if (pressTimer.current && pressOrigin.current &&
+        (Math.abs(x - pressOrigin.current.x) > 10 || Math.abs(y - pressOrigin.current.y) > 10)) {
+      clearTimeout(pressTimer.current); pressTimer.current = null;
+    }
+  };
+  const endPress = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } };
 
   // Swipe-to-reply (mobile): drag a bubble horizontally past a threshold to reply.
   const [swipeX, setSwipeX] = useState(0);
@@ -318,25 +346,19 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
             <div className="w-8 shrink-0" aria-hidden="true" />
           )
         )}
-        <div className={`flex flex-col gap-1 items-center self-end mb-1 ${isMe ? 'mr-0.5' : 'ml-0.5'}`}>
-             <button onClick={() => onReply(msg)} className={`p-1 text-slate-400 hover:text-blue-500 rounded-full transition-all ${showReactions ? 'opacity-0' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'}`} title="Reply"><Reply size={16} /></button>
-             <div className="relative">
-                 <button onClick={() => setShowReactions(!showReactions)} className={`p-1 text-slate-400 hover:text-orange-500 rounded-full transition-all ${showReactions ? 'opacity-100 bg-orange-50' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'}`} title="React"><SmilePlus size={16} /></button>
-                 {showReactions && <><div className="fixed inset-0 z-40" onClick={() => setShowReactions(false)} /><div className={`absolute bottom-0 ${isMe ? 'right-8' : 'left-8'} flex gap-1 bg-white dark:bg-slate-800 p-1.5 rounded-full shadow-xl border border-slate-100 dark:border-slate-700 z-50 animate-in zoom-in-95 duration-200 w-max`}>{QUICK_REACTIONS.map(emoji => (<button key={emoji} onClick={() => { onReact(msg, emoji); setShowReactions(false); }} className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition hover:scale-125">{emoji}</button>))}</div></>}
-             </div>
-             {isOwner && (
-                <button
-                    onClick={() => (isPinned ? onUnpin?.() : onPin?.(msg))}
-                    className={`p-1 rounded-full transition-all ${isPinned ? 'text-blue-500 opacity-100' : 'text-slate-400 hover:text-blue-500 opacity-100 md:opacity-0 md:group-hover:opacity-100'}`}
-                    title={isPinned ? 'Unpin message' : 'Pin message'}
-                >
-                    {isPinned ? <PinOff size={16} /> : <Pin size={16} />}
-                </button>
-             )}
-             {isMe && !msg.poll && <button onClick={() => onEdit(msg)} className="p-1 text-slate-400 hover:text-blue-500 rounded-full transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100" title="Edit"><Edit2 size={16} /></button>}
-             {(isMe || isBot) && <button onClick={() => onRequestDelete(msg.id)} className="p-1 text-slate-400 hover:text-red-500 rounded-full transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100" title={isBot ? 'Delete Inco message' : 'Delete'}><Trash2 size={16} /></button>}
-        </div>
-        <div className={`chat-bubble relative px-4 py-2.5 rounded-2xl shadow-sm text-sm md:text-base min-w-0 transition-all ${isMe ? 'bg-blue-600 text-white rounded-br-none shadow-blue-500/20' : isBot ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-900 dark:text-indigo-100 rounded-bl-none shadow-indigo-500/10 border border-indigo-200 dark:border-indigo-800 ring-1 ring-indigo-400/20' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-bl-none shadow-slate-200 dark:shadow-none border border-slate-100 dark:border-slate-700'}`}>
+        <div
+          ref={bubbleRef}
+          onTouchStart={(e) => startPress(e.touches[0].clientX, e.touches[0].clientY)}
+          onTouchMove={(e) => movePress(e.touches[0].clientX, e.touches[0].clientY)}
+          onTouchEnd={(e) => { if (pressFired.current) e.preventDefault(); endPress(); }}
+          onMouseDown={(e) => { if (e.button === 0) startPress(e.clientX, e.clientY); }}
+          onMouseMove={(e) => movePress(e.clientX, e.clientY)}
+          onMouseUp={endPress}
+          onMouseLeave={endPress}
+          onContextMenu={(e) => { e.preventDefault(); openActionMenu(); }}
+          onClickCapture={(e) => { if (pressFired.current) { e.preventDefault(); e.stopPropagation(); pressFired.current = false; } }}
+          style={{ WebkitTouchCallout: 'none' }}
+          className={`chat-bubble relative px-4 py-2.5 rounded-2xl shadow-sm text-sm md:text-base min-w-0 transition-all select-none cursor-default ${isMe ? 'bg-blue-600 text-white rounded-br-none shadow-blue-500/20' : isBot ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-900 dark:text-indigo-100 rounded-bl-none shadow-indigo-500/10 border border-indigo-200 dark:border-indigo-800 ring-1 ring-indigo-400/20' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-bl-none shadow-slate-200 dark:shadow-none border border-slate-100 dark:border-slate-700'}`}>
                 {!isMe && isFirstOfGroup && <p className={`text-[10px] font-bold text-slate-400 mb-0.5 tracking-wide select-none flex items-center gap-1 ${!isBot ? 'cursor-pointer hover:text-blue-500 transition-colors' : ''}`} onClick={() => !isBot && onUserClick?.(msg.uid, msg.username, msg.avatarURL)}>{msg.username} {isBot && <Wand2 size={10} className="text-indigo-400 animate-pulse" />}</p>}
                 {msg.replyTo && <div onClick={() => {const el = document.getElementById(`msg-${msg.replyTo!.id}`); if(el) el.scrollIntoView({behavior:'smooth',block:'center'});}} className={`mb-2 p-2 rounded cursor-pointer opacity-90 hover:opacity-100 transition border-l-[3px] ${isMe ? 'bg-black/10 border-white/40' : 'bg-slate-100 dark:bg-slate-700 border-blue-400'}`}><span className={`text-xs font-bold block mb-0.5 ${isMe ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'}`}>{msg.replyTo.username}</span><p className="text-xs truncate max-w-[200px] opacity-80">{msg.replyTo.isAttachment ? '📎 Attachment' : msg.replyTo.text}</p></div>}
                 {renderAttachment()}
@@ -381,6 +403,26 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
             </div>
             {msg.reactions && Object.keys(msg.reactions).length > 0 && <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>{Object.entries(msg.reactions).map(([emoji, uids]) => { if (uids.length === 0) return null; const iReacted = uids.includes(currentUid); return (<button key={emoji} onClick={() => onReact(msg, emoji)} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs shadow-sm border transition-all hover:scale-105 ${iReacted ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-slate-800 dark:text-blue-100' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}><span>{emoji}</span><span className={`font-semibold text-[10px] ${iReacted ? 'text-blue-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>{uids.length}</span></button>);})}</div>}
         </div>
+        {menu && (
+          <MessageActionMenu
+            anchorRect={menu.rect}
+            bubbleHTML={menu.html}
+            bubbleClass={menu.cls}
+            isMe={isMe}
+            canEdit={isMe && !msg.poll}
+            canDelete={isMe || isBot}
+            canPin={!!isOwner}
+            isPinned={!!isPinned}
+            canCopy={!!(msg.text && msg.text.trim())}
+            onClose={() => setMenu(null)}
+            onReact={(e) => onReact(msg, e)}
+            onReply={() => onReply(msg)}
+            onCopy={() => { try { navigator.clipboard?.writeText(msg.text || ''); } catch { /* clipboard unavailable */ } }}
+            onEdit={() => onEdit(msg)}
+            onPin={() => (isPinned ? onUnpin?.() : onPin?.(msg))}
+            onDelete={() => onRequestDelete(msg.id)}
+          />
+        )}
       </div>
   );
 });
