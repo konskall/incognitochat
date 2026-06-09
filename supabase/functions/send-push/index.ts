@@ -10,6 +10,8 @@
 // Secrets (REQUIRED):
 //   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY
 //   VAPID_SUBJECT (optional, defaults to mailto:admin@incognitochat)
+//   APP_URL (optional, defaults to the GitHub Pages app URL) — the canonical
+//   same-origin click target for notifications.
 // SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY injected by the platform.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -41,6 +43,13 @@ Deno.serve(async (req: Request) => {
       return json({ error: "PUSH_NOT_CONFIGURED" }, 503);
     }
     const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") ?? "mailto:admin@incognitochat";
+    // The notification's click target must NOT be trusted from the request body:
+    // any member could call this with an arbitrary `url` and deliver an
+    // OS-level notification that navigates every other subscriber to a phishing
+    // page (open redirect). We pin it to the app's own origin server-side — a
+    // same-origin client url is kept (in case of future deep-links), anything
+    // else falls back to the canonical app URL.
+    const APP_URL = Deno.env.get("APP_URL") ?? "https://konskall.github.io/incognitochat/";
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -86,10 +95,22 @@ Deno.serve(async (req: Request) => {
 
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
+    // Derive the click target server-side: keep the client url only if it's
+    // same-origin as the app, otherwise pin to the canonical app URL. Never let
+    // an attacker-supplied off-origin url reach the subscribers' devices.
+    const appOrigin = new URL(APP_URL).origin;
+    let safeUrl = APP_URL;
+    try {
+      if (url) {
+        const u = new URL(url, APP_URL);
+        if (u.origin === appOrigin) safeUrl = u.href;
+      }
+    } catch { /* keep APP_URL */ }
+
     const payload = JSON.stringify({
       title: title ?? (roomName ? `New message in ${roomName}` : "New message"),
       body: body ?? "",
-      url: url ?? "/",
+      url: safeUrl,
       roomKey,
     });
 
