@@ -8,7 +8,7 @@ import MediaPreviewModal, { MediaItem } from './MediaPreviewModal';
 import PollMessage from './PollMessage';
 import {
   FileText, Download,
-  File, FileVideo, FileCode, FileArchive, Reply, ExternalLink, MapPin, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search, CheckCheck, ImageOff
+  File, FileVideo, FileCode, FileArchive, Reply, ExternalLink, MapPin, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search, CheckCheck, ImageOff, Youtube
 } from 'lucide-react';
 import MessageActionMenu, { flashToast } from './MessageActionMenu';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -166,6 +166,41 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
 };
 
 // In-memory cache so the same URL isn't re-fetched across messages/re-renders.
+// Parse a YouTube start time (?t= / ?start=) supporting "90", "90s", "1m30s", "1h2m3s".
+function parseYouTubeStart(text: string): number {
+  const m = text.match(/[?&#](?:t|start)=([0-9hms]+)/i);
+  if (!m) return 0;
+  const v = m[1];
+  if (/^\d+s?$/.test(v)) return parseInt(v, 10);
+  const hms = v.match(/(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/i);
+  if (!hms) return 0;
+  return (+(hms[1] || 0)) * 3600 + (+(hms[2] || 0)) * 60 + (+(hms[3] || 0));
+}
+
+// Build the ≤4 OpenStreetMap tiles needed to render a small map centred on a
+// point. Keyless (OSM tile CDN); we overlay our own marker at the centre.
+function osmTiles(lat: number, lng: number, zoom: number, w: number, h: number) {
+  const n = 2 ** zoom;
+  const latRad = (lat * Math.PI) / 180;
+  const xf = ((lng + 180) / 360) * n;
+  const yf = ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n;
+  const worldX = xf * 256;
+  const worldY = yf * 256;
+  const left0 = worldX - w / 2;
+  const top0 = worldY - h / 2;
+  const txMin = Math.floor(left0 / 256), txMax = Math.floor((worldX + w / 2) / 256);
+  const tyMin = Math.floor(top0 / 256), tyMax = Math.floor((worldY + h / 2) / 256);
+  const tiles: { key: string; url: string; left: number; top: number }[] = [];
+  for (let tx = txMin; tx <= txMax; tx++) {
+    for (let ty = tyMin; ty <= tyMax; ty++) {
+      if (ty < 0 || ty >= n) continue;
+      const wx = ((tx % n) + n) % n; // wrap longitude at the antimeridian
+      tiles.push({ key: `${tx}_${ty}`, url: `https://tile.openstreetmap.org/${zoom}/${wx}/${ty}.png`, left: tx * 256 - left0, top: ty * 256 - top0 });
+    }
+  }
+  return tiles;
+}
+
 const linkPreviewCache = new Map<string, { title?: string; description?: string; image?: string; publisher?: string } | null>();
 
 const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
@@ -257,6 +292,9 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
 
   // Attachment image/video that fails to load (file removed, 404) → placeholder.
   const [attachmentBroken, setAttachmentBroken] = useState(false);
+  // YouTube facade: the heavy iframe only mounts after the user clicks play
+  // (no YouTube requests/tracking until then, far lighter with many videos).
+  const [ytPlaying, setYtPlaying] = useState(false);
 
   // Swipe-to-reply (mobile): drag a bubble horizontally past a threshold to reply.
   const [swipeX, setSwipeX] = useState(0);
@@ -310,6 +348,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
     const matches = text.match(URL_RE);
     return {
       ytId,
+      ytStart: ytId ? parseYouTubeStart(text) : 0,
       parts: text.split(URL_RE),
       previewUrl: (matches && !ytId) ? cleanUrl(matches[0]) : null,
     };
@@ -337,7 +376,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
 
   const renderContent = () => {
     if (!parsed) return null;
-    const { ytId, parts, previewUrl } = parsed;
+    const { ytId, ytStart, parts, previewUrl } = parsed;
     const isUrl = (s: string) => /^https?:\/\/[^\s]+$/.test(s);
     return (
         <div className="flex flex-col gap-2 w-full min-w-0">
@@ -347,13 +386,41 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
                     // Render the clean URL as the link; any trailing punctuation
                     // the regex captured stays as plain text after it.
                     const clean = cleanUrl(part);
+                    // The YouTube link is embedded below — don't also show its long raw URL.
+                    if (ytId && getYouTubeId(clean) === ytId) return <React.Fragment key={i} />;
                     const trail = part.slice(clean.length);
                     return <React.Fragment key={i}><a href={clean} target="_blank" rel="noopener noreferrer" className="underline text-inherit opacity-90 break-all hover:opacity-100">{clean}</a>{trail}</React.Fragment>;
                   }
                   return <React.Fragment key={i}>{highlight(part)}</React.Fragment>;
                 })}
             </span>
-            {ytId && <div className="relative w-[260px] sm:w-[320px] md:w-[400px] max-w-full aspect-video rounded-lg overflow-hidden shadow-md bg-black/5 mt-1"><iframe className="absolute inset-0 w-full h-full" src={`https://www.youtube.com/embed/${ytId}`} allowFullScreen loading="lazy"></iframe></div>}
+            {ytId && (
+              <div className="relative w-[260px] sm:w-[320px] md:w-[400px] max-w-full aspect-video rounded-lg overflow-hidden shadow-md bg-black mt-1">
+                {ytPlaying ? (
+                  <iframe
+                    className="absolute inset-0 w-full h-full"
+                    src={`https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&rel=0${ytStart ? `&start=${ytStart}` : ''}`}
+                    title="YouTube video player"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setYtPlaying(true); }}
+                    aria-label="Play YouTube video"
+                    className="group absolute inset-0 w-full h-full cursor-pointer"
+                  >
+                    <img src={`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
+                    <span className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent transition-colors group-hover:from-black/50" />
+                    <span className="absolute left-1/2 top-1/2 flex h-12 w-[68px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-2xl bg-red-600/90 shadow-lg transition-all group-hover:scale-105 group-hover:bg-red-600">
+                      <Play size={26} fill="white" className="translate-x-[1px] text-white" />
+                    </span>
+                    <span className="absolute bottom-1.5 right-2 flex items-center gap-1 text-[10px] font-semibold text-white/90 drop-shadow"><Youtube size={13} /> YouTube</span>
+                  </button>
+                )}
+              </div>
+            )}
             {previewUrl && <LinkPreview url={previewUrl} />}
         </div>
     );
@@ -408,10 +475,25 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
   const renderLocation = () => {
       if (!msg.location) return null;
       const { lat, lng } = msg.location;
+      const MAP_W = 240, MAP_H = 130, ZOOM = 15;
+      const tiles = osmTiles(lat, lng, ZOOM, MAP_W, MAP_H);
       return (
-          <a href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noopener noreferrer" className={`flex flex-col gap-2 p-1.5 rounded-xl border mt-2 transition-all hover:shadow-md w-full sm:w-auto max-w-full ${isMe ? 'bg-white/10 border border-white/20 hover:bg-white/20' : 'bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-700'}`}>
-              <div className="relative w-full sm:w-[240px] h-[100px] bg-slate-200 dark:bg-slate-700 rounded-lg overflow-hidden flex items-center justify-center"><div className="absolute inset-0 opacity-20" style={{backgroundImage: 'radial-gradient(circle, #000 1px, transparent 1px)', backgroundSize: '10px 10px'}}></div><div className="z-10 bg-red-500 text-white p-2 rounded-full shadow-lg transform -translate-y-2"><MapPin size={24} fill="currentColor" /></div></div>
-              <div className="flex items-center justify-between px-1 pb-1"><div><span className={`text-xs font-bold ${isMe ? 'text-white' : 'text-slate-700 dark:text-slate-200'}`}>Current Location</span></div><ExternalLink size={14} className={isMe ? 'text-white/70' : 'text-slate-400'} /></div>
+          <a href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noopener noreferrer" aria-label="Open shared location in Google Maps" className={`flex flex-col gap-2 p-1.5 rounded-xl border mt-2 transition-all hover:shadow-md w-full sm:w-auto max-w-full ${isMe ? 'bg-white/10 border border-white/20 hover:bg-white/20' : 'bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-700'}`}>
+              {/* Real map centred on the point, composed from ≤4 keyless OSM tiles, with our marker overlaid at the centre. Failed tiles fall back to the slate background. */}
+              <div className="relative w-[240px] max-w-full h-[130px] bg-slate-200 dark:bg-slate-700 rounded-lg overflow-hidden">
+                  {tiles.map((t) => (
+                    <img key={t.key} src={t.url} alt="" aria-hidden="true" loading="lazy" draggable={false} className="absolute w-[256px] h-[256px] max-w-none select-none pointer-events-none" style={{ left: t.left, top: t.top }} />
+                  ))}
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full text-red-500 drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]"><MapPin size={28} fill="currentColor" /></div>
+                  <span className="absolute bottom-0 right-0 bg-white/70 dark:bg-black/50 text-[8px] leading-none px-1 py-0.5 rounded-tl text-slate-600 dark:text-slate-300 pointer-events-none">© OpenStreetMap</span>
+              </div>
+              <div className="flex items-center justify-between px-1 pb-1 gap-2">
+                <div className="flex flex-col min-w-0">
+                  <span className={`text-xs font-bold ${isMe ? 'text-white' : 'text-slate-700 dark:text-slate-200'}`}>Shared location</span>
+                  <span className={`text-[10px] tabular-nums truncate ${isMe ? 'text-blue-100/80' : 'text-slate-400'}`}>{lat.toFixed(5)}, {lng.toFixed(5)}</span>
+                </div>
+                <ExternalLink size={14} className={`flex-shrink-0 ${isMe ? 'text-white/70' : 'text-slate-400'}`} />
+              </div>
           </a>
       );
   };
