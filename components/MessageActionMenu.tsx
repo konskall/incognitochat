@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Reply, Copy, Edit2, Pin, PinOff, Trash2 } from 'lucide-react';
 import EmojiPicker from './EmojiPicker';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
@@ -69,12 +70,17 @@ const MessageActionMenu: React.FC<MessageActionMenuProps> = ({
     setPos({ left, top });
   }, [anchorRect, isMe]);
 
+  // Focus-trap + Escape-to-close + focus restore. On open, focus moves into the
+  // menu (first reaction button); on close, focus returns to the long-pressed
+  // bubble. The menu is only mounted while open, so it is always "active". The
+  // layout effect above flips visibility to visible before this runs, so the
+  // initial focus lands correctly.
+  useModalA11y(true, onClose, liftRef);
+
   useEffect(() => {
     const t = setTimeout(() => setArmed(true), 350);
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
-    document.addEventListener('keydown', onKey, true);
-    return () => { clearTimeout(t); document.removeEventListener('keydown', onKey, true); };
-  }, [onClose]);
+    return () => clearTimeout(t);
+  }, []);
 
   const run = (fn: () => void) => { fn(); onClose(); };
 
@@ -86,8 +92,12 @@ const MessageActionMenu: React.FC<MessageActionMenuProps> = ({
       />
       <div
         ref={liftRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Message actions"
+        tabIndex={-1}
         style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, visibility: pos ? 'visible' : 'hidden' }}
-        className={`fixed flex flex-col gap-2.5 max-h-[calc(100dvh_-_1rem)] ${isMe ? 'items-end' : 'items-start'} animate-in zoom-in-95 fade-in duration-150`}
+        className={`fixed flex flex-col gap-2.5 max-h-[calc(100dvh_-_1rem)] outline-none ${isMe ? 'items-end' : 'items-start'} animate-in zoom-in-95 fade-in duration-150`}
       >
         {/* Reaction row */}
         <div className="shrink-0 flex items-center gap-0.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full px-1.5 py-1 shadow-2xl">

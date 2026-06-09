@@ -88,7 +88,18 @@ export const useChatMessages = (
     location: d.location || undefined,
     isEdited: d.is_edited ?? false,
     reactions: d.reactions || {},
-    replyTo: d.reply_to ?? null,
+    // The quoted excerpt is now encrypted at rest just like the message body.
+    // Only decrypt strings in our IV:cipher format (32-hex IV + ':'); legacy
+    // plaintext quotes already in the DB are passed through untouched, so they
+    // aren't mangled by the legacy base64-decode fallback or shown as "🔒".
+    replyTo: d.reply_to
+      ? {
+          ...d.reply_to,
+          text: /^[0-9a-f]{32}:/i.test(d.reply_to.text || '')
+            ? decryptMessage(d.reply_to.text, pin, roomKey)
+            : (d.reply_to.text || ''),
+        }
+      : null,
     type: (d.type || 'text') as Message['type'],
     groundingMetadata: d.grounding_metadata || [],
     poll: mapPoll(d.poll),
@@ -302,7 +313,10 @@ export const useChatMessages = (
             ? {
                 id: replyTo.id,
                 username: replyTo.username,
-                text: replyTo.text || 'Attachment',
+                // Encrypt the quoted excerpt too — otherwise a verbatim plaintext
+                // copy of the replied-to message would persist in reply_to.text
+                // even though the original row's text column is encrypted.
+                text: encryptMessage(replyTo.text || 'Attachment', pin, roomKey),
                 isAttachment: !!replyTo.attachment,
               }
             : null,

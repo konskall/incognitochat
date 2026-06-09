@@ -115,7 +115,8 @@ export const useIncoAI = (
         reply_to: {
           id: triggerMsg.id,
           username: triggerMsg.username,
-          text: triggerMsg.text.substring(0, 100),
+          // Encrypt the quoted excerpt at rest, same as the message body.
+          text: encryptMessage(triggerMsg.text.substring(0, 100), pin, roomKey),
           isAttachment: !!triggerMsg.attachment,
         },
         grounding_metadata: sources,

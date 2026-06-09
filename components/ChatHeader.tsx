@@ -53,9 +53,9 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    if (!showSettingsMenu) return;
+    const handlePointerOutside = (event: Event) => {
       if (
-        showSettingsMenu &&
         settingsMenuRef.current &&
         !settingsMenuRef.current.contains(event.target as Node) &&
         settingsButtonRef.current &&
@@ -64,8 +64,24 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         setShowSettingsMenu(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowSettingsMenu(false);
+        settingsButtonRef.current?.focus();
+      }
+    };
+    // pointerdown covers touch + mouse (the old mousedown-only close was
+    // unreliable on touch); keydown adds Escape-to-close with focus returned to
+    // the trigger.
+    document.addEventListener('pointerdown', handlePointerOutside);
+    document.addEventListener('keydown', handleKey);
+    // Move focus into the menu so keyboard users land on the first option.
+    const t = window.setTimeout(() => settingsMenuRef.current?.querySelector<HTMLButtonElement>('button')?.focus(), 0);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerOutside);
+      document.removeEventListener('keydown', handleKey);
+      clearTimeout(t);
+    };
   }, [showSettingsMenu, setShowSettingsMenu]);
 
   const onlineCount = participants.filter((p) => p.status === 'active').length;
@@ -134,6 +150,9 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
           onClick={() => setShowSettingsMenu(!showSettingsMenu)}
           className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
           title="Settings"
+          aria-label="Settings"
+          aria-haspopup="true"
+          aria-expanded={showSettingsMenu}
         >
           <Settings size={20} />
         </button>
@@ -147,10 +166,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         </button>
 
         {showSettingsMenu && (
-          <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5" ref={settingsMenuRef}>
+          <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5" ref={settingsMenuRef} role="menu" aria-label="Preferences">
             <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Preferences</p>
             {canVibrate && (
               <button
+                role="menuitem"
                 onClick={() => { setVibrationEnabled(!vibrationEnabled); setShowSettingsMenu(false); }}
                 className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${vibrationEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
               >
@@ -159,6 +179,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
               </button>
             )}
             <button
+              role="menuitem"
               onClick={() => { setSoundEnabled(!soundEnabled); setShowSettingsMenu(false); }}
               className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${soundEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
@@ -166,6 +187,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
               <span>Sound</span>
             </button>
             <button
+              role="menuitem"
               onClick={() => { toggleNotifications(); setShowSettingsMenu(false); }}
               className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${notificationsEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
@@ -173,6 +195,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
               <span>Notifications</span>
             </button>
             <button
+              role="menuitem"
               onClick={() => { toggleTheme(); setShowSettingsMenu(false); }}
               className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition"
             >

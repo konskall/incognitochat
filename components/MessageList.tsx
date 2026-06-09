@@ -11,6 +11,7 @@ import {
   File, FileVideo, FileCode, FileArchive, Reply, ExternalLink, MapPin, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search, CheckCheck
 } from 'lucide-react';
 import MessageActionMenu from './MessageActionMenu';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -41,15 +42,27 @@ interface MessageListProps {
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 
 const DeleteToast: React.FC<{ onConfirm: () => void; onCancel: () => void }> = ({ onConfirm, onCancel }) => {
+    // Destructive, no-undo confirmation: make it a real dialog so screen readers
+    // announce it, focus moves to it (lands on Cancel), and Escape cancels.
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useModalA11y(true, onCancel, dialogRef);
     return createPortal(
         <div className="fixed bottom-[calc(6.5rem+env(safe-area-inset-bottom))] left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto z-[100] animate-in slide-in-from-bottom-4 fade-in duration-300">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-6 p-4 bg-slate-900/95 dark:bg-white/10 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-2xl text-white ring-1 ring-black/5">
+            <div
+                ref={dialogRef}
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="del-msg-title"
+                aria-describedby="del-msg-desc"
+                tabIndex={-1}
+                className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-6 p-4 bg-slate-900/95 dark:bg-white/10 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-2xl text-white ring-1 ring-black/5 outline-none"
+            >
                 <div className="flex flex-col items-center sm:items-start text-center sm:text-left w-full sm:w-auto">
-                    <span className="text-sm font-bold flex items-center justify-center sm:justify-start gap-2 text-white">
+                    <span id="del-msg-title" className="text-sm font-bold flex items-center justify-center sm:justify-start gap-2 text-white">
                         <AlertCircle size={18} className="text-red-400 shrink-0" />
                         <span>Delete message;</span>
                     </span>
-                    <span className="text-[11px] text-white/60 mt-0.5">This action cannot be undone.</span>
+                    <span id="del-msg-desc" className="text-[11px] text-white/60 mt-0.5">This action cannot be undone.</span>
                 </div>
                 <div className="hidden sm:block h-8 w-px bg-white/10"></div>
                 <div className="flex gap-3 w-full sm:w-auto">
@@ -100,6 +113,21 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
         const newTime = percentage * (duration || 0);
         if (isFinite(newTime)) { audio.currentTime = newTime; setCurrentTime(newTime); }
     };
+    // Keyboard seeking so the scrubber isn't pointer-only (it advertises
+    // role="slider" below).
+    const handleSeekKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        const audio = audioRef.current;
+        if (!audio || !duration) return;
+        let t = currentTime;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowUp') t = Math.min(duration, currentTime + 5);
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') t = Math.max(0, currentTime - 5);
+        else if (e.key === 'Home') t = 0;
+        else if (e.key === 'End') t = duration;
+        else return;
+        e.preventDefault();
+        audio.currentTime = t;
+        setCurrentTime(t);
+    };
     const formatTime = (time: number) => {
         if (isNaN(time) || !isFinite(time)) return "0:00";
         const minutes = Math.floor(time / 60);
@@ -112,7 +140,19 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
             <audio ref={audioRef} src={src} preload="metadata" />
             <button onClick={togglePlay} aria-label={isPlaying ? 'Pause' : 'Play'} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full transition-all shadow-sm ${isMe ? 'bg-white text-blue-600 hover:bg-blue-50' : 'bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-500'}`}>{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-0.5"/>}</button>
             <div className="flex-1 flex flex-col justify-center gap-1.5 min-w-0">
-                <div ref={waveformRef} className="flex items-center justify-between h-8 cursor-pointer w-full pr-1" onClick={handleSeek}>
+                <div
+                    ref={waveformRef}
+                    role="slider"
+                    tabIndex={0}
+                    aria-label="Seek voice message"
+                    aria-valuemin={0}
+                    aria-valuemax={Math.round(duration) || 0}
+                    aria-valuenow={Math.round(currentTime)}
+                    aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
+                    onKeyDown={handleSeekKey}
+                    className="flex items-center justify-between h-8 cursor-pointer w-full pr-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                    onClick={handleSeek}
+                >
                     {bars.map((height, index) => {
                         const barPercent = (index / bars.length) * 100;
                         const isActive = barPercent < progressPercent;
@@ -189,6 +229,12 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
     }
   };
   const endPress = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } };
+
+  // Keyboard activation helper for the non-button affordances (avatar / name /
+  // reply quote): Enter or Space runs the action.
+  const onActivate = (fn: () => void) => (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); }
+  };
 
   // Swipe-to-reply (mobile): drag a bubble horizontally past a threshold to reply.
   const [swipeX, setSwipeX] = useState(0);
@@ -340,7 +386,11 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
               src={msg.avatarURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=64748b&color=fff&rounded=true`}
               alt={msg.username}
               onClick={() => !isBot && onUserClick?.(msg.uid, msg.username, msg.avatarURL)}
-              className={`w-8 h-8 rounded-full shadow-sm object-cover border-2 border-white dark:border-slate-700 select-none bg-slate-200 dark:bg-slate-700 self-start ${!isBot ? 'cursor-pointer hover:scale-110 transition-transform active:scale-95' : ''}`}
+              role={!isBot ? 'button' : undefined}
+              tabIndex={!isBot ? 0 : undefined}
+              aria-label={!isBot ? `View ${msg.username}'s profile` : undefined}
+              onKeyDown={!isBot ? onActivate(() => onUserClick?.(msg.uid, msg.username, msg.avatarURL)) : undefined}
+              className={`w-8 h-8 rounded-full shadow-sm object-cover border-2 border-white dark:border-slate-700 select-none bg-slate-200 dark:bg-slate-700 self-start focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${!isBot ? 'cursor-pointer hover:scale-110 transition-transform active:scale-95' : ''}`}
             />
           ) : (
             <div className="w-8 shrink-0" aria-hidden="true" />
@@ -357,10 +407,22 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
           onMouseLeave={endPress}
           onContextMenu={(e) => { e.preventDefault(); openActionMenu(); }}
           onClickCapture={(e) => { if (pressFired.current) { e.preventDefault(); e.stopPropagation(); pressFired.current = false; } }}
+          tabIndex={0}
+          aria-haspopup="menu"
+          aria-keyshortcuts="Enter Space"
+          onKeyDown={(e) => {
+            // Only when the bubble itself is focused — let focused child links /
+            // buttons handle their own Enter/Space.
+            if (e.target !== e.currentTarget) return;
+            if (e.key === 'Enter' || e.key === ' ' || e.key === 'ContextMenu') {
+              e.preventDefault();
+              openActionMenu();
+            }
+          }}
           style={{ WebkitTouchCallout: 'none' }}
-          className={`chat-bubble relative px-4 py-2.5 rounded-2xl shadow-sm text-sm md:text-base min-w-0 transition-all select-none cursor-default ${isMe ? 'bg-blue-600 text-white rounded-br-none shadow-blue-500/20' : isBot ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-900 dark:text-indigo-100 rounded-bl-none shadow-indigo-500/10 border border-indigo-200 dark:border-indigo-800 ring-1 ring-indigo-400/20' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-bl-none shadow-slate-200 dark:shadow-none border border-slate-100 dark:border-slate-700'}`}>
-                {!isMe && isFirstOfGroup && <p className={`text-[10px] font-bold text-slate-400 mb-0.5 tracking-wide select-none flex items-center gap-1 ${!isBot ? 'cursor-pointer hover:text-blue-500 transition-colors' : ''}`} onClick={() => !isBot && onUserClick?.(msg.uid, msg.username, msg.avatarURL)}>{msg.username} {isBot && <Wand2 size={10} className="text-indigo-400 animate-pulse" />}</p>}
-                {msg.replyTo && <div onClick={() => {const el = document.getElementById(`msg-${msg.replyTo!.id}`); if(el) el.scrollIntoView({behavior:'smooth',block:'center'});}} className={`mb-2 p-2 rounded cursor-pointer opacity-90 hover:opacity-100 transition border-l-[3px] ${isMe ? 'bg-black/10 border-white/40' : 'bg-slate-100 dark:bg-slate-700 border-blue-400'}`}><span className={`text-xs font-bold block mb-0.5 ${isMe ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'}`}>{msg.replyTo.username}</span><p className="text-xs truncate max-w-[200px] opacity-80">{msg.replyTo.isAttachment ? '📎 Attachment' : msg.replyTo.text}</p></div>}
+          className={`chat-bubble relative px-4 py-2.5 rounded-2xl shadow-sm text-sm md:text-base min-w-0 transition-all select-none cursor-default focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 ${isMe ? 'bg-blue-600 text-white rounded-br-none shadow-blue-500/20' : isBot ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-900 dark:text-indigo-100 rounded-bl-none shadow-indigo-500/10 border border-indigo-200 dark:border-indigo-800 ring-1 ring-indigo-400/20' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-bl-none shadow-slate-200 dark:shadow-none border border-slate-100 dark:border-slate-700'}`}>
+                {!isMe && isFirstOfGroup && <p className={`text-[10px] font-bold text-slate-400 mb-0.5 tracking-wide select-none flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded ${!isBot ? 'cursor-pointer hover:text-blue-500 transition-colors' : ''}`} onClick={() => !isBot && onUserClick?.(msg.uid, msg.username, msg.avatarURL)} role={!isBot ? 'button' : undefined} tabIndex={!isBot ? 0 : undefined} aria-label={!isBot ? `View ${msg.username}'s profile` : undefined} onKeyDown={!isBot ? onActivate(() => onUserClick?.(msg.uid, msg.username, msg.avatarURL)) : undefined}>{msg.username} {isBot && <Wand2 size={10} className="text-indigo-400 animate-pulse" />}</p>}
+                {msg.replyTo && <div onClick={() => {const el = document.getElementById(`msg-${msg.replyTo!.id}`); if(el) el.scrollIntoView({behavior:'smooth',block:'center'});}} role="button" tabIndex={0} aria-label={`Go to message replied to from ${msg.replyTo.username}`} onKeyDown={onActivate(() => {const el = document.getElementById(`msg-${msg.replyTo!.id}`); if(el) el.scrollIntoView({behavior:'smooth',block:'center'});})} className={`mb-2 p-2 rounded cursor-pointer opacity-90 hover:opacity-100 transition border-l-[3px] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${isMe ? 'bg-black/10 border-white/40' : 'bg-slate-100 dark:bg-slate-700 border-blue-400'}`}><span className={`text-xs font-bold block mb-0.5 ${isMe ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'}`}>{msg.replyTo.username}</span><p className="text-xs truncate max-w-[200px] opacity-80">{msg.replyTo.isAttachment ? '📎 Attachment' : msg.replyTo.text}</p></div>}
                 {renderAttachment()}
                 {renderLocation()}
                 {msg.poll && (

@@ -21,6 +21,7 @@ import MicErrorModal from './MicErrorModal';
 import PollComposerModal from './PollComposerModal';
 import MediaGalleryModal from './MediaGalleryModal';
 import RoomInfoModal from './RoomInfoModal';
+import { flashToast } from './MessageActionMenu';
 import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
 import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin } from 'lucide-react';
 
@@ -150,6 +151,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
 
+  const rootRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const isFirstLoad = useRef(true);
@@ -179,10 +181,26 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         }
 
         if (document.hidden && notificationsEnabled) {
-            new Notification(`New message from ${msg.username}`, {
+            const title = `New message from ${msg.username}`;
+            const opts = {
                 body: msg.text || 'Sent an attachment',
-                icon: 'https://konskall.github.io/incognitochat/favicon-96x96.png'
-            });
+                icon: 'https://konskall.github.io/incognitochat/favicon-96x96.png',
+            };
+            // Prefer the service worker's showNotification: the bare Notification
+            // constructor THROWS on Android Chrome ("Illegal constructor") and is
+            // unavailable on iOS Safari. Fall back to the constructor only where
+            // the SW isn't available (desktop), and never let a failure escape
+            // into the realtime message handler.
+            try {
+                const reg = await navigator.serviceWorker?.getRegistration?.();
+                if (reg?.showNotification) {
+                    reg.showNotification(title, opts);
+                } else if ('Notification' in window && Notification.permission === 'granted') {
+                    new Notification(title, opts);
+                }
+            } catch (e) {
+                console.warn('Foreground notification failed', e);
+            }
         }
     }
   }, [user, soundEnabled, vibrationEnabled, notificationsEnabled, canVibrate]);
@@ -220,6 +238,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
            }
       } catch (e) {
           console.error("Failed to upload voice", e);
+          // Don't let the recording vanish silently — tell the user it failed
+          // (offline, storage error, or over the 40MB cap).
+          flashToast('Voice message could not be sent. Please try again.');
       }
   };
 
@@ -731,13 +752,26 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const handleSendLocation = async () => {
        if (!navigator.geolocation || !user || roomDeleted) return;
        setIsGettingLocation(true);
-       navigator.geolocation.getCurrentPosition(async (pos) => {
-           try {
-               await sendMessage("📍 Shared a location", config, null, null, { lat: pos.coords.latitude, lng: pos.coords.longitude }, 'text');
-               notifySubscribers('message', 'Shared a location');
-           } catch(e) { console.error(e); }
-           finally { setIsGettingLocation(false); }
-       });
+       navigator.geolocation.getCurrentPosition(
+           async (pos) => {
+               try {
+                   await sendMessage("📍 Shared a location", config, null, null, { lat: pos.coords.latitude, lng: pos.coords.longitude }, 'text');
+                   notifySubscribers('message', 'Shared a location');
+               } catch(e) { console.error(e); }
+               finally { setIsGettingLocation(false); }
+           },
+           // Without an error callback the success path never fires on
+           // deny/timeout, so isGettingLocation would stay true forever and
+           // permanently disable the Location action. Always reset + tell the user.
+           (err) => {
+               console.warn('Geolocation failed', err);
+               setIsGettingLocation(false);
+               flashToast(err.code === err.PERMISSION_DENIED
+                   ? 'Location permission denied.'
+                   : 'Could not get your location.');
+           },
+           { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+       );
   };
 
   const handleEditMessage = useCallback((msg: Message) => {
@@ -882,6 +916,41 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   };
 
+  // iOS Safari does not shrink a position:fixed / 100dvh layout when the soft
+  // keyboard opens (it slides the whole fixed layer up), which pushes the
+  // composer off-screen. Pin the shell to the visual viewport so the input stays
+  // visible. Mobile only — the md+ layout is a centered relative card that must
+  // keep its own sizing. (Android relies on interactive-widget=resizes-content.)
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const isMobile = () => window.matchMedia('(max-width: 767px)').matches;
+    const apply = () => {
+      const root = rootRef.current;
+      if (!root) return;
+      if (!isMobile()) {
+        root.style.height = '';
+        root.style.bottom = '';
+        root.style.transform = '';
+        return;
+      }
+      root.style.height = `${vv.height}px`;
+      root.style.bottom = 'auto';
+      root.style.transform = `translateY(${vv.offsetTop}px)`;
+    };
+    apply();
+    vv.addEventListener('resize', apply);
+    vv.addEventListener('scroll', apply);
+    window.addEventListener('orientationchange', apply);
+    return () => {
+      vv.removeEventListener('resize', apply);
+      vv.removeEventListener('scroll', apply);
+      window.removeEventListener('orientationchange', apply);
+      const root = rootRef.current;
+      if (root) { root.style.height = ''; root.style.bottom = ''; root.style.transform = ''; }
+    };
+  }, []);
+
   const handleUserClick = useCallback(async (uid: string, username: string, avatar: string) => {
       if (uid === INCO_BOT_UUID) return;
 
@@ -918,7 +987,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, [config.roomKey]);
 
   return (
-    <div className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
+    <div ref={rootRef} className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
       
       {roomDeleted && <RoomDeletedToast onExit={handleExitChat} onRecreate={handleRecreate} />}
 
