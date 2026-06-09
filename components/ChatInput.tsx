@@ -1,7 +1,8 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Send, Paperclip, MapPin, Smile, Mic, Trash2, X, Image as ImageIcon, FileText, Edit2, FileVideo, FileArchive, BarChart3 } from 'lucide-react';
+import { Send, Paperclip, MapPin, Smile, Mic, Trash2, X, Image as ImageIcon, FileText, Edit2, FileVideo, FileArchive, BarChart3, Plus } from 'lucide-react';
 import EmojiPicker from './EmojiPicker';
+import AttachmentSheet, { SheetAction } from './AttachmentSheet';
 import { compressImage } from '../utils/helpers';
 import { Message } from '../types';
 
@@ -67,8 +68,35 @@ const ChatInput: React.FC<ChatInputProps> = ({
   onOpenPoll
 }) => {
   const [showEmoji, setShowEmoji] = useState(false);
+  const [showAttach, setShowAttach] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Actions inside the Viber-style "+" sheet.
+  const attachActions: SheetAction[] = [
+    {
+      key: 'file',
+      label: 'File',
+      icon: <Paperclip size={24} />,
+      onClick: () => fileInputRef.current?.click(),
+      tileClass: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
+    },
+    {
+      key: 'location',
+      label: 'Location',
+      icon: <MapPin size={24} />,
+      onClick: handleSendLocation,
+      disabled: isGettingLocation,
+      tileClass: 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400',
+    },
+    {
+      key: 'poll',
+      label: 'Poll',
+      icon: <BarChart3 size={24} />,
+      onClick: onOpenPoll,
+      tileClass: 'bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400',
+    },
+  ];
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -227,6 +255,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             ) : (
                 <div className="flex items-center gap-1.5 sm:gap-2 w-full">
                      {showEmoji && <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmoji(false)} />}
+                     <AttachmentSheet show={showAttach} onClose={() => setShowAttach(false)} actions={attachActions} />
                      
                      <input 
                         type="file" 
@@ -236,42 +265,18 @@ const ChatInput: React.FC<ChatInputProps> = ({
                         accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip,.rar,.7z,.tar"
                      />
                      {!editingMessageId && (
-                        <>
-                            <button 
-                                onClick={() => fileInputRef.current?.click()}
-                                className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${selectedFile ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
-                                title="Attach File"
-                            >
-                                <Paperclip size={22} />
-                            </button>
-                            <button
-                                onClick={handleSendLocation}
-                                disabled={isGettingLocation}
-                                className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${isGettingLocation ? 'animate-pulse text-red-400' : 'text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
-                                title="Share Location"
-                            >
-                                <MapPin size={22} />
-                            </button>
-                            <button
-                                onClick={onOpenPoll}
-                                className="w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800"
-                                title="Create Poll"
-                            >
-                                <BarChart3 size={22} />
-                            </button>
-                        </>
+                        <button
+                            onClick={() => setShowAttach(true)}
+                            aria-label="Add attachment"
+                            aria-expanded={showAttach}
+                            className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${selectedFile || showAttach ? 'text-blue-500 bg-blue-50 dark:bg-slate-800' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
+                            title="Attach"
+                        >
+                            <Plus size={24} className={`transition-transform duration-200 ${showAttach ? 'rotate-45' : ''}`} />
+                        </button>
                      )}
 
-                     <button
-                        onClick={() => setShowEmoji(!showEmoji)}
-                        aria-label="Emoji picker"
-                        aria-expanded={showEmoji}
-                        className="w-10 h-10 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-full flex items-center justify-center transition flex-shrink-0"
-                     >
-                         <Smile size={22} />
-                     </button>
-
-                     <div className="flex-1 relative min-w-0 flex items-center">
+                     <div className="flex-1 relative min-w-0 flex items-end">
                          <textarea
                             ref={textareaRef}
                             value={inputText}
@@ -279,9 +284,17 @@ const ChatInput: React.FC<ChatInputProps> = ({
                             onKeyDown={handleKeyDown}
                             rows={1}
                             placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
-                            className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none leading-6 text-base block"
+                            className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl pl-4 pr-11 py-2.5 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none leading-6 text-base block"
                             style={{ minHeight: '44px' }}
                          />
+                         <button
+                            onClick={() => setShowEmoji(!showEmoji)}
+                            aria-label="Emoji picker"
+                            aria-expanded={showEmoji}
+                            className="absolute right-1.5 bottom-[5px] w-9 h-9 text-slate-400 hover:text-blue-500 rounded-full flex items-center justify-center transition flex-shrink-0"
+                         >
+                             <Smile size={22} />
+                         </button>
                      </div>
                      
                      {(!inputText.trim() && !selectedFile && !editingMessageId && !isUploading) ? (

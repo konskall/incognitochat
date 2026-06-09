@@ -29,6 +29,19 @@ html, body {
 }
 .animate-float { animation: ic-float 5s ease-in-out infinite; }
 
+/* Bottom-sheet entrance (Viber-style "+" attachment sheet) and its backdrop.
+   Scoped keyframes because the app has no animate-in plugin. */
+@keyframes ic-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.animate-sheet-up { animation: ic-slide-up 0.22s cubic-bezier(0.32, 0.72, 0, 1); }
+@keyframes ic-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-fade-in { animation: ic-fade-in 0.2s ease-out; }
+
 /* Respect the OS "Reduce Motion" setting (iOS/Android accessibility). Neutralizes
    the entrance animations, the infinite pulse glow, and hover scale/translate
    across the whole app for users with vestibular sensitivity (WCAG 2.3.3). */
