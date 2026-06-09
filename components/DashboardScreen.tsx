@@ -4,11 +4,19 @@ import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom } from '../services/supabase';
 import { User, ChatConfig, Room } from '../types';
 import { generateRoomKey, compressImage } from '../utils/helpers';
-import { 
-  LogOut, Trash2, ArrowRight, Loader2, 
+import {
+  LogOut, Trash2, ArrowRight, Loader2,
   Upload, RotateCcw,
   RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon, AlertCircle, Eye, EyeOff, GripVertical
 } from 'lucide-react';
+import {
+  DndContext, DragOverlay, closestCenter, MouseSensor, TouchSensor, KeyboardSensor,
+  useSensor, useSensors, type DragStartEvent, type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, useSortable, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface DashboardScreenProps {
   user: User;
@@ -51,6 +59,91 @@ const RoomDeleteToast: React.FC<{
     );
 };
 
+// Presentational card body, shared by the sortable item and the drag overlay.
+const RoomCardInner: React.FC<{
+  room: Room; userUid: string; unread: boolean; revealed: boolean;
+  onJoin: (r: Room) => void;
+  onRequestDelete: (name: string, key: string, createdBy: string) => void;
+  onTogglePin: (e: React.MouseEvent, key: string) => void;
+}> = ({ room, userUid, unread, revealed, onJoin, onRequestDelete, onTogglePin }) => {
+  const isOwner = room.created_by === userUid;
+  // Stop pointerdown on the controls from starting a card drag, so the buttons
+  // and PIN toggle keep working normally.
+  const stop = (e: React.PointerEvent) => e.stopPropagation();
+  return (
+    <>
+      <div className="mb-4 relative z-10">
+        <div className="flex justify-between items-start mb-2">
+          <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 truncate pr-2 flex items-center gap-2 min-w-0">
+            <GripVertical size={16} className="text-slate-300 dark:text-slate-600 shrink-0" />
+            <span className="truncate">{room.room_name}</span>
+            {unread && (
+              <span className="flex h-2.5 w-2.5 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+              </span>
+            )}
+          </h4>
+          <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onRequestDelete(room.room_name, room.room_key, room.created_by); }} className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-0 group-hover:opacity-100 shrink-0" title={isOwner ? "Delete Room" : "Remove from History"}>
+            {isOwner ? <Trash2 size={16} /> : <X size={16} />}
+          </button>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <div onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onTogglePin(e, room.room_key); }} className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono border border-slate-200 dark:border-slate-700 hover:border-blue-300 transition-colors cursor-pointer select-none" title="Click to reveal PIN">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">PIN:</span>
+            <span className="font-bold text-slate-700 dark:text-blue-400 min-w-[32px] text-center">{revealed ? room.pin : '••••'}</span>
+            {revealed ? <EyeOff size={12} className="text-blue-500" /> : <Eye size={12} className="text-slate-400" />}
+          </div>
+          {isOwner && <span className="text-blue-500 font-medium">Owner</span>}
+          <span>•</span>
+          <span>{new Date(room.created_at).toLocaleDateString()}</span>
+        </div>
+        {unread && (
+          <div className="mt-3 flex items-center gap-1.5 text-xs font-bold text-red-500 dark:text-red-400 animate-pulse">
+            <BellRing size={14} />
+            <span>New messages</span>
+          </div>
+        )}
+      </div>
+      <button onPointerDown={stop} onClick={() => onJoin(room)} className={`w-full py-2.5 font-semibold rounded-xl transition flex items-center justify-center gap-2 z-10 ${unread ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/30 group-hover:bg-red-500 group-hover:text-white group-hover:border-red-500' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 group-hover:bg-blue-600 group-hover:text-white dark:group-hover:bg-blue-600 dark:group-hover:text-white'}`}>
+        Enter Room <ArrowRight size={16} />
+      </button>
+    </>
+  );
+};
+
+// Sortable wrapper — the whole card is draggable (mouse drag / touch long-press /
+// keyboard). While lifted it dims in place; the DragOverlay renders the copy that
+// follows the pointer.
+const SortableRoomCard: React.FC<{
+  room: Room; userUid: string; unread: boolean; revealed: boolean;
+  onJoin: (r: Room) => void;
+  onRequestDelete: (name: string, key: string, createdBy: string) => void;
+  onTogglePin: (e: React.MouseEvent, key: string) => void;
+}> = (props) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.room.room_key });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    WebkitTouchCallout: 'none',
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      aria-label={`Room ${props.room.room_name}. Press space or long-press to reorder.`}
+      className={`room-card group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border flex flex-col justify-between relative overflow-hidden select-none touch-manipulation cursor-grab active:cursor-grabbing outline-none focus-visible:ring-2 focus-visible:ring-blue-500
+        ${isDragging
+          ? 'opacity-40 border-blue-400 dark:border-blue-700'
+          : 'border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 transition-shadow'}`}
+    >
+      <RoomCardInner {...props} />
+    </div>
+  );
+};
+
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onLogout }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
@@ -71,12 +164,17 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const [roomToDelete, setRoomToDelete] = useState<{name: string, key: string, isOwner: boolean} | null>(null);
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
 
-  // Reordering States
   const [revealedPins, setRevealedPins] = useState<Set<string>>(new Set());
-  const [draggedRoomIndex, setDraggedRoomIndex] = useState<number | null>(null);
-  const [isLongPressActive, setIsLongPressActive] = useState(false);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const touchStartPos = useRef({ x: 0, y: 0 });
+
+  // Drag-to-reorder (dnd-kit). Mouse: click-drag (8px). Touch: long-press 250ms
+  // then drag (a quick swipe under that still scrolls the list). Keyboard: focus
+  // a card + Space to pick up, arrows to move, Space to drop.
+  const [activeDragKey, setActiveDragKey] = useState<string | null>(null);
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   useEffect(() => {
     const initData = async () => {
@@ -319,80 +417,29 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     });
   };
 
-  // --- Drag and Drop Logic (Mouse) ---
-  const onDragStart = (index: number) => {
-    setDraggedRoomIndex(index);
+  // --- Drag-to-reorder handlers (dnd-kit) ---
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragKey(String(event.active.id));
+    if ('vibrate' in navigator) navigator.vibrate(40);
   };
 
-  const onDragOver = (e: React.DragEvent | React.TouchEvent, index: number) => {
-    // Only reorder if long press is active (for mobile) OR it's a mouse event
-    const isTouch = 'touches' in e;
-    if (isTouch && !isLongPressActive) return;
-
-    if ('preventDefault' in e) e.preventDefault();
-    if (draggedRoomIndex === null || draggedRoomIndex === index) return;
-    
-    const newRooms = [...rooms];
-    const draggedItem = newRooms[draggedRoomIndex];
-    newRooms.splice(draggedRoomIndex, 1);
-    newRooms.splice(index, 0, draggedItem);
-    
-    setDraggedRoomIndex(index);
-    setRooms(newRooms);
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveDragKey(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setRooms((prev) => {
+      const oldIndex = prev.findIndex((r) => r.room_key === active.id);
+      const newIndex = prev.findIndex((r) => r.room_key === over.id);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      const next = arrayMove(prev, oldIndex, newIndex);
+      localStorage.setItem(`roomOrder_${user.uid}`, JSON.stringify(next.map((r) => r.room_key)));
+      return next;
+    });
   };
 
-  const onDragEnd = () => {
-    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    setDraggedRoomIndex(null);
-    setIsLongPressActive(false);
-    const orderKeys = rooms.map(r => r.room_key);
-    localStorage.setItem(`roomOrder_${user.uid}`, JSON.stringify(orderKeys));
-  };
+  const handleDragCancel = () => setActiveDragKey(null);
 
-  // --- Touch Support for Reordering ---
-  const handleTouchStart = (e: React.TouchEvent, index: number) => {
-    const touch = e.touches[0];
-    touchStartPos.current = { x: touch.clientX, y: touch.clientY };
-    setDraggedRoomIndex(index);
-    
-    // Start Long Press Timer
-    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    longPressTimer.current = setTimeout(() => {
-        setIsLongPressActive(true);
-        if ('vibrate' in navigator) navigator.vibrate(60); // Stronger haptic for feedback
-    }, 600); // 600ms for long press to ensure it doesn't conflict with scroll
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    
-    // If not in drag mode yet, check if finger moved too much (cancel long press)
-    if (!isLongPressActive) {
-        const dist = Math.sqrt(
-            Math.pow(touch.clientX - touchStartPos.current.x, 2) + 
-            Math.pow(touch.clientY - touchStartPos.current.y, 2)
-        );
-        // Strict threshold: If moved more than 8 pixels, assume it's a scroll attempt
-        if (dist > 8) { 
-            if (longPressTimer.current) clearTimeout(longPressTimer.current);
-        }
-        return;
-    }
-
-    // In drag mode, prevent scrolling and perform reordering
-    if (e.cancelable) e.preventDefault(); 
-    
-    const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
-    if (!targetElement) return;
-
-    const cardElement = targetElement.closest('.room-card');
-    if (cardElement) {
-        const index = parseInt(cardElement.getAttribute('data-index') || '-1');
-        if (index !== -1 && index !== draggedRoomIndex) {
-            onDragOver(e, index);
-        }
-    }
-  };
+  const activeRoom = activeDragKey ? rooms.find((r) => r.room_key === activeDragKey) ?? null : null;
 
   return (
     <>
@@ -524,8 +571,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                          </div>
                     </div>
 
-                    <div onTouchMove={handleTouchMove} onTouchEnd={onDragEnd}>
-                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4 px-1">Your Rooms</h3>
+                    <div>
+                        <div className="flex items-baseline justify-between mb-4 px-1 gap-3">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Your Rooms</h3>
+                            {rooms.length > 1 && (
+                                <span className="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">Drag to reorder · long-press on touch</span>
+                            )}
+                        </div>
                         {loadingRooms ? (
                             <div className="flex justify-center py-12"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
                         ) : rooms.length === 0 ? (
@@ -534,66 +586,45 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 <button onClick={() => setShowCreate(true)} className="text-blue-500 font-semibold mt-2 hover:underline">Create or Join one now</button>
                             </div>
                         ) : (
-                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
-                                {rooms.map((room, index) => (
-                                    <div 
-                                        key={room.id} 
-                                        draggable={!isLongPressActive} // On mobile, disable standard drag until long press
-                                        onDragStart={() => onDragStart(index)}
-                                        onDragOver={(e) => onDragOver(e, index)}
-                                        onDragEnd={onDragEnd}
-                                        onTouchStart={(e) => handleTouchStart(e, index)}
-                                        data-index={index}
-                                        className={`room-card group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border transition-all duration-300 flex flex-col justify-between relative overflow-hidden cursor-grab active:cursor-grabbing select-none
-                                            ${isLongPressActive && draggedRoomIndex === index 
-                                                ? 'touch-none opacity-100 scale-[1.04] border-blue-500 z-50 shadow-2xl brightness-150 ring-2 ring-blue-500/50' 
-                                                : 'border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800'}`}
-                                    >
-                                        <div className={`mb-4 relative z-10 ${isLongPressActive && draggedRoomIndex === index ? 'pointer-events-none' : ''}`}>
-                                            <div className="flex justify-between items-start mb-2">
-                                                <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 truncate pr-2 flex items-center gap-2">
-                                                    <GripVertical size={16} className="text-slate-300 dark:text-slate-600 shrink-0" />
-                                                    {room.room_name}
-                                                    {unreadRooms.has(room.room_key) && (
-                                                        <span className="flex h-2.5 w-2.5 relative">
-                                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                                                        </span>
-                                                    )}
-                                                </h4>
-                                                <button onClick={(e) => { e.stopPropagation(); onRequestDeleteRoom(room.room_name, room.room_key, room.created_by); }} className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-0 group-hover:opacity-100" title={room.created_by === user.uid ? "Delete Room" : "Remove from History"}>
-                                                    {room.created_by === user.uid ? <Trash2 size={16} /> : <X size={16} />}
-                                                </button>
-                                            </div>
-                                            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                                                <div 
-                                                    onClick={(e) => { e.stopPropagation(); togglePinVisibility(e, room.room_key); }}
-                                                    className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono border border-slate-200 dark:border-slate-700 hover:border-blue-300 transition-colors cursor-pointer select-none"
-                                                    title="Click to reveal PIN"
-                                                >
-                                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">PIN:</span>
-                                                    <span className="font-bold text-slate-700 dark:text-blue-400 min-w-[32px] text-center">
-                                                        {revealedPins.has(room.room_key) ? room.pin : '••••'}
-                                                    </span>
-                                                    {revealedPins.has(room.room_key) ? <EyeOff size={12} className="text-blue-500" /> : <Eye size={12} className="text-slate-400" />}
-                                                </div>
-                                                {room.created_by === user.uid && <span className="text-blue-500 font-medium">Owner</span>}
-                                                <span>•</span>
-                                                <span>{new Date(room.created_at).toLocaleDateString()}</span>
-                                            </div>
-                                            {unreadRooms.has(room.room_key) && (
-                                                <div className="mt-3 flex items-center gap-1.5 text-xs font-bold text-red-500 dark:text-red-400 animate-pulse">
-                                                    <BellRing size={14} />
-                                                    <span>New messages</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <button onClick={() => !isLongPressActive && handleJoin(room)} className={`w-full py-2.5 font-semibold rounded-xl transition flex items-center justify-center gap-2 z-10 ${unreadRooms.has(room.room_key) ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/30 group-hover:bg-red-500 group-hover:text-white group-hover:border-red-500' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 group-hover:bg-blue-600 group-hover:text-white dark:group-hover:bg-blue-600 dark:group-hover:text-white'}`}>
-                                            Enter Room <ArrowRight size={16} />
-                                        </button>
+                            <DndContext
+                                sensors={sensors}
+                                collisionDetection={closestCenter}
+                                onDragStart={handleDragStart}
+                                onDragEnd={handleDragEnd}
+                                onDragCancel={handleDragCancel}
+                            >
+                                <SortableContext items={rooms.map((r) => r.room_key)} strategy={rectSortingStrategy}>
+                                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+                                        {rooms.map((room) => (
+                                            <SortableRoomCard
+                                                key={room.room_key}
+                                                room={room}
+                                                userUid={user.uid}
+                                                unread={unreadRooms.has(room.room_key)}
+                                                revealed={revealedPins.has(room.room_key)}
+                                                onJoin={handleJoin}
+                                                onRequestDelete={onRequestDeleteRoom}
+                                                onTogglePin={togglePinVisibility}
+                                            />
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
+                                </SortableContext>
+                                <DragOverlay dropAnimation={{ duration: 220, easing: 'cubic-bezier(0.2, 0, 0, 1)' }}>
+                                    {activeRoom ? (
+                                        <div className="room-card bg-white dark:bg-slate-900 p-5 rounded-2xl border border-blue-500 ring-2 ring-blue-500/50 shadow-2xl shadow-blue-500/30 rotate-2 scale-[1.03] cursor-grabbing select-none">
+                                            <RoomCardInner
+                                                room={activeRoom}
+                                                userUid={user.uid}
+                                                unread={unreadRooms.has(activeRoom.room_key)}
+                                                revealed={revealedPins.has(activeRoom.room_key)}
+                                                onJoin={() => {}}
+                                                onRequestDelete={() => {}}
+                                                onTogglePin={() => {}}
+                                            />
+                                        </div>
+                                    ) : null}
+                                </DragOverlay>
+                            </DndContext>
                         )}
                     </div>
                 </div>
