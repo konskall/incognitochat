@@ -7,7 +7,7 @@ import MessageList from './MessageList';
 // WebRTC call logic is the heaviest component in the app (~43KB); load it
 // lazily so entering a room paints the message list first.
 const CallManager = lazy(() => import('./CallManager'));
-import { initAudio, playBeep, decryptMessage } from '../utils/helpers';
+import { initAudio, playBeep, decryptMessage, cleanUrl } from '../utils/helpers';
 import { subscribeToPushNotifications, unsubscribeFromPushNotifications } from '../utils/pushService';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
@@ -628,33 +628,37 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   // Room "Media, links & files" content, all newest-first.
   // Media = image/video attachments (grid + lightbox).
+  // These three derivations are O(n) over the whole loaded history; only build
+  // them while the gallery modal is actually open (it almost never is), instead
+  // of on every realtime message/reaction event.
   const galleryMedia = useMemo(
-    () => [...messages]
+    () => !showGallery ? [] : [...messages]
       .filter((m) => m.attachment && (m.attachment.type.startsWith('image/') || m.attachment.type.startsWith('video/')))
       .reverse()
       .map((m) => ({ url: m.attachment!.url, name: m.attachment!.name, type: m.attachment!.type })),
-    [messages]
+    [messages, showGallery]
   );
   // Files = every other attachment (documents, archives, voice notes…).
   const galleryFiles = useMemo(
-    () => [...messages]
+    () => !showGallery ? [] : [...messages]
       .filter((m) => m.attachment && !m.attachment.type.startsWith('image/') && !m.attachment.type.startsWith('video/'))
       .reverse()
       .map((m) => ({ url: m.attachment!.url, name: m.attachment!.name, type: m.attachment!.type, size: m.attachment!.size })),
-    [messages]
+    [messages, showGallery]
   );
   // Links = every http(s) URL found in (decrypted) message text.
   const galleryLinks = useMemo(() => {
+    if (!showGallery) return [];
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const out: { url: string; username: string; createdAt: any }[] = [];
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
       if (m.type === 'system' || !m.text) continue;
       const found = m.text.match(urlRegex);
-      if (found) found.forEach((u) => out.push({ url: u, username: m.username, createdAt: m.createdAt }));
+      if (found) found.forEach((u) => out.push({ url: cleanUrl(u), username: m.username, createdAt: m.createdAt }));
     }
     return out;
-  }, [messages]);
+  }, [messages, showGallery]);
 
   useEffect(() => {
     if (!config.roomKey || !isRoomReady || roomDeleted) return;

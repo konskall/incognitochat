@@ -110,6 +110,7 @@ const MessageActionMenu: React.FC<MessageActionMenuProps> = ({
         {/* Lifted snapshot of the bubble. Capped + shrinkable so a long message
             can't push the reaction row / actions off-screen (it just clips). */}
         <div
+          aria-hidden="true"
           className={`${bubbleClass} shadow-2xl pointer-events-none shrink min-h-0 overflow-hidden`}
           style={{ width: 'fit-content', maxWidth: '80vw', maxHeight: '40vh' }}
           dangerouslySetInnerHTML={{ __html: bubbleHTML }}

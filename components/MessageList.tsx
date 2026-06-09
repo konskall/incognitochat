@@ -2,15 +2,15 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Message } from '../types';
-import { getYouTubeId } from '../utils/helpers';
+import { getYouTubeId, cleanUrl } from '../utils/helpers';
 import { supabase } from '../services/supabase';
 import MediaPreviewModal, { MediaItem } from './MediaPreviewModal';
 import PollMessage from './PollMessage';
 import {
   FileText, Download,
-  File, FileVideo, FileCode, FileArchive, Reply, ExternalLink, MapPin, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search, CheckCheck
+  File, FileVideo, FileCode, FileArchive, Reply, ExternalLink, MapPin, Trash2, Eye, Play, Pause, AlertCircle, Wand2, Search, CheckCheck, ImageOff
 } from 'lucide-react';
-import MessageActionMenu from './MessageActionMenu';
+import MessageActionMenu, { flashToast } from './MessageActionMenu';
 import { useModalA11y } from '../hooks/useModalA11y';
 
 function escapeRegExp(s: string) {
@@ -210,7 +210,17 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
   const openActionMenu = () => {
     const el = bubbleRef.current;
     if (!el) return;
-    setMenu({ rect: el.getBoundingClientRect(), html: el.innerHTML, cls: el.className });
+    // Strip embeds before snapshotting so the lifted clone in the menu doesn't
+    // load a SECOND YouTube iframe / mount a duplicate <audio> / re-decode a
+    // large <video> every time the menu opens.
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('iframe, video, audio').forEach((node) => {
+      const ph = document.createElement('div');
+      ph.className = 'my-1 px-3 py-2 rounded-lg bg-black/10 dark:bg-white/10 text-xs opacity-70';
+      ph.textContent = '▶ media';
+      node.replaceWith(ph);
+    });
+    setMenu({ rect: el.getBoundingClientRect(), html: clone.innerHTML, cls: el.className });
   };
   const startPress = (x: number, y: number) => {
     pressOrigin.current = { x, y };
@@ -235,6 +245,18 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
   const onActivate = (fn: () => void) => (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); }
   };
+
+  // Jump to the quoted message; if it's been deleted or isn't on the loaded
+  // page, tell the user instead of silently doing nothing.
+  const jumpToReply = () => {
+    if (!msg.replyTo) return;
+    const el = document.getElementById(`msg-${msg.replyTo.id}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    else flashToast('Original message is not loaded or was deleted.');
+  };
+
+  // Attachment image/video that fails to load (file removed, 404) → placeholder.
+  const [attachmentBroken, setAttachmentBroken] = useState(false);
 
   // Swipe-to-reply (mobile): drag a bubble horizontally past a threshold to reply.
   const [swipeX, setSwipeX] = useState(0);
@@ -263,16 +285,35 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
     swiping.current = false;
   };
 
-  const highlight = (str: string): React.ReactNode => {
+  // Precompile the highlight regex once per search query instead of per text part.
+  const highlightRe = useMemo(() => {
     const q = searchQuery?.trim();
-    if (!q) return str;
-    const parts = str.split(new RegExp(`(${escapeRegExp(q)})`, 'gi'));
-    return parts.map((p, i) =>
-      p.toLowerCase() === q.toLowerCase()
+    return q ? new RegExp(`(${escapeRegExp(q)})`, 'gi') : null;
+  }, [searchQuery]);
+  const highlight = (str: string): React.ReactNode => {
+    if (!highlightRe) return str;
+    const q = (searchQuery || '').trim().toLowerCase();
+    return str.split(highlightRe).map((p, i) =>
+      p.toLowerCase() === q
         ? <mark key={i} className="bg-yellow-300/80 text-black rounded px-0.5">{p}</mark>
         : p
     );
   };
+
+  // Parse URLs / YouTube once per message text — re-runs only when the text
+  // changes, not on every reaction / seen / search re-render of this bubble.
+  const parsed = useMemo(() => {
+    const text = msg.text || '';
+    if (!text) return null;
+    const URL_RE = /(https?:\/\/[^\s]+)/g;
+    const ytId = getYouTubeId(text);
+    const matches = text.match(URL_RE);
+    return {
+      ytId,
+      parts: text.split(URL_RE),
+      previewUrl: (matches && !ytId) ? cleanUrl(matches[0]) : null,
+    };
+  }, [msg.text]);
   const formatTime = (timestamp: any) => {
     if (!timestamp) return '...';
     try {
@@ -294,17 +335,23 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
       );
   }
 
-  const renderContent = (text: string) => {
-    if (!text) return null;
-    const ytId = getYouTubeId(text);
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    const parts = text.split(urlRegex);
-    const matches = text.match(urlRegex);
-    let previewUrl = (matches && !ytId) ? matches[0] : null;
+  const renderContent = () => {
+    if (!parsed) return null;
+    const { ytId, parts, previewUrl } = parsed;
+    const isUrl = (s: string) => /^https?:\/\/[^\s]+$/.test(s);
     return (
         <div className="flex flex-col gap-2 w-full min-w-0">
             <span className="leading-relaxed whitespace-pre-wrap break-words">
-                {parts.map((part, i) => part.match(urlRegex) ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="underline text-inherit opacity-90 break-all hover:opacity-100">{part}</a> : <React.Fragment key={i}>{highlight(part)}</React.Fragment>)}
+                {parts.map((part, i) => {
+                  if (isUrl(part)) {
+                    // Render the clean URL as the link; any trailing punctuation
+                    // the regex captured stays as plain text after it.
+                    const clean = cleanUrl(part);
+                    const trail = part.slice(clean.length);
+                    return <React.Fragment key={i}><a href={clean} target="_blank" rel="noopener noreferrer" className="underline text-inherit opacity-90 break-all hover:opacity-100">{clean}</a>{trail}</React.Fragment>;
+                  }
+                  return <React.Fragment key={i}>{highlight(part)}</React.Fragment>;
+                })}
             </span>
             {ytId && <div className="relative w-[260px] sm:w-[320px] md:w-[400px] max-w-full aspect-video rounded-lg overflow-hidden shadow-md bg-black/5 mt-1"><iframe className="absolute inset-0 w-full h-full" src={`https://www.youtube.com/embed/${ytId}`} allowFullScreen loading="lazy"></iframe></div>}
             {previewUrl && <LinkPreview url={previewUrl} />}
@@ -324,10 +371,19 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
     if (!msg.attachment) return null;
     const { url, name, type, size } = msg.attachment;
     if (type.startsWith('image/') || type.startsWith('video/')) {
+        if (attachmentBroken) {
+            return (
+                <div className="mt-2 mb-1 flex items-center gap-2 px-3 py-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500 text-xs w-[200px] max-w-full">
+                    <ImageOff size={18} className="shrink-0" /><span className="truncate">Media unavailable</span>
+                </div>
+            );
+        }
         return (
             <div className="mt-2 mb-1 group relative inline-block">
                 <div className={`relative overflow-hidden rounded-xl border border-white/10 ${type.startsWith('video/') ? 'bg-black' : 'bg-black/5'} cursor-pointer`} onClick={() => onPreview(url, name, type)}>
-                    {type.startsWith('image/') ? <img src={url} alt={name} className="max-w-full max-h-[300px] w-auto object-contain block" /> : <video src={`${url}#t=0.001`} className="max-w-full max-h-[300px] w-auto object-contain block" />}
+                    {type.startsWith('image/')
+                        ? <img src={url} alt={name} onError={() => setAttachmentBroken(true)} className="max-w-full max-h-[300px] w-auto object-contain block" />
+                        : <video src={`${url}#t=0.001`} muted playsInline preload="metadata" onError={() => setAttachmentBroken(true)} className="max-w-full max-h-[300px] w-auto object-contain block" />}
                     <div className="absolute inset-0 flex items-center justify-center transition-all duration-200 opacity-100 md:opacity-0 md:group-hover:opacity-100 bg-black/10">
                         <div className="flex items-center gap-2 p-2 bg-black/60 backdrop-blur-md rounded-full shadow-xl border border-white/20 transform scale-100 hover:scale-105 transition-transform" onClick={(e) => e.stopPropagation()}>
                             <button onClick={() => onPreview(url, name, type)} aria-label="Open preview" className="p-2 text-white hover:bg-white/20 rounded-full transition-colors">{type.startsWith('image/') ? <Eye size={20} /> : <Play size={20} fill="currentColor" />}</button>
@@ -422,7 +478,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
           style={{ WebkitTouchCallout: 'none' }}
           className={`chat-bubble relative px-4 py-2.5 rounded-2xl shadow-sm text-sm md:text-base min-w-0 transition-all select-none cursor-default focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 ${isMe ? 'bg-blue-600 text-white rounded-br-none shadow-blue-500/20' : isBot ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-900 dark:text-indigo-100 rounded-bl-none shadow-indigo-500/10 border border-indigo-200 dark:border-indigo-800 ring-1 ring-indigo-400/20' : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-bl-none shadow-slate-200 dark:shadow-none border border-slate-100 dark:border-slate-700'}`}>
                 {!isMe && isFirstOfGroup && <p className={`text-[10px] font-bold text-slate-400 mb-0.5 tracking-wide select-none flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded ${!isBot ? 'cursor-pointer hover:text-blue-500 transition-colors' : ''}`} onClick={() => !isBot && onUserClick?.(msg.uid, msg.username, msg.avatarURL)} role={!isBot ? 'button' : undefined} tabIndex={!isBot ? 0 : undefined} aria-label={!isBot ? `View ${msg.username}'s profile` : undefined} onKeyDown={!isBot ? onActivate(() => onUserClick?.(msg.uid, msg.username, msg.avatarURL)) : undefined}>{msg.username} {isBot && <Wand2 size={10} className="text-indigo-400 animate-pulse" />}</p>}
-                {msg.replyTo && <div onClick={() => {const el = document.getElementById(`msg-${msg.replyTo!.id}`); if(el) el.scrollIntoView({behavior:'smooth',block:'center'});}} role="button" tabIndex={0} aria-label={`Go to message replied to from ${msg.replyTo.username}`} onKeyDown={onActivate(() => {const el = document.getElementById(`msg-${msg.replyTo!.id}`); if(el) el.scrollIntoView({behavior:'smooth',block:'center'});})} className={`mb-2 p-2 rounded cursor-pointer opacity-90 hover:opacity-100 transition border-l-[3px] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${isMe ? 'bg-black/10 border-white/40' : 'bg-slate-100 dark:bg-slate-700 border-blue-400'}`}><span className={`text-xs font-bold block mb-0.5 ${isMe ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'}`}>{msg.replyTo.username}</span><p className="text-xs truncate max-w-[200px] opacity-80">{msg.replyTo.isAttachment ? '📎 Attachment' : msg.replyTo.text}</p></div>}
+                {msg.replyTo && <div onClick={jumpToReply} role="button" tabIndex={0} aria-label={`Go to message replied to from ${msg.replyTo.username}`} onKeyDown={onActivate(jumpToReply)} className={`mb-2 p-2 rounded cursor-pointer opacity-90 hover:opacity-100 transition border-l-[3px] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${isMe ? 'bg-black/10 border-white/40' : 'bg-slate-100 dark:bg-slate-700 border-blue-400'}`}><span className={`text-xs font-bold block mb-0.5 ${isMe ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'}`}>{msg.replyTo.username}</span><p className="text-xs truncate max-w-[200px] opacity-80">{msg.replyTo.isAttachment ? '📎 Attachment' : msg.replyTo.text}</p></div>}
                 {renderAttachment()}
                 {renderLocation()}
                 {msg.poll && (
@@ -435,7 +491,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
                         onToggleClosed={(closed) => onToggleClosedPoll?.(msg, closed)}
                     />
                 )}
-                {msg.text && <div className={`leading-relaxed whitespace-pre-wrap break-words ${(msg.attachment || msg.location) ? 'mt-2 pt-2 border-t ' + (isMe ? 'border-white/20' : 'border-slate-100 dark:border-slate-700') : ''}`}>{renderContent(msg.text)}</div>}
+                {msg.text && <div className={`leading-relaxed whitespace-pre-wrap break-words ${(msg.attachment || msg.location) ? 'mt-2 pt-2 border-t ' + (isMe ? 'border-white/20' : 'border-slate-100 dark:border-slate-700') : ''}`}>{renderContent()}</div>}
                 
                 {/* Grounding Sources UI */}
                 {msg.groundingMetadata && msg.groundingMetadata.length > 0 && (
@@ -445,25 +501,31 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
                       <span className="text-[10px] font-bold uppercase tracking-wider">Search Sources</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      {msg.groundingMetadata.map((source, idx) => (
-                        <a 
-                          key={idx} 
-                          href={source.uri} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-2 py-1 bg-white/50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-lg text-[10px] font-medium text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition-colors max-w-[200px]"
-                        >
-                          <span className="truncate">{source.title || 'Link'}</span>
-                          <ExternalLink size={8} className="shrink-0" />
-                        </a>
-                      ))}
+                      {msg.groundingMetadata.map((source, idx) => {
+                        // source.uri is untrusted remote model output — only link
+                        // it when it parses as http(s); otherwise render plain text
+                        // so a javascript:/data: scheme can't execute on click.
+                        let safeHref: string | null = null;
+                        try { if (source.uri) { const u = new URL(source.uri); if (u.protocol === 'http:' || u.protocol === 'https:') safeHref = u.href; } } catch { /* not a valid URL */ }
+                        const chipClass = "inline-flex items-center gap-1.5 px-2 py-1 bg-white/50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-lg text-[10px] font-medium text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition-colors max-w-[200px]";
+                        return safeHref ? (
+                          <a key={idx} href={safeHref} target="_blank" rel="noopener noreferrer" className={chipClass}>
+                            <span className="truncate">{source.title || 'Link'}</span>
+                            <ExternalLink size={8} className="shrink-0" />
+                          </a>
+                        ) : (
+                          <span key={idx} className={chipClass}>
+                            <span className="truncate">{source.title || 'Link'}</span>
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
 
-                <div className={`flex items-center justify-end gap-1 mt-1 select-none ${isMe ? 'text-blue-200' : isBot ? 'text-indigo-400' : 'text-slate-400'}`}>{msg.isEdited && <span className="text-[9px] italic opacity-80">(edited)</span>}<span className="text-[10px] font-medium">{timeString}</span>{isMe && showSeen && <span className="flex items-center gap-0.5 text-[9px] font-semibold" title="Seen"><CheckCheck size={12} /></span>}</div>
+                <div className={`flex items-center justify-end gap-1 mt-1 select-none ${isMe ? 'text-blue-100' : isBot ? 'text-indigo-500 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400'}`}>{msg.isEdited && <span className="text-[10px] italic">(edited)</span>}<span className="text-[11px] font-medium">{timeString}</span>{isMe && showSeen && <span className="flex items-center gap-0.5 text-[10px] font-semibold" title="Seen"><CheckCheck size={12} /></span>}</div>
             </div>
-            {msg.reactions && Object.keys(msg.reactions).length > 0 && <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>{Object.entries(msg.reactions).map(([emoji, uids]) => { if (uids.length === 0) return null; const iReacted = uids.includes(currentUid); return (<button key={emoji} onClick={() => onReact(msg, emoji)} className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs shadow-sm border transition-all hover:scale-105 ${iReacted ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-slate-800 dark:text-blue-100' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}><span>{emoji}</span><span className={`font-semibold text-[10px] ${iReacted ? 'text-blue-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>{uids.length}</span></button>);})}</div>}
+            {msg.reactions && Object.keys(msg.reactions).length > 0 && <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>{Object.entries(msg.reactions).map(([emoji, uids]) => { if (uids.length === 0) return null; const iReacted = uids.includes(currentUid); return (<button key={emoji} onClick={() => onReact(msg, emoji)} aria-pressed={iReacted} aria-label={`React with ${emoji}, ${uids.length} ${uids.length === 1 ? 'reaction' : 'reactions'}${iReacted ? ', you reacted' : ''}`} className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs shadow-sm border transition-all hover:scale-105 ${iReacted ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-slate-800 dark:text-blue-100' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}><span>{emoji}</span><span className={`font-semibold text-[10px] ${iReacted ? 'text-blue-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>{uids.length}</span></button>);})}</div>}
         </div>
         {menu && (
           <MessageActionMenu
@@ -471,7 +533,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
             bubbleHTML={menu.html}
             bubbleClass={menu.cls}
             isMe={isMe}
-            canEdit={isMe && !msg.poll}
+            canEdit={isMe && !msg.poll && !!(msg.text && msg.text.trim())}
             canDelete={isMe || isBot}
             canPin={!!isOwner}
             isPinned={!!isPinned}
@@ -566,20 +628,32 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
         {deletingMsgId && <DeleteToast onConfirm={() => { onDelete(deletingMsgId); setDeletingMsgId(null); }} onCancel={() => setDeletingMsgId(null)} />}
         <div ref={listRef} className="flex flex-col justify-end min-h-full pb-2">
         {q ? (
-          visibleMessages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60"><Search size={28} className="mb-2 opacity-50" /><p>No matches for “{searchQuery}”.</p></div>
-          ) : (
-            <>
-              <div className="flex justify-center py-3"><span className="text-xs font-semibold text-slate-500 dark:text-slate-400 bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1">{visibleMessages.length} result{visibleMessages.length === 1 ? '' : 's'}</span></div>
-              {visibleMessages.map((msg, i, arr) => (
-                <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} searchQuery={searchQuery} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
-              ))}
-            </>
-          )
-        ) : liveMessages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60"><p>No messages yet.</p><p className="text-xs">Say hello! 👋</p></div>
+          <>
+            {/* Search only covers loaded messages (text is encrypted, matched
+                client-side). When more history exists, say so and let the user
+                pull it into the search instead of a misleading "No matches". */}
+            {hasMoreOlder && (
+              <div className="flex flex-col items-center gap-1.5 py-3">
+                <span className="text-[11px] text-slate-400 dark:text-slate-500">Searching loaded messages only.</span>
+                <button onClick={loadEarlier} className="px-4 py-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 bg-white/70 dark:bg-slate-800/70 hover:bg-white dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full shadow-sm backdrop-blur-sm transition-colors active:scale-95">Load earlier &amp; widen search</button>
+              </div>
+            )}
+            {visibleMessages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60"><Search size={28} className="mb-2 opacity-50" /><p>No matches for “{searchQuery}”{hasMoreOlder ? ' in the loaded messages' : ''}.</p></div>
+            ) : (
+              <>
+                <div className="flex justify-center py-3"><span className="text-xs font-semibold text-slate-500 dark:text-slate-400 bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1">{visibleMessages.length} result{visibleMessages.length === 1 ? '' : 's'}</span></div>
+                {visibleMessages.map((msg, i, arr) => (
+                  <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} searchQuery={searchQuery} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
+                ))}
+              </>
+            )}
+          </>
         ) : (
           <>
+            {/* "Load earlier" must show even when the loaded page filtered to
+                empty (e.g. everything on it expired via disappearing-messages),
+                so the user is never stranded on a false "No messages yet". */}
             {hasMoreOlder && (
               <div className="flex justify-center py-3">
                 <button
@@ -590,9 +664,13 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
                 </button>
               </div>
             )}
-            {liveMessages.map((msg, i, arr) => (
-              <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
-            ))}
+            {liveMessages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60">{messages.length > 0 ? (<><p>Messages here have expired.</p><p className="text-xs">Load earlier to see older ones.</p></>) : (<><p>No messages yet.</p><p className="text-xs">Say hello! 👋</p></>)}</div>
+            ) : (
+              liveMessages.map((msg, i, arr) => (
+                <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onPreview={handleMediaPreview} onUserClick={onUserClick} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
+              ))
+            )}
           </>
         )}
         </div>

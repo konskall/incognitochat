@@ -215,6 +215,14 @@ export function stopRingtone() {
     ringNodes = [];
 }
 
+// Strip trailing punctuation that the greedy URL regex (matches up to
+// whitespace) sucks in — e.g. "see https://example.com." → "https://example.com".
+// Used for link previews, the rendered anchor, and the room "Links" gallery so a
+// sentence-final URL isn't broken.
+export function cleanUrl(url: string): string {
+  return url.replace(/[.,!?;:'")\]}>]+$/, '');
+}
+
 // Helper to extract YouTube ID
 export function getYouTubeId(url: string): string | null {
   // Updated regex to include shorts/

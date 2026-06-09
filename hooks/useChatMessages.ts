@@ -62,6 +62,11 @@ export const useChatMessages = (
     messagesRef.current = messages;
   }, [messages]);
 
+  // Last-seen ciphertext per message id. A reaction/vote UPDATE re-delivers the
+  // full row but never changes `text`, so this lets the UPDATE handler skip the
+  // AES decrypt and reuse the already-decrypted plaintext.
+  const cipherCacheRef = useRef<Map<string, string>>(new Map());
+
   // Poll question + option text are client-encrypted at rest (same AES as
   // message text); decrypt them here. Vote uid lists stay plaintext.
   const mapPoll = useCallback((raw: RawPoll | null | undefined): Poll | null => {
@@ -77,7 +82,9 @@ export const useChatMessages = (
     };
   }, [pin, roomKey]);
 
-  const mapRow = useCallback((d: MessageRow): Message => ({
+  const mapRow = useCallback((d: MessageRow): Message => {
+    cipherCacheRef.current.set(d.id, d.text || '');
+    return {
     id: d.id,
     text: decryptMessage(d.text || '', pin, roomKey),
     uid: d.uid,
@@ -103,7 +110,8 @@ export const useChatMessages = (
     type: (d.type || 'text') as Message['type'],
     groundingMetadata: d.grounding_metadata || [],
     poll: mapPoll(d.poll),
-  }), [pin, roomKey, mapPoll]);
+    };
+  }, [pin, roomKey, mapPoll]);
 
   // Initial load: the most recent page only (newest-first from the DB, reversed
   // to chronological order for display).
@@ -175,8 +183,11 @@ export const useChatMessages = (
     const { data, error } = await supabase
       .from('messages')
       .select('*')
-      .eq('room_key', roomKey)
-      .gt('created_at', latest)
+      // gte (not gt): two rows can share the same created_at (a user msg + the
+      // Inco reply, or same-ms inserts). A strict gt would permanently drop a
+      // same-timestamp row whose INSERT was missed while the socket slept; the
+      // id-dedup below removes the boundary row we already hold.
+      .gte('created_at', latest)
       .order('created_at', { ascending: true });
 
     if (error) {
@@ -233,12 +244,17 @@ export const useChatMessages = (
 
           } else if (payload.eventType === 'UPDATE') {
             const d = payload.new;
+            // Reaction/vote updates re-deliver the row with unchanged ciphertext;
+            // only re-run AES decrypt when the ciphertext actually changed.
+            const prevCipher = cipherCacheRef.current.get(d.id);
+            const textUnchanged = prevCipher !== undefined && prevCipher === (d.text || '');
+            cipherCacheRef.current.set(d.id, d.text || '');
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === d.id
                   ? {
                       ...m,
-                      text: decryptMessage(d.text || '', pin, roomKey),
+                      text: textUnchanged ? m.text : decryptMessage(d.text || '', pin, roomKey),
                       reactions: d.reactions || {},
                       // Only flag as edited when the DB row says so — a
                       // reaction-only UPDATE must not mark a message "(edited)".
@@ -403,12 +419,18 @@ export const useChatMessages = (
       });
       if (error) {
         console.error('Vote failed', error);
+        // Re-fetch the authoritative poll rather than restoring the pre-vote
+        // snapshot — `original` is stale relative to other members' concurrent
+        // votes that may already have arrived via realtime, and restoring it
+        // would visibly drop their votes until the next UPDATE.
+        const { data } = await supabase.from('messages').select('poll').eq('id', msg.id).maybeSingle();
+        const fresh = data?.poll ? mapPoll(data.poll as RawPoll) : original;
         setMessages((prev) =>
-          prev.map((m) => (m.id === msg.id ? { ...m, poll: original } : m))
+          prev.map((m) => (m.id === msg.id ? { ...m, poll: fresh } : m))
         );
       }
     },
-    [userUid]
+    [userUid, mapPoll]
   );
 
   // Close (or reopen) a poll — author or room owner only (enforced server-side).

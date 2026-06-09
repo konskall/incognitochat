@@ -102,7 +102,16 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || BASE;
+  // The push payload's `url` is attacker-controllable (any room member can call
+  // send-push with an arbitrary url). Only ever navigate within our own origin —
+  // otherwise a notification could redirect the victim to a phishing page on tap.
+  let targetUrl;
+  try {
+    const u = new URL(event.notification.data?.url || BASE, self.location.origin);
+    targetUrl = u.origin === self.location.origin ? u.href : self.location.origin + BASE;
+  } catch {
+    targetUrl = self.location.origin + BASE;
+  }
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {

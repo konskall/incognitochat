@@ -168,20 +168,30 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return <FileText size={20}/>;
   };
 
+  // Show the Inco bot distinctly ("thinking…") instead of as a human typer, and
+  // don't count it toward the "N people are typing" total.
+  const humanTypers = typingUsers.filter((u) => u !== 'inco');
+  const botTyping = humanTypers.length !== typingUsers.length;
+  let typingLabel = '';
+  if (humanTypers.length >= 2) typingLabel = `${humanTypers.length} people are typing…`;
+  else if (humanTypers.length === 1) typingLabel = `${humanTypers[0]} is typing…`;
+  if (botTyping) typingLabel = typingLabel ? `${typingLabel} · Inco is thinking…` : 'Inco is thinking…';
+
+  // Composer actions that ultimately write to the server must be disabled while
+  // offline / before the room is ready, matching the Send button — otherwise an
+  // attach/record/poll started offline fails silently.
+  const actionsDisabled = isOffline || !isRoomReady;
+
   return (
       <footer className="bg-white dark:bg-slate-900 p-1.5 border-t border-slate-200 dark:border-slate-800 shadow-lg z-20 relative pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex flex-col items-center justify-center transition-colors">
-         {typingUsers.length > 0 && (
+         {typingLabel && (
              <div className="absolute -top-6 left-6 text-xs text-slate-500 dark:text-slate-400 bg-white/80 dark:bg-slate-900/80 backdrop-blur px-2 py-0.5 rounded-t-lg animate-pulse flex items-center gap-1">
                  <span className="flex gap-0.5">
                     <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
                     <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
                     <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span>
                  </span>
-                 <span className="font-medium italic">
-                    {typingUsers.length === 1 
-                        ? `${typingUsers[0]} is typing...` 
-                        : `${typingUsers.length} people are typing...`}
-                 </span>
+                 <span className="font-medium italic">{typingLabel}</span>
              </div>
          )}
 
@@ -267,10 +277,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
                      {!editingMessageId && (
                         <button
                             onClick={() => setShowAttach(true)}
+                            disabled={actionsDisabled}
                             aria-label="Add attachment"
                             aria-expanded={showAttach}
-                            className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 ${selectedFile || showAttach ? 'text-blue-500 bg-blue-50 dark:bg-slate-800' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
-                            title="Attach"
+                            className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${selectedFile || showAttach ? 'text-blue-500 bg-blue-50 dark:bg-slate-800' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
+                            title={actionsDisabled ? 'Unavailable offline' : 'Attach'}
                         >
                             <Plus size={24} className={`transition-transform duration-200 ${showAttach ? 'rotate-45' : ''}`} />
                         </button>
@@ -298,10 +309,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
                      </div>
                      
                      {(!inputText.trim() && !selectedFile && !editingMessageId && !isUploading) ? (
-                        <button 
+                        <button
                              onClick={startRecording}
-                             className="w-10 h-10 text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full flex items-center justify-center transition flex-shrink-0"
-                             title="Record Voice Message"
+                             disabled={actionsDisabled}
+                             className="w-10 h-10 text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full flex items-center justify-center transition flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-500"
+                             title={actionsDisabled ? 'Unavailable offline' : 'Record Voice Message'}
                         >
                              <Mic size={22} />
                         </button>
