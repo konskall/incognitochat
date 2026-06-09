@@ -206,7 +206,10 @@ const linkPreviewCache = new Map<string, { title?: string; description?: string;
 const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
     const [data, setData] = useState(() => linkPreviewCache.get(url) ?? null);
     const [loading, setLoading] = useState(() => !linkPreviewCache.has(url));
+    // Fall back to the link icon if the OG image fails to load (hotlink-blocked / 404).
+    const [imgError, setImgError] = useState(false);
     useEffect(() => {
+        setImgError(false);
         if (linkPreviewCache.has(url)) { setData(linkPreviewCache.get(url) ?? null); setLoading(false); return; }
         let isActive = true;
         // Server-side Open Graph fetch (Edge Function) — no third-party client call.
@@ -222,7 +225,13 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
     if (loading || !data || !data.title || data.title === url) return null;
     return (
         <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-stretch mt-2 bg-white/95 dark:bg-slate-800/95 border border-black/10 dark:border-white/10 rounded-lg overflow-hidden hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors w-[260px] sm:w-[320px] md:w-[360px] max-w-full min-h-[80px] shadow-sm text-slate-800 dark:text-slate-100 no-underline group/card">
-            {data.image ? <div className="w-24 flex-shrink-0 bg-cover bg-center bg-no-repeat bg-slate-100 dark:bg-slate-700 border-r border-slate-100 dark:border-slate-700" style={{backgroundImage: `url(${data.image})`}} /> : <div className="w-20 flex-shrink-0 flex items-center justify-center bg-slate-100 dark:bg-slate-700 text-slate-400 border-r border-slate-100 dark:border-slate-700"><ExternalLink size={24} /></div>}
+            {data.image && !imgError ? (
+              <div className="w-24 flex-shrink-0 relative overflow-hidden bg-slate-100 dark:bg-slate-700 border-r border-slate-100 dark:border-slate-700">
+                <img src={data.image} alt="" loading="lazy" onError={() => setImgError(true)} className="absolute inset-0 w-full h-full object-cover" />
+              </div>
+            ) : (
+              <div className="w-20 flex-shrink-0 flex items-center justify-center bg-slate-100 dark:bg-slate-700 text-slate-400 border-r border-slate-100 dark:border-slate-700"><ExternalLink size={24} /></div>
+            )}
             <div className="flex-1 p-2.5 flex flex-col justify-center min-w-0">
                 <h3 className="font-bold text-xs truncate leading-tight group-hover/card:text-blue-600 dark:group-hover/card:text-blue-400 transition-colors">{data.title}</h3>
                 {data.description && <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-1 leading-snug">{data.description}</p>}
