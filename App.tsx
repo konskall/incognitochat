@@ -71,17 +71,22 @@ const App: React.FC = () => {
     
     initSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         if (session?.user && !session.user.is_anonymous) {
-             setCurrentUser({ 
-                uid: session.user.id, 
+            setCurrentUser({
+                uid: session.user.id,
                 isAnonymous: false,
-                email: session.user.email 
+                email: session.user.email
             });
-            setChatConfig(prev => {
-                if (!prev) setCurrentView('dashboard');
-                return prev;
-            });
+            // Only an explicit interactive sign-in (returning from the Google OAuth
+            // redirect) routes to the dashboard. INITIAL_SESSION / TOKEN_REFRESHED
+            // also fire on every page refresh, and previously this handler redirected
+            // here on those too — racing with (and beating) initSession's room
+            // restore, which bounced a logged-in user out of their room on refresh.
+            // Gating on SIGNED_IN + not clobbering an already-restored chat fixes it.
+            if (event === 'SIGNED_IN') {
+                setCurrentView(prev => (prev === 'chat' ? prev : 'dashboard'));
+            }
         }
     });
 
