@@ -227,7 +227,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
     pressFired.current = false;
     pressTimer.current = window.setTimeout(() => {
       pressFired.current = true;
-      if (navigator.vibrate) navigator.vibrate(15);
+      if ('vibrate' in navigator) navigator.vibrate(15);
       openActionMenu();
       window.setTimeout(() => { pressFired.current = false; }, 600);
     }, 450);

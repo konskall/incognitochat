@@ -137,8 +137,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   // Notification, Sound & Vibration State
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [vibrationEnabled, setVibrationEnabled] = useState(true);
+  // Persist audio/haptic prefs (theme persists separately) so they survive a
+  // reload instead of silently resetting to defaults every session.
+  const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('soundEnabled') !== 'false');
+  const [vibrationEnabled, setVibrationEnabled] = useState(() => localStorage.getItem('vibrationEnabled') !== 'false');
   const [canVibrate, setCanVibrate] = useState(false);
 
   // Email Alert State
@@ -289,6 +291,24 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     localStorage.setItem('theme', newTheme ? 'dark' : 'light');
     setShowSettingsMenu(false);
   };
+
+  // Persist audio/haptic preferences whenever they change.
+  useEffect(() => { localStorage.setItem('soundEnabled', String(soundEnabled)); }, [soundEnabled]);
+  useEffect(() => { localStorage.setItem('vibrationEnabled', String(vibrationEnabled)); }, [vibrationEnabled]);
+
+  // Unlock the Web Audio context on the first user gesture inside the chat. iOS
+  // keeps the AudioContext suspended until a gesture creates/resumes it, and the
+  // realtime new-message handler is NOT a gesture — without this the beep would
+  // silently never play on iOS.
+  useEffect(() => {
+    const unlock = () => initAudio();
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
 
   // Email notifications run SERVER-SIDE (Edge Function `notify-room`): it
   // verifies room membership, reads subscribers with the service role, applies
@@ -838,20 +858,37 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   };
   
   const toggleNotifications = async () => {
+      setShowSettingsMenu(false);
       if (notificationsEnabled) {
           setNotificationsEnabled(false);
           // Unregister this device's push subscription for the room.
           if (user) await unsubscribeFromPushNotifications(user.uid, config.roomKey);
-      } else {
-          const p = await Notification.requestPermission();
-          if (p === 'granted') {
-              setNotificationsEnabled(true);
-              // Register a Web Push subscription so the user gets notified even
-              // when the tab/app is closed (Edge Function `send-push` delivers).
-              if (user) await subscribeToPushNotifications(user.uid, config.roomKey);
-          }
+          return;
       }
-      setShowSettingsMenu(false);
+      // The Notification API is absent on bare iOS Safari (only works inside an
+      // installed PWA). Guard + try/catch so a tap on an unsupported browser
+      // fails gracefully with feedback instead of throwing uncaught.
+      if (!('Notification' in window)) {
+          flashToast('Notifications need the installed app on this device.');
+          return;
+      }
+      try {
+          const p = await Notification.requestPermission();
+          if (p !== 'granted') {
+              if (p === 'denied') flashToast('Notifications are blocked in your browser settings.');
+              return;
+          }
+          // Only flip the toggle ON if the push subscription actually succeeds —
+          // otherwise the UI would claim notifications are enabled while push
+          // silently fails (e.g. iOS PWA limitations, network/DB error).
+          const ok = user ? await subscribeToPushNotifications(user.uid, config.roomKey) : false;
+          setNotificationsEnabled(ok);
+          if (!ok) flashToast('Could not enable push notifications on this device.');
+      } catch (e) {
+          console.warn('Enable notifications failed', e);
+          setNotificationsEnabled(false);
+          flashToast('Could not enable notifications.');
+      }
   };
 
   const handleEmailToggle = async () => {
@@ -972,23 +1009,31 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       setSelectedUserPresence(userToDisplay);
 
       try {
+          // Fetch ONLY the join date the card needs. Never pull another member's
+          // email or last_notified_at to the client (privacy leak), and never use
+          // last_notified_at as "activity" — it's the last EMAIL time, not the
+          // user's real last-seen, so offline users now read honestly as "Offline".
           const { data } = await supabase
             .from('subscribers')
-            .select('*')
+            .select('created_at')
             .eq('room_key', config.roomKey)
             .eq('uid', uid)
             .maybeSingle();
 
           if (data) {
               setSelectedUserSubscriber(data as Subscriber);
-              if (!activeUser) {
-                  setSelectedUserPresence(prev => prev ? ({...prev, onlineAt: data.last_notified_at || ''}) : null);
-              }
           }
       } catch (e) {
           console.error("Failed to fetch user subscriber info", e);
       }
   }, [config.roomKey]);
+
+  // Stable close handler so the modal's focus-trap effect doesn't re-run on
+  // every ChatScreen re-render while the modal is open.
+  const handleCloseUserModal = useCallback(() => {
+      setSelectedUserPresence(null);
+      setSelectedUserSubscriber(null);
+  }, []);
 
   return (
     <div ref={rootRef} className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
@@ -1276,7 +1321,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             user={selectedUserPresence}
             subscriberInfo={selectedUserSubscriber}
             isRoomOwner={selectedUserPresence.uid === roomCreatorId}
-            onClose={() => { setSelectedUserPresence(null); setSelectedUserSubscriber(null); }}
+            onClose={handleCloseUserModal}
           />
       )}
     </div>

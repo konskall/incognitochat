@@ -84,6 +84,13 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
     };
   }, [showSettingsMenu, setShowSettingsMenu]);
 
+  // Close the menu AND return focus to the trigger, so keyboard users aren't
+  // dropped onto <body> after toggling a preference.
+  const closeMenu = () => {
+    setShowSettingsMenu(false);
+    settingsButtonRef.current?.focus();
+  };
+
   const onlineCount = participants.filter((p) => p.status === 'active').length;
 
   return (
@@ -167,11 +174,12 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
 
         {showSettingsMenu && (
           <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-100 dark:border-slate-700 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col p-1.5" ref={settingsMenuRef} role="menu" aria-label="Preferences">
-            <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Preferences</p>
+            <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Preferences</p>
             {canVibrate && (
               <button
-                role="menuitem"
-                onClick={() => { setVibrationEnabled(!vibrationEnabled); setShowSettingsMenu(false); }}
+                role="menuitemcheckbox"
+                aria-checked={vibrationEnabled}
+                onClick={() => { setVibrationEnabled(!vibrationEnabled); closeMenu(); }}
                 className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${vibrationEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
               >
                 {vibrationEnabled ? <Vibrate size={18} /> : <VibrateOff size={18} />}
@@ -179,24 +187,27 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
               </button>
             )}
             <button
-              role="menuitem"
-              onClick={() => { setSoundEnabled(!soundEnabled); setShowSettingsMenu(false); }}
+              role="menuitemcheckbox"
+              aria-checked={soundEnabled}
+              onClick={() => { setSoundEnabled(!soundEnabled); closeMenu(); }}
               className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${soundEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
               {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
               <span>Sound</span>
             </button>
             <button
-              role="menuitem"
-              onClick={() => { toggleNotifications(); setShowSettingsMenu(false); }}
+              role="menuitemcheckbox"
+              aria-checked={notificationsEnabled}
+              onClick={() => { toggleNotifications(); closeMenu(); }}
               className={`flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium transition ${notificationsEnabled ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
               {notificationsEnabled ? <Bell size={18} /> : <BellOff size={18} />}
               <span>Notifications</span>
             </button>
             <button
-              role="menuitem"
-              onClick={() => { toggleTheme(); setShowSettingsMenu(false); }}
+              role="menuitemcheckbox"
+              aria-checked={isDarkMode}
+              onClick={() => { toggleTheme(); closeMenu(); }}
               className="flex items-center gap-3 w-full p-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition"
             >
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
@@ -209,4 +220,4 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   );
 };
 
-export default ChatHeader;
+export default React.memo(ChatHeader);
