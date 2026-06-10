@@ -7,7 +7,7 @@ import MessageList from './MessageList';
 // WebRTC call logic is the heaviest component in the app (~43KB); load it
 // lazily so entering a room paints the message list first.
 const CallManager = lazy(() => import('./CallManager'));
-import { initAudio, playBeep, decryptMessage, cleanUrl } from '../utils/helpers';
+import { initAudio, playBeep, decryptMessage, cleanUrl, beginThemeTransition } from '../utils/helpers';
 import { subscribeToPushNotifications, unsubscribeFromPushNotifications } from '../utils/pushService';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
@@ -304,6 +304,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, [isDarkMode]);
 
   const toggleTheme = () => {
+    beginThemeTransition();
     const newTheme = !isDarkMode;
     setIsDarkMode(newTheme);
     localStorage.setItem('theme', newTheme ? 'dark' : 'light');

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatConfig } from '../types';
-import { generateRoomKey, initAudio } from '../utils/helpers';
+import { generateRoomKey, initAudio, beginThemeTransition } from '../utils/helpers';
 import { Info, ChevronDown, ChevronUp, Eye, EyeOff, Moon, Sun, History, X, Trash2, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import InstallButton from './InstallButton';
@@ -123,6 +123,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
   }, []);
 
   const toggleTheme = () => {
+    beginThemeTransition();
     const newTheme = !isDarkMode;
     setIsDarkMode(newTheme);
     localStorage.setItem('theme', newTheme ? 'dark' : 'light');

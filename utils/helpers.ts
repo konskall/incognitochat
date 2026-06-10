@@ -104,6 +104,18 @@ export function generateRoomKey(pin: string, roomName: string): string {
   return `${roomName.toLowerCase().trim()}_${pin.trim()}`;
 }
 
+// Smooth dark<->light switch: add a short-lived class to <html> so colors
+// cross-fade (the `.theme-anim` rule in index.css), then drop it so there's no
+// always-on transition cost. Call this RIGHT BEFORE flipping the theme (toggling
+// the `dark` class / setting the theme state) so the class is present when the
+// color change paints. Honors prefers-reduced-motion (handled in CSS).
+export function beginThemeTransition(ms = 450): void {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  root.classList.add('theme-anim');
+  window.setTimeout(() => root.classList.remove('theme-anim'), ms);
+}
+
 // Singleton AudioContext to prevent running out of hardware contexts
 let audioCtx: AudioContext | null = null;
 let ringNodes: AudioNode[] = []; // Store active ringtone nodes

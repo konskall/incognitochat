@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown, Sun, Moon, ArrowUp } from 'lucide-react';
 import InstallButton from './InstallButton';
+import { beginThemeTransition } from '../utils/helpers';
 
 interface LandingPageProps {
   onStart: () => void;
@@ -130,6 +131,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
 
   const toggleTheme = () => {
     const next = !isDark;
+    beginThemeTransition();
     setIsDark(next);
     document.documentElement.classList.toggle('dark', next);
     localStorage.setItem('theme', next ? 'dark' : 'light');

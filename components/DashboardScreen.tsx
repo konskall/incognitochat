@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom } from '../services/supabase';
 import { User, ChatConfig, Room, Presence } from '../types';
-import { generateRoomKey, compressImage, decryptMessage } from '../utils/helpers';
+import { generateRoomKey, compressImage, decryptMessage, beginThemeTransition } from '../utils/helpers';
 import {
   LogOut, Trash2, ArrowRight, Loader2,
   Upload, RotateCcw,
@@ -687,15 +687,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   }, []);
 
   const toggleTheme = useCallback(() => {
-      const root = document.documentElement;
-      const next = !root.classList.contains('dark');
-      // Enable the global color transition just for this switch, then drop it.
-      root.classList.add('theme-anim');
-      root.classList.toggle('dark', next);
+      const next = !document.documentElement.classList.contains('dark');
+      beginThemeTransition(); // global color cross-fade for this switch
+      document.documentElement.classList.toggle('dark', next);
       try { localStorage.setItem('theme', next ? 'dark' : 'light'); } catch { /* ignore */ }
       document.querySelector("meta[name='theme-color']")?.setAttribute('content', next ? '#020617' : '#f8fafc');
       setIsDark(next);
-      window.setTimeout(() => root.classList.remove('theme-anim'), 450);
   }, []);
 
   const fillRandomRoom = useCallback(() => {
