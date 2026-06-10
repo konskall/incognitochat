@@ -104,6 +104,16 @@ export function generateRoomKey(pin: string, roomName: string): string {
   return `${roomName.toLowerCase().trim()}_${pin.trim()}`;
 }
 
+// Room name / PIN rules — the SINGLE source of truth shared by the dashboard's
+// create form and the login screen. They used to differ (login only allowed
+// [A-Za-z0-9_], so a room created with a space or hyphen — including the
+// "Quick chat" presets — could never be joined from the login screen). Allow
+// letters, numbers, spaces, hyphens and underscores in names.
+export const ROOM_NAME_RE = /^[A-Za-z0-9 _-]{3,30}$/;
+export const ROOM_PIN_RE = /^[A-Za-z0-9_]{4,12}$/;
+export const ROOM_NAME_RULE = 'Room name must be 3–30 characters: letters, numbers, spaces, - or _.';
+export const ROOM_PIN_RULE = 'PIN must be 4–12 characters: letters, numbers or underscore.';
+
 // Smooth dark<->light switch: add a short-lived class to <html> so colors
 // cross-fade (the `.theme-anim` rule in index.css), then drop it so there's no
 // always-on transition cost. Call this RIGHT BEFORE flipping the theme (toggling

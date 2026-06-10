@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom } from '../services/supabase';
 import { User, ChatConfig, Room, Presence } from '../types';
-import { generateRoomKey, compressImage, decryptMessage, beginThemeTransition } from '../utils/helpers';
+import { generateRoomKey, compressImage, decryptMessage, beginThemeTransition, ROOM_NAME_RE, ROOM_PIN_RE, ROOM_NAME_RULE, ROOM_PIN_RULE } from '../utils/helpers';
 import {
   LogOut, Trash2, ArrowRight, Loader2,
   Upload, RotateCcw,
@@ -700,7 +700,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       const nouns = ['fox', 'harbor', 'echo', 'nebula', 'garden', 'circuit', 'meadow', 'falcon', 'lagoon', 'ember'];
       const a = adjectives[Math.floor(Math.random() * adjectives.length)];
       const n = nouns[Math.floor(Math.random() * nouns.length)];
-      setNewRoomName(`${a}-${n}-${Math.floor(100 + Math.random() * 900)}`);
+      // Underscore separators — valid in both the dashboard and login validators
+      // (a hyphen-named room used to be impossible to join from the login screen).
+      setNewRoomName(`${a}_${n}_${Math.floor(100 + Math.random() * 900)}`);
       setNewRoomPin(String(Math.floor(1000 + Math.random() * 9000)));
   }, []);
 
@@ -841,6 +843,11 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       const roomName = newRoomName.trim();
       const pin = newRoomPin.trim();
       if (!roomName || !pin) return;
+      // Enforce the SAME rules as the login screen so a room created here can
+      // always be joined from there (a name with characters login rejects would
+      // be impossible for invitees to enter).
+      if (!ROOM_NAME_RE.test(roomName)) { alert(ROOM_NAME_RULE); return; }
+      if (!ROOM_PIN_RE.test(pin)) { alert(ROOM_PIN_RULE); return; }
       setCreating(true);
       const roomKey = generateRoomKey(pin, roomName);
       try {

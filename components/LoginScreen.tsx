@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatConfig } from '../types';
-import { generateRoomKey, initAudio, beginThemeTransition } from '../utils/helpers';
+import { generateRoomKey, initAudio, beginThemeTransition, ROOM_NAME_RE, ROOM_PIN_RE, ROOM_NAME_RULE, ROOM_PIN_RULE } from '../utils/helpers';
 import { Info, ChevronDown, ChevronUp, Eye, EyeOff, Moon, Sun, History, X, Trash2, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import InstallButton from './InstallButton';
@@ -234,12 +234,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
       showToast("Username must have at least 2 characters.", 'error');
       return;
     }
-    if (!/^[A-Za-z0-9_]{4,12}$/.test(code)) {
-      showToast("PIN must be 4–12 characters: letters, numbers or underscore.", 'error');
+    if (!ROOM_PIN_RE.test(code)) {
+      showToast(ROOM_PIN_RULE, 'error');
       return;
     }
-    if (!/^[A-Za-z0-9_]{3,30}$/.test(room)) {
-      showToast("Room name must be 3–30 characters: letters, numbers or underscore.", 'error');
+    if (!ROOM_NAME_RE.test(room)) {
+      showToast(ROOM_NAME_RULE, 'error');
       return;
     }
 
