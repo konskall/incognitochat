@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatConfig } from '../types';
 import { generateRoomKey, initAudio, beginThemeTransition, ROOM_NAME_RE, ROOM_PIN_RE, ROOM_NAME_RULE, ROOM_PIN_RULE } from '../utils/helpers';
-import { Info, ChevronDown, ChevronUp, Eye, EyeOff, Moon, Sun, History, X, Trash2, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Info, ChevronDown, ChevronUp, Eye, EyeOff, Moon, Sun, History, X, Trash2, AlertCircle, CheckCircle, AlertTriangle, User, KeyRound, DoorOpen } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import InstallButton from './InstallButton';
 
@@ -590,9 +590,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
             
             {showGuide && (
                 <div className="p-4 bg-white/50 dark:bg-slate-900/50 text-sm text-slate-600 dark:text-slate-300 space-y-2 border-t border-blue-100 dark:border-blue-900/30 animate-in slide-in-from-top-2">
-                    <p className="flex gap-2"><span className="text-blue-500">👤</span> <strong>Username:</strong> Your display name.</p>
-                    <p className="flex gap-2"><span className="text-blue-500">🔐</span> <strong>PIN:</strong> 4+ chars key.</p>
-                    <p className="flex gap-2"><span className="text-blue-500">🏠</span> <strong>Room:</strong> 3+ Latin chars.</p>
+                    <p className="flex items-center gap-2.5"><User size={15} className="text-blue-500 shrink-0" /> <span><strong>Username:</strong> Your display name.</span></p>
+                    <p className="flex items-center gap-2.5"><KeyRound size={15} className="text-blue-500 shrink-0" /> <span><strong>PIN:</strong> 4+ chars key.</span></p>
+                    <p className="flex items-center gap-2.5"><DoorOpen size={15} className="text-blue-500 shrink-0" /> <span><strong>Room:</strong> 3+ Latin chars.</span></p>
                     <p className="text-xs text-slate-500 dark:text-slate-500 mt-2 italic">Share the Room Name and invite others.</p>
                 </div>
             )}
