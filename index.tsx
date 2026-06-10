@@ -2,6 +2,9 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
+// Side-effect import: registers the service-worker message responder so a push
+// for a room you're already viewing stays silent (see utils/swBridge.ts).
+import './utils/swBridge';
 
 // Register Service Worker for PWA functionality
 if ('serviceWorker' in navigator) {

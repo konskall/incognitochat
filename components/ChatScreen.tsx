@@ -9,6 +9,7 @@ import MessageList from './MessageList';
 const CallManager = lazy(() => import('./CallManager'));
 import { initAudio, playBeep, decryptMessage, cleanUrl, beginThemeTransition } from '../utils/helpers';
 import { subscribeToPushNotifications, unsubscribeFromPushNotifications } from '../utils/pushService';
+import { setActiveRoom } from '../utils/swBridge';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
@@ -410,6 +411,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       .catch(() => { if (!cancelled) setNotificationsEnabled(false); });
     return () => { cancelled = true; };
   }, [user?.uid, config.roomKey]);
+
+  // Tell the push service worker which room this tab is showing, so it can keep
+  // a push silent ONLY when you're already looking at that room — a push for a
+  // DIFFERENT room still notifies you while the app is open. Cleared on unmount
+  // (back to the dashboard) so dashboard-open users get notified for any room.
+  useEffect(() => {
+    setActiveRoom(config.roomKey);
+    return () => setActiveRoom(null);
+  }, [config.roomKey]);
 
   const checkRoomStatus = useCallback(async () => {
     if (!config.roomKey) return;

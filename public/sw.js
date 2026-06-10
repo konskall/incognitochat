@@ -109,20 +109,66 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     (async () => {
-      // Don't pop an OS notification while the user is actively looking at the
-      // app: if any of our windows is currently visible/focused, the in-app UI
-      // already shows the incoming message. The Push API's userVisibleOnly
-      // contract explicitly allows skipping showNotification in exactly this
-      // case (a window for our origin is visible), so the browser won't punish
-      // us with a generic "site updated in background" notification.
       const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-      const appVisible = wins.some((c) => c.visibilityState === 'visible' || c.focused);
-      if (appVisible) return;
+      const visible = wins.filter((c) => c.visibilityState === 'visible' || c.focused);
+
+      // App fully backgrounded/closed → always notify.
+      if (visible.length === 0) {
+        await self.registration.showNotification(title, options);
+        return;
+      }
+
+      // App is open & visible. Suppress the OS notification ONLY if a visible tab
+      // is already viewing THIS room — otherwise notify, so activity in OTHER
+      // rooms still reaches the user while the app is open. We don't know each
+      // tab's room, so ask them (utils/swBridge.ts answers). The userVisibleOnly
+      // contract lets us skip showNotification while a window is visible.
+      const sameRoomOpen = await anyVisibleClientInRoom(visible, data.roomKey);
+      if (sameRoomOpen) return;
 
       await self.registration.showNotification(title, options);
     })()
   );
 });
+
+// Ask each visible tab which room it's showing and resolve true as soon as one
+// reports it's on `roomKey` (and visible). Resolves false once every tab has
+// answered otherwise, or after a short timeout (a visible/active page answers
+// almost instantly; the timeout just guards against a throttled/unresponsive
+// one — in which case we err toward notifying).
+function anyVisibleClientInRoom(clientList, roomKey) {
+  if (!roomKey || clientList.length === 0) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let remaining = clientList.length;
+    let finished = false;
+    const finish = (val) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      resolve(val);
+    };
+    const timer = setTimeout(() => finish(false), 800);
+
+    clientList.forEach((client) => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = (e) => {
+        const d = e.data || {};
+        if (d.visible && d.activeRoomKey === roomKey) {
+          finish(true);
+          return;
+        }
+        remaining -= 1;
+        if (remaining <= 0) finish(false);
+      };
+      try {
+        client.postMessage({ type: 'INCO_QUERY_ACTIVE_ROOM' }, [channel.port2]);
+      } catch {
+        remaining -= 1;
+        if (remaining <= 0) finish(false);
+      }
+    });
+  });
+}
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
