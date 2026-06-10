@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom } from '../services/supabase';
 import { User, ChatConfig, Room } from '../types';
@@ -7,7 +7,8 @@ import { generateRoomKey, compressImage } from '../utils/helpers';
 import {
   LogOut, Trash2, ArrowRight, Loader2,
   Upload, RotateCcw,
-  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon, AlertCircle, Eye, EyeOff, GripVertical
+  RefreshCw, Save, X, Edit2, Mail, LogIn, BellRing, Link as LinkIcon, AlertCircle, Eye, EyeOff, GripVertical,
+  Search, Star, Sun, Moon, Zap
 } from 'lucide-react';
 import {
   DndContext, DragOverlay, closestCenter, MouseSensor, TouchSensor, KeyboardSensor,
@@ -24,11 +25,23 @@ interface DashboardScreenProps {
   onLogout: () => void;
 }
 
-const RoomDeleteToast: React.FC<{ 
-    roomName: string; 
-    isOwner: boolean; 
-    onConfirm: () => void; 
-    onCancel: () => void; 
+// Shared props for the card body, the sortable wrapper and the static (filtered) view.
+type RoomCardProps = {
+  room: Room; userUid: string; unread: boolean; revealed: boolean; isFavorite: boolean;
+  onJoin: (r: Room) => void;
+  onRequestDelete: (name: string, key: string, createdBy: string) => void;
+  onTogglePin: (e: React.MouseEvent, key: string) => void;
+  onToggleFav: (e: React.MouseEvent, key: string) => void;
+};
+
+// Card chrome shared by the sortable card and the static (search/filter/favorites) card.
+const CARD_CHROME = "room-card group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border flex flex-col justify-between relative overflow-hidden select-none border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 transition-shadow";
+
+const RoomDeleteToast: React.FC<{
+    roomName: string;
+    isOwner: boolean;
+    onConfirm: () => void;
+    onCancel: () => void;
     isDeleting: boolean;
 }> = ({ roomName, isOwner, onConfirm, onCancel, isDeleting }) => {
     return createPortal(
@@ -37,20 +50,20 @@ const RoomDeleteToast: React.FC<{
                 <div className="flex flex-col items-center sm:items-start text-center sm:text-left w-full sm:w-auto min-w-[200px]">
                     <span className="text-sm font-bold flex items-center justify-center sm:justify-start gap-2 text-white">
                         <AlertCircle size={18} className="text-red-400 shrink-0" />
-                        <span>{isOwner ? 'Delete Room;' : 'Remove from History;'}</span>
+                        <span>{isOwner ? 'Delete Room?' : 'Leave Room?'}</span>
                     </span>
                     <span className="text-[11px] text-white/60 mt-0.5">
-                        {isOwner 
-                            ? `The "${roomName}" will be permanently deleted.` 
-                            : `Removing "${roomName}" from the list.`}
+                        {isOwner
+                            ? `"${roomName}" will be permanently deleted for everyone.`
+                            : `You'll leave "${roomName}" and remove it from your list.`}
                     </span>
                 </div>
                 <div className="hidden sm:block h-8 w-px bg-white/10"></div>
                 <div className="flex gap-2 w-full sm:w-auto">
                     <button onClick={onCancel} className="flex-1 sm:flex-none px-3 py-1.5 text-xs font-medium bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors text-center border border-white/5">Cancel</button>
                     <button onClick={onConfirm} disabled={isDeleting} className="flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center justify-center gap-1.5">
-                        {isDeleting ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14} />}
-                        <span>{isOwner ? 'Delete' : 'Remove'}</span>
+                        {isDeleting ? <Loader2 size={14} className="animate-spin"/> : (isOwner ? <Trash2 size={14} /> : <LogOut size={14} />)}
+                        <span>{isOwner ? 'Delete' : 'Leave'}</span>
                     </button>
                 </div>
             </div>
@@ -60,12 +73,7 @@ const RoomDeleteToast: React.FC<{
 };
 
 // Presentational card body, shared by the sortable item and the drag overlay.
-const RoomCardInner = React.memo(({ room, userUid, unread, revealed, onJoin, onRequestDelete, onTogglePin }: {
-  room: Room; userUid: string; unread: boolean; revealed: boolean;
-  onJoin: (r: Room) => void;
-  onRequestDelete: (name: string, key: string, createdBy: string) => void;
-  onTogglePin: (e: React.MouseEvent, key: string) => void;
-}) => {
+const RoomCardInner = React.memo(({ room, userUid, unread, revealed, isFavorite, onJoin, onRequestDelete, onTogglePin, onToggleFav }: RoomCardProps) => {
   const isOwner = room.created_by === userUid;
   // Stop pointerdown on the controls from starting a card drag, so the buttons
   // and PIN toggle keep working normally.
@@ -84,9 +92,20 @@ const RoomCardInner = React.memo(({ room, userUid, unread, revealed, onJoin, onR
               </span>
             )}
           </h4>
-          <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onRequestDelete(room.room_name, room.room_key, room.created_by); }} className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 shrink-0" title={isOwner ? "Delete Room" : "Remove from History"}>
-            {isOwner ? <Trash2 size={16} /> : <X size={16} />}
-          </button>
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button
+              onPointerDown={stop}
+              onClick={(e) => { e.stopPropagation(); onToggleFav(e, room.room_key); }}
+              aria-pressed={isFavorite}
+              title={isFavorite ? 'Unpin from top' : 'Pin to top'}
+              className={`p-1.5 rounded-lg transition ${isFavorite ? 'text-amber-400 opacity-100' : 'text-slate-300 hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'}`}
+            >
+              <Star size={16} fill={isFavorite ? 'currentColor' : 'none'} />
+            </button>
+            <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onRequestDelete(room.room_name, room.room_key, room.created_by); }} className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" title={isOwner ? "Delete room (for everyone)" : "Leave room"}>
+              {isOwner ? <Trash2 size={16} /> : <LogOut size={16} />}
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
           <div onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onTogglePin(e, room.room_key); }} className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono border border-slate-200 dark:border-slate-700 hover:border-blue-300 transition-colors cursor-pointer select-none" title="Click to reveal PIN">
@@ -94,7 +113,9 @@ const RoomCardInner = React.memo(({ room, userUid, unread, revealed, onJoin, onR
             <span className="font-bold text-slate-700 dark:text-blue-400 min-w-[32px] text-center">{revealed ? room.pin : '••••'}</span>
             {revealed ? <EyeOff size={12} className="text-blue-500" /> : <Eye size={12} className="text-slate-400" />}
           </div>
-          {isOwner && <span className="text-blue-500 font-medium">Owner</span>}
+          {isOwner
+            ? <span className="text-blue-500 font-medium">Owner</span>
+            : <span className="text-emerald-500 font-medium">Joined</span>}
           <span>•</span>
           <span>{new Date(room.created_at).toLocaleDateString()}</span>
         </div>
@@ -114,13 +135,8 @@ const RoomCardInner = React.memo(({ room, userUid, unread, revealed, onJoin, onR
 
 // Sortable wrapper — the whole card is draggable (mouse drag / touch long-press /
 // keyboard). While lifted it dims in place; the DragOverlay renders the copy that
-// follows the pointer.
-const SortableRoomCard = React.memo((props: {
-  room: Room; userUid: string; unread: boolean; revealed: boolean;
-  onJoin: (r: Room) => void;
-  onRequestDelete: (name: string, key: string, createdBy: string) => void;
-  onTogglePin: (e: React.MouseEvent, key: string) => void;
-}) => {
+// follows the pointer. Used only when no search/filter/favorite ordering is active.
+const SortableRoomCard = React.memo((props: RoomCardProps) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.room.room_key });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -144,6 +160,17 @@ const SortableRoomCard = React.memo((props: {
   );
 });
 
+// Non-draggable card — rendered when the displayed order differs from the saved
+// drag order (active search/filter, or favorites pinned to top), so there's no
+// index-mapping ambiguity between what's shown and what a drag would reorder.
+const StaticRoomCard = React.memo((props: RoomCardProps) => (
+  <div className={CARD_CHROME}>
+    <RoomCardInner {...props} />
+  </div>
+));
+
+type RoomFilter = 'all' | 'owned' | 'joined' | 'unread';
+
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onLogout }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
@@ -165,6 +192,19 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
 
   const [revealedPins, setRevealedPins] = useState<Set<string>>(new Set());
+
+  // Search / filter / favorites (all client-side, no backend).
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<RoomFilter>('all');
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Dashboard theme toggle. The boot script in index.html sets the initial class
+  // from localStorage; we seed from the live DOM and keep both in sync (same key
+  // the rest of the app reads).
+  const [isDark, setIsDark] = useState(() =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+  );
 
   // Drag-to-reorder (dnd-kit). Mouse: click-drag (8px). Touch: long-press 250ms
   // then drag (a quick swipe under that still scrolls the list). Keyboard: focus
@@ -191,6 +231,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           localStorage.setItem('chatUsername', finalName);
           localStorage.setItem('chatAvatarURL', finalAvatar);
       }
+
+      // Restore favorites (guard against corrupted localStorage).
+      try {
+        const rawFav = localStorage.getItem(`roomFav_${user.uid}`);
+        if (rawFav) { const p = JSON.parse(rawFav); if (Array.isArray(p)) setFavorites(new Set(p)); }
+      } catch { /* ignore corrupt */ }
 
       try {
         // Independent reads in parallel (was a sequential waterfall).
@@ -373,13 +419,71 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       setRoomToDelete({ name: roomName, key: roomKey, isOwner: createdBy === user.uid });
   }, [user.uid]);
 
+  // Star toggle → pin a room to the top of the list. Persisted per user.
+  const toggleFavorite = useCallback((e: React.MouseEvent, key: string) => {
+      e.stopPropagation();
+      setFavorites(prev => {
+          const next = new Set(prev);
+          if (next.has(key)) next.delete(key); else next.add(key);
+          try { localStorage.setItem(`roomFav_${user.uid}`, JSON.stringify([...next])); } catch { /* ignore */ }
+          return next;
+      });
+  }, [user.uid]);
+
+  const toggleTheme = useCallback(() => {
+      setIsDark(prev => {
+          const next = !prev;
+          document.documentElement.classList.toggle('dark', next);
+          try { localStorage.setItem('theme', next ? 'dark' : 'light'); } catch { /* ignore */ }
+          document.querySelector("meta[name='theme-color']")?.setAttribute('content', next ? '#020617' : '#f8fafc');
+          return next;
+      });
+  }, []);
+
+  // "Quick chat" preset: prefill a random room name + 4-digit PIN and open the
+  // form so the owner can SEE/copy the PIN (the invite secret) before entering.
+  const handleQuickChat = useCallback(() => {
+      const adjectives = ['swift', 'cosmic', 'hidden', 'silent', 'golden', 'lunar', 'crimson', 'neon', 'velvet', 'arctic'];
+      const nouns = ['fox', 'harbor', 'echo', 'nebula', 'garden', 'circuit', 'meadow', 'falcon', 'lagoon', 'ember'];
+      const a = adjectives[Math.floor(Math.random() * adjectives.length)];
+      const n = nouns[Math.floor(Math.random() * nouns.length)];
+      setNewRoomName(`${a}-${n}-${Math.floor(100 + Math.random() * 900)}`);
+      setNewRoomPin(String(Math.floor(1000 + Math.random() * 9000)));
+      setShowCreate(true);
+  }, []);
+
+  // Keyboard shortcuts: ⌘/Ctrl+K focus search, ⌘/Ctrl+N open create, Esc
+  // closes the create form (or clears search if the form is already closed).
+  const showCreateRef = useRef(showCreate);
+  useEffect(() => { showCreateRef.current = showCreate; }, [showCreate]);
+  const queryRef = useRef(query);
+  useEffect(() => { queryRef.current = query; }, [query]);
+  useEffect(() => {
+      const onKey = (e: KeyboardEvent) => {
+          const mod = e.metaKey || e.ctrlKey;
+          if (mod && e.key.toLowerCase() === 'k') {
+              e.preventDefault();
+              searchRef.current?.focus();
+              searchRef.current?.select();
+          } else if (mod && e.key.toLowerCase() === 'n') {
+              e.preventDefault();
+              setShowCreate(true);
+          } else if (e.key === 'Escape') {
+              if (showCreateRef.current) setShowCreate(false);
+              else if (queryRef.current) setQuery('');
+          }
+      };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const handleConfirmDeleteRoom = async () => {
     if (!roomToDelete) return;
     setIsDeletingRoom(true);
     const { key, isOwner } = roomToDelete;
     try {
         if (!isOwner) {
-             // "Remove from history": drop only our own membership row.
+             // "Leave room": drop only our own membership row.
              await supabase.from('subscribers').delete().eq('room_key', key).eq('uid', user.uid);
         } else {
              // ORDER MATTERS under RLS: delete messages and the room row WHILE we
@@ -417,6 +521,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             const raw = localStorage.getItem(`roomOrder_${user.uid}`);
             if (raw) localStorage.setItem(`roomOrder_${user.uid}`, JSON.stringify((JSON.parse(raw) as string[]).filter(k => k !== key)));
         } catch { /* ignore */ }
+        // Also drop it from favorites so a stale star can't linger.
+        setFavorites(prev => {
+            if (!prev.has(key)) return prev;
+            const next = new Set(prev); next.delete(key);
+            try { localStorage.setItem(`roomFav_${user.uid}`, JSON.stringify([...next])); } catch { /* ignore */ }
+            return next;
+        });
     } catch (e: any) {
         alert('Operation failed: ' + (e.message || "Unknown error"));
     } finally {
@@ -495,6 +606,27 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
   const activeRoom = activeDragKey ? rooms.find((r) => r.room_key === activeDragKey) ?? null : null;
 
+  // Drag is only enabled when the displayed order == the saved canonical order:
+  // no search, no filter chip, no pinned favorites. Otherwise we render static
+  // cards so a drag can't desync from what's on screen.
+  const dragEnabled = query.trim() === '' && filter === 'all' && favorites.size === 0;
+
+  const displayRooms = useMemo(() => {
+    if (dragEnabled) return rooms;
+    const q = query.trim().toLowerCase();
+    const filtered = rooms.filter((r) => {
+      if (q && !r.room_name.toLowerCase().includes(q)) return false;
+      if (filter === 'owned' && r.created_by !== user.uid) return false;
+      if (filter === 'joined' && r.created_by === user.uid) return false;
+      if (filter === 'unread' && !unreadRooms.has(r.room_key)) return false;
+      return true;
+    });
+    // Favorites float to the top, preserving relative order within each group.
+    const favs = filtered.filter((r) => favorites.has(r.room_key));
+    const rest = filtered.filter((r) => !favorites.has(r.room_key));
+    return [...favs, ...rest];
+  }, [dragEnabled, rooms, query, filter, favorites, unreadRooms, user.uid]);
+
   return (
     <>
     {roomToDelete && (
@@ -517,10 +649,15 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                         <p className="text-xs text-slate-500 dark:text-slate-400">Welcome back to your secure space</p>
                     </div>
                 </div>
-                <button onClick={onLogout} aria-label="Logout" className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm">
-                    <LogOut size={16} />
-                    <span className="hidden sm:inline">Logout</span>
-                </button>
+                <div className="flex items-center gap-2">
+                    <button onClick={toggleTheme} aria-label="Toggle light/dark theme" title="Toggle light/dark" className="p-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm">
+                        {isDark ? <Sun size={16} /> : <Moon size={16} />}
+                    </button>
+                    <button onClick={onLogout} aria-label="Logout" className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm">
+                        <LogOut size={16} />
+                        <span className="hidden sm:inline">Logout</span>
+                    </button>
+                </div>
             </header>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -598,7 +735,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         <h3 className="text-lg font-bold text-slate-800 dark:text-white">Join or Create Room</h3>
                                         <p className="text-sm text-slate-500 dark:text-slate-400">Enter a room name and PIN to connect</p>
                                     </div>
-                                    <button onClick={() => setShowCreate(true)} className="w-full sm:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2"><LogIn size={20} />Enter / Create Room</button>
+                                    <div className="w-full sm:w-auto flex gap-2">
+                                        <button onClick={handleQuickChat} title="Generate a random room name + PIN" className="flex-1 sm:flex-none px-4 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl transition-all flex items-center justify-center gap-2"><Zap size={18} className="text-amber-500" />Quick chat</button>
+                                        <button onClick={() => setShowCreate(true)} className="flex-1 sm:flex-none px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2"><LogIn size={20} />Enter / Create</button>
+                                    </div>
                                 </div>
                             ) : (
                                 <form onSubmit={handleCreateOrJoinRoom} className="space-y-4 animate-in fade-in slide-in-from-top-2">
@@ -616,9 +756,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                             <input type="text" value={newRoomPin} onChange={e => setNewRoomPin(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Secret Key" required/>
                                         </div>
                                     </div>
-                                    <div className="flex justify-between items-center pt-2">
+                                    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                                         <p className="text-xs text-slate-500 italic">If the room exists, you will join it. Otherwise, a new room will be created.</p>
-                                        <button type="submit" disabled={creating} className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2">{creating ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}Enter Room</button>
+                                        <div className="flex gap-2">
+                                            <button type="button" onClick={handleQuickChat} title="Generate a random room name + PIN" className="px-4 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl transition flex items-center gap-2"><Zap size={16} className="text-amber-500" />Random</button>
+                                            <button type="submit" disabled={creating} className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2">{creating ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}Enter Room</button>
+                                        </div>
                                     </div>
                                 </form>
                             )}
@@ -626,20 +769,67 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                     </div>
 
                     <div>
-                        <div className="flex items-baseline justify-between mb-4 px-1 gap-3">
-                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Your Rooms</h3>
-                            {rooms.length > 1 && (
-                                <span className="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">Drag to reorder · long-press on touch</span>
+                        <div className="flex flex-col gap-3 mb-4 px-1">
+                            <div className="flex items-baseline justify-between gap-3">
+                                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Your Rooms</h3>
+                                {dragEnabled && rooms.length > 1 && (
+                                    <span className="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">Drag to reorder · long-press on touch</span>
+                                )}
+                            </div>
+                            {rooms.length > 0 && (
+                                <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                                    <div className="relative flex-1 min-w-0">
+                                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                        <input
+                                            ref={searchRef}
+                                            type="text"
+                                            value={query}
+                                            onChange={(e) => setQuery(e.target.value)}
+                                            placeholder="Search rooms…"
+                                            aria-label="Search rooms"
+                                            className="w-full pl-9 pr-9 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none transition"
+                                        />
+                                        {query && (
+                                            <button onClick={() => { setQuery(''); searchRef.current?.focus(); }} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                                <X size={14} />
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {(['all', 'owned', 'joined', 'unread'] as const).map((key) => (
+                                            <button
+                                                key={key}
+                                                onClick={() => setFilter(key)}
+                                                aria-pressed={filter === key}
+                                                className={`shrink-0 px-3 py-1.5 text-xs font-bold rounded-lg border capitalize transition ${filter === key ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}
+                                            >
+                                                {key}{key === 'unread' && unreadRooms.size > 0 ? ` (${unreadRooms.size})` : ''}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
                             )}
                         </div>
                         {loadingRooms ? (
                             <div className="flex justify-center py-12"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
                         ) : rooms.length === 0 ? (
-                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800">
-                                <p className="text-slate-500 dark:text-slate-400">You haven't created or joined any rooms yet.</p>
-                                <button onClick={() => setShowCreate(true)} className="text-blue-500 font-semibold mt-2 hover:underline">Create or Join one now</button>
+                            <div className="bg-gradient-to-br from-blue-50 to-slate-50 dark:from-slate-900 dark:to-slate-950 rounded-2xl p-8 sm:p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800">
+                                <div className="mx-auto w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center mb-4">
+                                    <LogIn className="text-blue-500" size={26} />
+                                </div>
+                                <h4 className="text-lg font-bold text-slate-800 dark:text-slate-100">Welcome to your dashboard</h4>
+                                <p className="text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto text-sm">Create a private room or join one with its name + PIN. Share the PIN to invite others — only people with it can read along.</p>
+                                <div className="flex flex-col sm:flex-row gap-2 justify-center mt-5">
+                                    <button onClick={handleQuickChat} className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold flex items-center justify-center gap-2 transition"><Zap size={18} className="text-amber-500" />Quick chat</button>
+                                    <button onClick={() => setShowCreate(true)} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition"><LogIn size={18} />Create or Join</button>
+                                </div>
                             </div>
-                        ) : (
+                        ) : displayRooms.length === 0 ? (
+                            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-10 text-center border-2 border-dashed border-slate-200 dark:border-slate-800">
+                                <p className="text-slate-500 dark:text-slate-400">No rooms match your search or filter.</p>
+                                <button onClick={() => { setQuery(''); setFilter('all'); }} className="text-blue-500 font-semibold mt-2 hover:underline">Clear filters</button>
+                            </div>
+                        ) : dragEnabled ? (
                             <DndContext
                                 sensors={sensors}
                                 collisionDetection={closestCenter}
@@ -656,9 +846,11 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                                 userUid={user.uid}
                                                 unread={unreadRooms.has(room.room_key)}
                                                 revealed={revealedPins.has(room.room_key)}
+                                                isFavorite={favorites.has(room.room_key)}
                                                 onJoin={handleJoin}
                                                 onRequestDelete={onRequestDeleteRoom}
                                                 onTogglePin={togglePinVisibility}
+                                                onToggleFav={toggleFavorite}
                                             />
                                         ))}
                                     </div>
@@ -671,14 +863,33 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                                 userUid={user.uid}
                                                 unread={unreadRooms.has(activeRoom.room_key)}
                                                 revealed={revealedPins.has(activeRoom.room_key)}
+                                                isFavorite={favorites.has(activeRoom.room_key)}
                                                 onJoin={() => {}}
                                                 onRequestDelete={() => {}}
                                                 onTogglePin={() => {}}
+                                                onToggleFav={() => {}}
                                             />
                                         </div>
                                     ) : null}
                                 </DragOverlay>
                             </DndContext>
+                        ) : (
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+                                {displayRooms.map((room) => (
+                                    <StaticRoomCard
+                                        key={room.room_key}
+                                        room={room}
+                                        userUid={user.uid}
+                                        unread={unreadRooms.has(room.room_key)}
+                                        revealed={revealedPins.has(room.room_key)}
+                                        isFavorite={favorites.has(room.room_key)}
+                                        onJoin={handleJoin}
+                                        onRequestDelete={onRequestDeleteRoom}
+                                        onTogglePin={togglePinVisibility}
+                                        onToggleFav={toggleFavorite}
+                                    />
+                                ))}
+                            </div>
                         )}
                     </div>
                 </div>
