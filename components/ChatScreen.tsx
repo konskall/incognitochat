@@ -324,9 +324,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       if (!config.roomKey || !user) return;
       if (action === 'joined') return;
 
-      // Only skip notifying members who are ACTIVELY in the room right now;
-      // backgrounded/idle members stay in `participants` but should still get a
-      // push/email since they aren't looking at the chat.
+      // Emails only: skip members who are ACTIVELY in the room right now (no SW
+      // can dismiss an email, and presence is good enough for the 30-min digest).
       const excludeUids = participants.filter(p => p.status === 'active').map(p => p.uid);
       const pushTitle = action === 'deleted'
           ? `Room "${config.roomName}" was deleted`
@@ -353,7 +352,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                   title: pushTitle,
                   body: action === 'deleted' ? details : `${config.username}: ${details}`,
                   url: window.location.href,
-                  excludeUids,
+                  // Deliberately NO presence-based excludeUids for push (the
+                  // server still excludes the sender). Presence lags: a member
+                  // who just closed/backgrounded the app can still read as
+                  // 'active' and would be wrongly skipped — a push silently
+                  // lost. Instead the push is ALWAYS sent, and the receiver's
+                  // own tab dismisses it only when it is visible AND viewing
+                  // this room right now (sw.js INCO_PUSH_SHOWN -> swBridge),
+                  // which is the receiver's REAL state, not a stale broadcast.
               },
           }),
       ]);
