@@ -1,6 +1,6 @@
 // Incognito Chat service worker — offline app shell + Web Push.
 
-const CACHE = 'incognito-cache-v1';
+const CACHE = 'incognito-cache-v2';
 // Resolve the deploy base (e.g. "/incognitochat/") from the SW's own location so
 // this works identically on GitHub Pages and in local dev.
 const BASE = self.location.pathname.replace(/sw\.js$/, '');
@@ -114,14 +114,14 @@ self.addEventListener('push', (event) => {
   };
 
   // Suppress ONLY on a live, affirmative answer; otherwise ALWAYS show.
-  // We ask every open tab (MessageChannel) whether it is visible AND currently
-  // viewing this push's room. Only a running page can answer — a closed PWA,
-  // suspended tab or zombie client entry simply doesn't reply and the short
-  // timeout falls through to showNotification, so a notification can never be
-  // lost to a stale visibility reading. Asking BEFORE showing matters on iOS:
-  // show-then-close still flashed the OS banner while the user was reading that
-  // exact room. After showing we still broadcast INCO_PUSH_SHOWN so a tab that
-  // became visible mid-flight can dismiss the stale banner (belt & suspenders).
+  // We ask every open tab whether it is visible AND currently viewing this
+  // push's room. Only a running page can answer — a closed PWA, suspended tab
+  // or zombie client entry simply doesn't reply and the short timeout falls
+  // through to showNotification, so a notification can never be lost to a stale
+  // visibility reading. Asking BEFORE showing matters on iOS: show-then-close
+  // still flashed the OS banner while the user was reading that exact room.
+  // After showing we still broadcast INCO_PUSH_SHOWN so a tab that became
+  // visible mid-flight can dismiss the stale banner (belt & suspenders).
   event.waitUntil(
     (async () => {
       const viewing = await anyLiveClientViewingRoom(data.roomKey);
@@ -140,10 +140,33 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Ask every window client whether it is visible AND viewing `roomKey` right
-// now (utils/swBridge.ts answers INCO_QUERY_ACTIVE_ROOM). Resolves true on the
-// first affirmative answer; false once all clients answered otherwise or after
-// a short timeout — no answer means no suppression, we err toward notifying.
+// --- "Is anyone looking at this room?" query, WITHOUT MessagePort transfer ---
+// The first version transferred a MessageChannel port with the query, but
+// MessagePort transfer from a service worker to a window has a history of
+// silently failing on iOS/WebKit — the page never saw the port, the query timed
+// out and the banner showed anyway. Plain postMessage in BOTH directions is
+// reliable everywhere: the SW broadcasts INCO_QUERY_ACTIVE_ROOM {qid}, the page
+// answers with INCO_ANSWER_ACTIVE_ROOM {qid, visible, activeRoomKey} via
+// serviceWorker.postMessage, and we correlate by qid below.
+let querySeq = 0;
+const pendingRoomQueries = new Map(); // qid -> { roomKey, remaining, finish }
+
+self.addEventListener('message', (event) => {
+  const d = event.data || {};
+  if (d.type !== 'INCO_ANSWER_ACTIVE_ROOM') return;
+  const q = pendingRoomQueries.get(d.qid);
+  if (!q) return;
+  if (d.visible === true && d.activeRoomKey === q.roomKey) {
+    q.finish(true);
+    return;
+  }
+  q.remaining -= 1;
+  if (q.remaining <= 0) q.finish(false);
+});
+
+// Resolves true on the first live "I'm visible and on this room" answer; false
+// once all clients answered otherwise or after a short timeout — no answer
+// means no suppression, we err toward notifying.
 function anyLiveClientViewingRoom(roomKey) {
   if (!roomKey) return Promise.resolve(false);
   return clients
@@ -151,32 +174,27 @@ function anyLiveClientViewingRoom(roomKey) {
     .then((wins) => {
       if (wins.length === 0) return false;
       return new Promise((resolve) => {
-        let remaining = wins.length;
+        const qid = `q${++querySeq}`;
         let done = false;
         const finish = (val) => {
           if (done) return;
           done = true;
           clearTimeout(timer);
+          pendingRoomQueries.delete(qid);
           resolve(val);
         };
-        const timer = setTimeout(() => finish(false), 600);
+        const timer = setTimeout(() => finish(false), 700);
+        pendingRoomQueries.set(qid, { roomKey, remaining: wins.length, finish });
 
         wins.forEach((client) => {
-          const channel = new MessageChannel();
-          channel.port1.onmessage = (e) => {
-            const d = e.data || {};
-            if (d.visible === true && d.activeRoomKey === roomKey) {
-              finish(true);
-              return;
-            }
-            remaining -= 1;
-            if (remaining <= 0) finish(false);
-          };
           try {
-            client.postMessage({ type: 'INCO_QUERY_ACTIVE_ROOM' }, [channel.port2]);
+            client.postMessage({ type: 'INCO_QUERY_ACTIVE_ROOM', qid });
           } catch {
-            remaining -= 1;
-            if (remaining <= 0) finish(false);
+            const q = pendingRoomQueries.get(qid);
+            if (q) {
+              q.remaining -= 1;
+              if (q.remaining <= 0) q.finish(false);
+            }
           }
         });
       });

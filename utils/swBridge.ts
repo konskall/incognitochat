@@ -1,14 +1,15 @@
 // Bridge between the page and the Web Push service worker (public/sw.js).
 //
 // Two messages:
-// 1. INCO_QUERY_ACTIVE_ROOM — the SW asks (via MessageChannel, BEFORE showing a
-//    push notification) whether this tab is visible AND viewing the push's
-//    room. We answer with { visible, activeRoomKey }; an affirmative answer is
-//    the ONLY thing that suppresses the notification. A closed/suspended tab
-//    can't answer, so the SW's timeout falls through to showing — reliability
-//    is never hostage to a stale visibility reading. Asking first (instead of
-//    show-then-close) is what keeps the iOS banner from flashing while you're
-//    reading that exact room.
+// 1. INCO_QUERY_ACTIVE_ROOM {qid} — the SW asks (BEFORE showing a push
+//    notification) whether this tab is visible AND viewing the push's room. We
+//    answer INCO_ANSWER_ACTIVE_ROOM {qid, visible, activeRoomKey} with a PLAIN
+//    postMessage back to the service worker — deliberately no MessageChannel:
+//    transferring a MessagePort from a SW to a window silently fails on some
+//    iOS/WebKit versions, which made the query time out and the banner show
+//    anyway. An affirmative answer is the ONLY thing that suppresses the
+//    notification; a closed/suspended tab can't answer, so the SW's timeout
+//    falls through to showing.
 // 2. INCO_PUSH_SHOWN — after the SW shows a notification, it tells open tabs.
 //    If THIS tab is visible and on that room (e.g. it became visible while the
 //    push was in flight), we close the now-stale notification.
@@ -27,12 +28,19 @@ if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     if (!data) return;
 
     if (data.type === 'INCO_QUERY_ACTIVE_ROOM') {
-      const port = event.ports && event.ports[0];
-      if (!port) return;
-      port.postMessage({
+      const answer = {
+        type: 'INCO_ANSWER_ACTIVE_ROOM',
+        qid: (data as { qid?: string }).qid,
         visible: document.visibilityState === 'visible',
         activeRoomKey,
-      });
+      };
+      // Reply to the asking SW; fall back to the controller (same SW in practice).
+      const src = event.source as ServiceWorker | null;
+      if (src && typeof src.postMessage === 'function') {
+        src.postMessage(answer);
+      } else if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage(answer);
+      }
       return;
     }
 
