@@ -95,11 +95,17 @@ self.addEventListener('push', (event) => {
   }
 
   const title = data.title || 'New Message';
+  const tag = data.roomKey ? `room:${data.roomKey}` : undefined;
   const options = {
     body: data.body || 'You have a new message',
     icon: BASE + 'favicon-96x96.png',
     badge: BASE + 'favicon-96x96.png',
     vibrate: [100, 50, 100],
+    // One stacked notification per room (collapses a burst into one) and a
+    // stable handle the page can use to close it. renotify still alerts on each
+    // new message instead of updating silently.
+    tag,
+    renotify: true,
     data: {
       url: data.url || BASE,
       roomKey: data.roomKey,
@@ -107,68 +113,32 @@ self.addEventListener('push', (event) => {
     actions: [{ action: 'open', title: 'Open Chat' }],
   };
 
+  // ALWAYS show — reliability first. Deciding whether to show based on client
+  // visibility INSIDE the SW proved fragile: a backgrounded/closed PWA could be
+  // misreported as "visible" and the notification silently suppressed, killing
+  // notifications. The Push API's userVisibleOnly contract wants a notification
+  // per push anyway. Two things keep it from bothering you about the room you're
+  // actively reading, without ever risking a missed notification:
+  //   1. send-push already excludes members who are ACTIVE in the room (their tab
+  //      is visible), so a push for the room you're looking at usually isn't even
+  //      sent to you — while OTHER rooms still are.
+  //   2. Safety net for any presence-sync gap: we tell open tabs we just showed
+  //      this; a VISIBLE tab that is on this exact room closes it (swBridge.ts).
+  //      If there's no such tab (backgrounded/closed), the notification stays.
   event.waitUntil(
     (async () => {
-      const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-      const visible = wins.filter((c) => c.visibilityState === 'visible' || c.focused);
-
-      // App fully backgrounded/closed → always notify.
-      if (visible.length === 0) {
-        await self.registration.showNotification(title, options);
-        return;
-      }
-
-      // App is open & visible. Suppress the OS notification ONLY if a visible tab
-      // is already viewing THIS room — otherwise notify, so activity in OTHER
-      // rooms still reaches the user while the app is open. We don't know each
-      // tab's room, so ask them (utils/swBridge.ts answers). The userVisibleOnly
-      // contract lets us skip showNotification while a window is visible.
-      const sameRoomOpen = await anyVisibleClientInRoom(visible, data.roomKey);
-      if (sameRoomOpen) return;
-
       await self.registration.showNotification(title, options);
+      try {
+        const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const c of wins) {
+          c.postMessage({ type: 'INCO_PUSH_SHOWN', roomKey: data.roomKey || null, tag });
+        }
+      } catch {
+        // Best-effort only; the notification is already shown.
+      }
     })()
   );
 });
-
-// Ask each visible tab which room it's showing and resolve true as soon as one
-// reports it's on `roomKey` (and visible). Resolves false once every tab has
-// answered otherwise, or after a short timeout (a visible/active page answers
-// almost instantly; the timeout just guards against a throttled/unresponsive
-// one — in which case we err toward notifying).
-function anyVisibleClientInRoom(clientList, roomKey) {
-  if (!roomKey || clientList.length === 0) return Promise.resolve(false);
-  return new Promise((resolve) => {
-    let remaining = clientList.length;
-    let finished = false;
-    const finish = (val) => {
-      if (finished) return;
-      finished = true;
-      clearTimeout(timer);
-      resolve(val);
-    };
-    const timer = setTimeout(() => finish(false), 800);
-
-    clientList.forEach((client) => {
-      const channel = new MessageChannel();
-      channel.port1.onmessage = (e) => {
-        const d = e.data || {};
-        if (d.visible && d.activeRoomKey === roomKey) {
-          finish(true);
-          return;
-        }
-        remaining -= 1;
-        if (remaining <= 0) finish(false);
-      };
-      try {
-        client.postMessage({ type: 'INCO_QUERY_ACTIVE_ROOM' }, [channel.port2]);
-      } catch {
-        remaining -= 1;
-        if (remaining <= 0) finish(false);
-      }
-    });
-  });
-}
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
