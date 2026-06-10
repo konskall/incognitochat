@@ -113,20 +113,20 @@ self.addEventListener('push', (event) => {
     actions: [{ action: 'open', title: 'Open Chat' }],
   };
 
-  // ALWAYS show — reliability first. Deciding whether to show based on client
-  // visibility INSIDE the SW proved fragile: a backgrounded/closed PWA could be
-  // misreported as "visible" and the notification silently suppressed, killing
-  // notifications. The Push API's userVisibleOnly contract wants a notification
-  // per push anyway. Two things keep it from bothering you about the room you're
-  // actively reading, without ever risking a missed notification:
-  //   1. send-push already excludes members who are ACTIVE in the room (their tab
-  //      is visible), so a push for the room you're looking at usually isn't even
-  //      sent to you — while OTHER rooms still are.
-  //   2. Safety net for any presence-sync gap: we tell open tabs we just showed
-  //      this; a VISIBLE tab that is on this exact room closes it (swBridge.ts).
-  //      If there's no such tab (backgrounded/closed), the notification stays.
+  // Suppress ONLY on a live, affirmative answer; otherwise ALWAYS show.
+  // We ask every open tab (MessageChannel) whether it is visible AND currently
+  // viewing this push's room. Only a running page can answer — a closed PWA,
+  // suspended tab or zombie client entry simply doesn't reply and the short
+  // timeout falls through to showNotification, so a notification can never be
+  // lost to a stale visibility reading. Asking BEFORE showing matters on iOS:
+  // show-then-close still flashed the OS banner while the user was reading that
+  // exact room. After showing we still broadcast INCO_PUSH_SHOWN so a tab that
+  // became visible mid-flight can dismiss the stale banner (belt & suspenders).
   event.waitUntil(
     (async () => {
+      const viewing = await anyLiveClientViewingRoom(data.roomKey);
+      if (viewing) return;
+
       await self.registration.showNotification(title, options);
       try {
         const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -139,6 +139,50 @@ self.addEventListener('push', (event) => {
     })()
   );
 });
+
+// Ask every window client whether it is visible AND viewing `roomKey` right
+// now (utils/swBridge.ts answers INCO_QUERY_ACTIVE_ROOM). Resolves true on the
+// first affirmative answer; false once all clients answered otherwise or after
+// a short timeout — no answer means no suppression, we err toward notifying.
+function anyLiveClientViewingRoom(roomKey) {
+  if (!roomKey) return Promise.resolve(false);
+  return clients
+    .matchAll({ type: 'window', includeUncontrolled: true })
+    .then((wins) => {
+      if (wins.length === 0) return false;
+      return new Promise((resolve) => {
+        let remaining = wins.length;
+        let done = false;
+        const finish = (val) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve(val);
+        };
+        const timer = setTimeout(() => finish(false), 600);
+
+        wins.forEach((client) => {
+          const channel = new MessageChannel();
+          channel.port1.onmessage = (e) => {
+            const d = e.data || {};
+            if (d.visible === true && d.activeRoomKey === roomKey) {
+              finish(true);
+              return;
+            }
+            remaining -= 1;
+            if (remaining <= 0) finish(false);
+          };
+          try {
+            client.postMessage({ type: 'INCO_QUERY_ACTIVE_ROOM' }, [channel.port2]);
+          } catch {
+            remaining -= 1;
+            if (remaining <= 0) finish(false);
+          }
+        });
+      });
+    })
+    .catch(() => false);
+}
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
