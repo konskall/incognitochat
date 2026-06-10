@@ -99,6 +99,11 @@ Deno.serve(async (req: Request) => {
 
     const exclude = new Set<string>([senderUid, ...(excludeUids as string[])]);
     const targets = (subs ?? []).filter((s) => !exclude.has(s.user_id) && !muted.has(s.user_id));
+    // Structured log so delivery is diagnosable from the dashboard: how many
+    // subscriptions the room has, how many were excluded/muted, how many remain.
+    console.log(
+      `send-push room=${roomKey} subs=${subs?.length ?? 0} excluded=${exclude.size} muted=${muted.size} targets=${targets.length}`,
+    );
     if (targets.length === 0) return json({ sent: 0 }, 200);
 
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -139,6 +144,8 @@ Deno.serve(async (req: Request) => {
         }
       }),
     );
+
+    console.log(`send-push room=${roomKey} sent=${sent} pruned=${staleIds.length}`);
 
     // Prune stale subscriptions.
     if (staleIds.length > 0) {
