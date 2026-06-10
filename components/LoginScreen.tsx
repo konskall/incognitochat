@@ -49,6 +49,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
   // Room History State
   const [roomHistory, setRoomHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const historyRef = useRef<HTMLDivElement>(null);
   
   // Theme State - Default to Dark Mode
@@ -122,6 +123,14 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
       if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current);
   }, []);
 
+  // Esc closes the clear-history confirmation.
+  useEffect(() => {
+      if (!showClearConfirm) return;
+      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowClearConfirm(false); };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+  }, [showClearConfirm]);
+
   const toggleTheme = () => {
     beginThemeTransition();
     const newTheme = !isDarkMode;
@@ -159,14 +168,14 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
       localStorage.setItem('chatRoomHistory', JSON.stringify(newHistory));
   };
 
-  const clearHistory = () => {
-      // Custom confirmation could be added here too, but confirm() is acceptable for destructive actions
-      if (window.confirm('Clear all visited rooms from history?')) {
-          setRoomHistory([]);
-          localStorage.removeItem('chatRoomHistory');
-          setShowHistory(false);
-          showToast('History cleared', 'info');
-      }
+  const clearHistory = () => setShowClearConfirm(true);
+
+  const confirmClearHistory = () => {
+      setRoomHistory([]);
+      localStorage.removeItem('chatRoomHistory');
+      setShowHistory(false);
+      setShowClearConfirm(false);
+      showToast('History cleared', 'info');
   };
 
   // --- Notification System ---
@@ -317,12 +326,41 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
             
             <p className="text-sm font-semibold pr-2">{notification.message}</p>
             
-            <button 
+            <button
                 onClick={closeToast}
                 className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
             >
                 <X size={18} />
             </button>
+        </div>
+      )}
+
+      {/* Clear-history confirmation (replaces the native confirm dialog) */}
+      {showClearConfirm && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-label="Clear room history"
+          onClick={() => setShowClearConfirm(false)}
+          className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+        >
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-2.5 mb-2">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-500/10 text-red-500">
+                <Trash2 size={18} />
+              </span>
+              <h3 className="font-bold text-slate-800 dark:text-white">Clear room history?</h3>
+            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+              This removes {roomHistory.length} saved room name{roomHistory.length === 1 ? '' : 's'} from this device. It won't delete the rooms themselves.
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setShowClearConfirm(false)} className={`flex-1 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition ${focusRing}`}>Cancel</button>
+              <button type="button" onClick={confirmClearHistory} autoFocus className={`flex-1 py-2.5 bg-red-500 hover:bg-red-600 text-white text-sm font-bold rounded-xl transition flex items-center justify-center gap-2 ${focusRing}`}>
+                <Trash2 size={16} />Clear
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
