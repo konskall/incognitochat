@@ -8,8 +8,8 @@ import {
   LogOut, Trash2, ArrowRight, Loader2,
   Upload, RotateCcw,
   RefreshCw, Save, X, Edit2, Mail, LogIn, Link as LinkIcon, AlertCircle, Eye, EyeOff, GripVertical,
-  Search, Star, Sun, Moon, Zap, MoreVertical, Bell, BellOff, Archive, ArchiveRestore, Clock, Pencil,
-  Check, CheckSquare,
+  Search, Star, Sun, Moon, MoreVertical, Bell, BellOff, Archive, ArchiveRestore, Clock, Pencil,
+  Check, CheckSquare, MessageSquarePlus, Shuffle,
   type LucideIcon
 } from 'lucide-react';
 import {
@@ -352,6 +352,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const [settings, setSettings] = useState<Map<string, RoomSetting>>(new Map());
   const settingsRef = useRef(settings);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
+  const overviewRef = useRef(overview);
+  useEffect(() => { overviewRef.current = overview; }, [overview]);
 
   // Search / filter / favorites (client-side).
   const [query, setQuery] = useState('');
@@ -376,7 +378,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       if (currentRooms.length === 0) { setOverview(new Map()); return; }
       const items = currentRooms.map((r) => {
           const stored = localStorage.getItem(`lastRead_${r.room_key}`);
-          return { room_key: r.room_key, since: stored ? new Date(parseInt(stored)).toISOString() : null };
+          const ms = stored ? parseInt(stored, 10) : NaN;
+          // Guard against a corrupt/non-numeric value (a bad parse would otherwise
+          // become ~1970 and flag the room's whole history as unread).
+          return { room_key: r.room_key, since: Number.isFinite(ms) ? new Date(ms).toISOString() : null };
       });
       try {
           const { data, error } = await supabase.rpc('room_overview', { p_items: items });
@@ -617,11 +622,19 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   };
 
   const handleJoin = useCallback((room: Room) => {
-    localStorage.setItem(`lastRead_${room.room_key}`, Date.now().toString());
+    // Mark read up to the newest known SERVER message time — NEVER client
+    // Date.now() (client clock skew was leaving phantom "unread" after reading).
+    // ChatScreen refines this to the exact latest once messages load.
+    const cur = overviewRef.current.get(room.room_key);
+    const serverMs = cur?.lastAt ? new Date(cur.lastAt).getTime() : NaN;
+    if (Number.isFinite(serverMs)) {
+      const existing = parseInt(localStorage.getItem(`lastRead_${room.room_key}`) || '0', 10);
+      if (!(existing >= serverMs)) localStorage.setItem(`lastRead_${room.room_key}`, String(serverMs));
+    }
     setOverview(prev => {
-      const cur = prev.get(room.room_key);
-      if (!cur || cur.unread === 0) return prev;
-      const next = new Map(prev); next.set(room.room_key, { ...cur, unread: 0 }); return next;
+      const c = prev.get(room.room_key);
+      if (!c || c.unread === 0) return prev;
+      const next = new Map(prev); next.set(room.room_key, { ...c, unread: 0 }); return next;
     });
     onJoinRoom({ username: displayName, avatarURL: avatarUrl, roomName: room.room_name, pin: room.pin, roomKey: room.room_key });
   }, [displayName, avatarUrl, onJoinRoom]);
@@ -674,13 +687,15 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   }, []);
 
   const toggleTheme = useCallback(() => {
-      setIsDark(prev => {
-          const next = !prev;
-          document.documentElement.classList.toggle('dark', next);
-          try { localStorage.setItem('theme', next ? 'dark' : 'light'); } catch { /* ignore */ }
-          document.querySelector("meta[name='theme-color']")?.setAttribute('content', next ? '#020617' : '#f8fafc');
-          return next;
-      });
+      const root = document.documentElement;
+      const next = !root.classList.contains('dark');
+      // Enable the global color transition just for this switch, then drop it.
+      root.classList.add('theme-anim');
+      root.classList.toggle('dark', next);
+      try { localStorage.setItem('theme', next ? 'dark' : 'light'); } catch { /* ignore */ }
+      document.querySelector("meta[name='theme-color']")?.setAttribute('content', next ? '#020617' : '#f8fafc');
+      setIsDark(next);
+      window.setTimeout(() => root.classList.remove('theme-anim'), 450);
   }, []);
 
   const fillRandomRoom = useCallback(() => {
@@ -846,7 +861,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                    const { error: ttlErr } = await supabase.from('rooms').update({ auto_delete_seconds: 86400 }).eq('room_key', room.room_key);
                    if (ttlErr) console.warn('Could not set ephemeral TTL:', ttlErr);
                }
-               localStorage.setItem(`lastRead_${room.room_key}`, Date.now().toString());
+               // No client-time lastRead write here: ChatScreen records the newest
+               // SERVER message time once in-room, and the dashboard baselines an
+               // unseen room to its latest server message — both skew-free.
                setNewRoomName('');
                setNewRoomPin('');
                setEphemeral(false);
@@ -1093,7 +1110,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         <p className="text-sm text-slate-500 dark:text-slate-400">Enter a room name and PIN to connect</p>
                                     </div>
                                     <div className="w-full sm:w-auto flex gap-2">
-                                        <button onClick={handleQuickChat} title="Generate a random room name + PIN" className="flex-1 sm:flex-none px-4 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl transition-all flex items-center justify-center gap-2"><Zap size={18} className="text-amber-500" />Quick chat</button>
+                                        <button onClick={handleQuickChat} title="Generate a random room name + PIN" className="flex-1 sm:flex-none px-4 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl transition-all flex items-center justify-center gap-2"><MessageSquarePlus size={18} className="text-blue-500" />Quick chat</button>
                                         <button onClick={() => setShowCreate(true)} className="flex-1 sm:flex-none px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2"><LogIn size={20} />Enter / Create</button>
                                     </div>
                                 </div>
@@ -1120,7 +1137,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                     <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                                         <p className="text-xs text-slate-500 italic">If the room exists, you will join it. Otherwise, a new room will be created.</p>
                                         <div className="flex gap-2">
-                                            <button type="button" onClick={fillRandomRoom} title="Generate a random room name + PIN" className="px-4 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl transition flex items-center gap-2"><Zap size={16} className="text-amber-500" />Random</button>
+                                            <button type="button" onClick={fillRandomRoom} title="Generate a random room name + PIN" className="px-4 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl transition flex items-center gap-2"><Shuffle size={16} className="text-slate-500 dark:text-slate-400" />Random</button>
                                             <button type="submit" disabled={creating} className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2">{creating ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}Enter Room</button>
                                         </div>
                                     </div>
@@ -1191,7 +1208,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 <h4 className="text-lg font-bold text-slate-800 dark:text-slate-100">Welcome to your dashboard</h4>
                                 <p className="text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto text-sm">Create a private room or join one with its name + PIN. Share the PIN to invite others — only people with it can read along.</p>
                                 <div className="flex flex-col sm:flex-row gap-2 justify-center mt-5 flex-wrap">
-                                    <button onClick={handleQuickChat} className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold flex items-center justify-center gap-2 transition"><Zap size={18} className="text-amber-500" />Quick chat</button>
+                                    <button onClick={handleQuickChat} className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold flex items-center justify-center gap-2 transition"><MessageSquarePlus size={18} className="text-blue-500" />Quick chat</button>
                                     <button onClick={handleEphemeral} title="Random room that self-deletes 24h after the last message" className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold flex items-center justify-center gap-2 transition"><Clock size={18} className="text-amber-500" />Ephemeral 24h</button>
                                     <button onClick={() => setShowCreate(true)} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition"><LogIn size={18} />Create or Join</button>
                                 </div>

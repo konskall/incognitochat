@@ -22,6 +22,19 @@ html, body {
   overscroll-behavior-y: none;
 }
 
+/* Smooth dark <-> light switch. Applied only for ~400ms while toggling (the
+   `.theme-anim` class is added to <html> by the toggle, then removed) so we get
+   a gentle cross-fade of colors without paying a transition cost on every paint. */
+html.theme-anim,
+html.theme-anim *,
+html.theme-anim *::before,
+html.theme-anim *::after {
+  transition: background-color 0.35s ease, border-color 0.35s ease, color 0.3s ease, fill 0.3s ease, stroke 0.3s ease !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.theme-anim, html.theme-anim *, html.theme-anim *::before, html.theme-anim *::after { transition: none !important; }
+}
+
 /* Gentle continuous float for hero accents (logo). Paused for reduce-motion. */
 @keyframes ic-float {
   0%, 100% { transform: translateY(0); }
