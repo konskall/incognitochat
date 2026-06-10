@@ -107,7 +107,21 @@ self.addEventListener('push', (event) => {
     actions: [{ action: 'open', title: 'Open Chat' }],
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    (async () => {
+      // Don't pop an OS notification while the user is actively looking at the
+      // app: if any of our windows is currently visible/focused, the in-app UI
+      // already shows the incoming message. The Push API's userVisibleOnly
+      // contract explicitly allows skipping showNotification in exactly this
+      // case (a window for our origin is visible), so the browser won't punish
+      // us with a generic "site updated in background" notification.
+      const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const appVisible = wins.some((c) => c.visibilityState === 'visible' || c.focused);
+      if (appVisible) return;
+
+      await self.registration.showNotification(title, options);
+    })()
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {

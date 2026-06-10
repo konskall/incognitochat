@@ -182,30 +182,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             navigator.vibrate(200);
         }
 
-        if (document.hidden && notificationsEnabled) {
-            const title = `New message from ${msg.username}`;
-            const opts = {
-                body: msg.text || 'Sent an attachment',
-                icon: 'https://konskall.github.io/incognitochat/favicon-96x96.png',
-            };
-            // Prefer the service worker's showNotification: the bare Notification
-            // constructor THROWS on Android Chrome ("Illegal constructor") and is
-            // unavailable on iOS Safari. Fall back to the constructor only where
-            // the SW isn't available (desktop), and never let a failure escape
-            // into the realtime message handler.
-            try {
-                const reg = await navigator.serviceWorker?.getRegistration?.();
-                if (reg?.showNotification) {
-                    reg.showNotification(title, opts);
-                } else if ('Notification' in window && Notification.permission === 'granted') {
-                    new Notification(title, opts);
-                }
-            } catch (e) {
-                console.warn('Foreground notification failed', e);
-            }
-        }
+        // No OS notification here on purpose. OS notifications are now delivered
+        // solely by the Web Push service worker (`public/sw.js`), which fires
+        // whether the app is backgrounded or fully closed AND suppresses itself
+        // when a window is visible. Showing one here too would (a) double up with
+        // the push when the tab is alive-but-hidden, and (b) pop a notification
+        // while the user is actively looking at the chat. In-app sound/vibration
+        // above is enough of a cue while the page is open.
     }
-  }, [user, soundEnabled, vibrationEnabled, notificationsEnabled, canVibrate]);
+  }, [user, soundEnabled, vibrationEnabled, canVibrate]);
 
   const {
     messages,
