@@ -132,10 +132,18 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    localStorage.removeItem('chatPin');
-    localStorage.removeItem('chatRoomName');
-    localStorage.removeItem('chatAvatarURL');
-    localStorage.removeItem('chatUsername');
+    // Clear all per-user local data so the next person on a shared device can't
+    // see the previous user's identity, room list, ordering or read state.
+    try {
+      Object.keys(localStorage).forEach((k) => {
+        if (
+          k === 'chatPin' || k === 'chatRoomName' || k === 'chatAvatarURL' || k === 'chatUsername' ||
+          k.startsWith('roomOrder_') || k.startsWith('lastRead_') || k.startsWith('joined_')
+        ) {
+          localStorage.removeItem(k);
+        }
+      });
+    } catch { /* ignore */ }
 
     setCurrentUser(null);
     setCurrentView('login');

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom } from '../services/supabase';
 import { User, ChatConfig, Room } from '../types';
@@ -32,7 +32,7 @@ const RoomDeleteToast: React.FC<{
     isDeleting: boolean;
 }> = ({ roomName, isOwner, onConfirm, onCancel, isDeleting }) => {
     return createPortal(
-        <div className="fixed bottom-6 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto z-[100] animate-in slide-in-from-bottom-4 fade-in duration-300">
+        <div className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto z-[100] animate-in slide-in-from-bottom-4 fade-in duration-300">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-6 p-4 bg-slate-900/90 dark:bg-white/10 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl text-white ring-1 ring-black/10">
                 <div className="flex flex-col items-center sm:items-start text-center sm:text-left w-full sm:w-auto min-w-[200px]">
                     <span className="text-sm font-bold flex items-center justify-center sm:justify-start gap-2 text-white">
@@ -60,12 +60,12 @@ const RoomDeleteToast: React.FC<{
 };
 
 // Presentational card body, shared by the sortable item and the drag overlay.
-const RoomCardInner: React.FC<{
+const RoomCardInner = React.memo(({ room, userUid, unread, revealed, onJoin, onRequestDelete, onTogglePin }: {
   room: Room; userUid: string; unread: boolean; revealed: boolean;
   onJoin: (r: Room) => void;
   onRequestDelete: (name: string, key: string, createdBy: string) => void;
   onTogglePin: (e: React.MouseEvent, key: string) => void;
-}> = ({ room, userUid, unread, revealed, onJoin, onRequestDelete, onTogglePin }) => {
+}) => {
   const isOwner = room.created_by === userUid;
   // Stop pointerdown on the controls from starting a card drag, so the buttons
   // and PIN toggle keep working normally.
@@ -76,7 +76,7 @@ const RoomCardInner: React.FC<{
         <div className="flex justify-between items-start mb-2">
           <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 truncate pr-2 flex items-center gap-2 min-w-0">
             <GripVertical size={16} className="text-slate-300 dark:text-slate-600 shrink-0" />
-            <span className="truncate">{room.room_name}</span>
+            <span className="truncate" title={room.room_name}>{room.room_name}</span>
             {unread && (
               <span className="flex h-2.5 w-2.5 relative shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
@@ -84,7 +84,7 @@ const RoomCardInner: React.FC<{
               </span>
             )}
           </h4>
-          <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onRequestDelete(room.room_name, room.room_key, room.created_by); }} className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-0 group-hover:opacity-100 shrink-0" title={isOwner ? "Delete Room" : "Remove from History"}>
+          <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onRequestDelete(room.room_name, room.room_key, room.created_by); }} className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 shrink-0" title={isOwner ? "Delete Room" : "Remove from History"}>
             {isOwner ? <Trash2 size={16} /> : <X size={16} />}
           </button>
         </div>
@@ -110,17 +110,17 @@ const RoomCardInner: React.FC<{
       </button>
     </>
   );
-};
+});
 
 // Sortable wrapper — the whole card is draggable (mouse drag / touch long-press /
 // keyboard). While lifted it dims in place; the DragOverlay renders the copy that
 // follows the pointer.
-const SortableRoomCard: React.FC<{
+const SortableRoomCard = React.memo((props: {
   room: Room; userUid: string; unread: boolean; revealed: boolean;
   onJoin: (r: Room) => void;
   onRequestDelete: (name: string, key: string, createdBy: string) => void;
   onTogglePin: (e: React.MouseEvent, key: string) => void;
-}> = (props) => {
+}) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.room.room_key });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -142,7 +142,7 @@ const SortableRoomCard: React.FC<{
       <RoomCardInner {...props} />
     </div>
   );
-};
+});
 
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onLogout }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -193,9 +193,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       }
 
       try {
-        const { data: createdRooms, error: createdError } = await supabase.from('rooms').select('*').eq('created_by', user.uid);
+        // Independent reads in parallel (was a sequential waterfall).
+        const [{ data: createdRooms, error: createdError }, { data: subscriptions, error: subError }] = await Promise.all([
+          supabase.from('rooms').select('*').eq('created_by', user.uid),
+          supabase.from('subscribers').select('room_key').eq('uid', user.uid),
+        ]);
         if (createdError) throw createdError;
-        const { data: subscriptions, error: subError } = await supabase.from('subscribers').select('room_key').eq('uid', user.uid);
         if (subError) throw subError;
 
         let joinedRooms: Room[] = [];
@@ -209,20 +212,27 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         const roomMap = new Map<string, Room>();
         (createdRooms || []).forEach(r => roomMap.set(r.room_key, r));
         (joinedRooms || []).forEach(r => roomMap.set(r.room_key, r));
-        
+
         const allRooms = Array.from(roomMap.values());
-        
+
+        // Custom drag order (guard against corrupted localStorage so a bad value
+        // can't blank the dashboard), and prune saved keys whose rooms are gone.
+        let orderKeys: string[] | null = null;
         const savedOrder = localStorage.getItem(`roomOrder_${user.uid}`);
-        if (savedOrder) {
-            const orderKeys = JSON.parse(savedOrder);
+        if (savedOrder) { try { const p = JSON.parse(savedOrder); if (Array.isArray(p)) orderKeys = p; } catch { /* ignore corrupt */ } }
+        if (orderKeys) {
+            const order = orderKeys;
             allRooms.sort((a, b) => {
-                const indexA = orderKeys.indexOf(a.room_key);
-                const indexB = orderKeys.indexOf(b.room_key);
+                const indexA = order.indexOf(a.room_key);
+                const indexB = order.indexOf(b.room_key);
                 if (indexA === -1 && indexB === -1) return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
                 if (indexA === -1) return 1;
                 if (indexB === -1) return -1;
                 return indexA - indexB;
             });
+            const liveKeys = new Set(allRooms.map(r => r.room_key));
+            const pruned = order.filter(k => liveKeys.has(k));
+            if (pruned.length !== order.length) localStorage.setItem(`roomOrder_${user.uid}`, JSON.stringify(pruned));
         } else {
             allRooms.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         }
@@ -238,19 +248,23 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     initData();
   }, [user.uid, user.email]);
 
+  // Keep a live ref of rooms so the realtime handler always sees the current
+  // list WITHOUT re-subscribing the channel on every rooms change (drag/unread).
+  const roomsRef = useRef(rooms);
+  useEffect(() => { roomsRef.current = rooms; }, [rooms]);
+
   useEffect(() => {
     const channel = supabase.channel('dashboard-notifications')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-                const newMsg = payload.new;
-                if (newMsg.uid === user.uid || newMsg.type === 'system') return;
-                const hasRoom = rooms.some(r => r.room_key === newMsg.room_key);
-                if (hasRoom) {
-                    setUnreadRooms(prev => new Set(prev).add(newMsg.room_key));
+                const newMsg = payload.new as { uid?: string; type?: string; room_key?: string };
+                if (newMsg.uid === user.uid || newMsg.type === 'system' || !newMsg.room_key) return;
+                if (roomsRef.current.some(r => r.room_key === newMsg.room_key)) {
+                    setUnreadRooms(prev => new Set(prev).add(newMsg.room_key!));
                 }
             }
         ).subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [rooms, user.uid]);
+  }, [user.uid]);
 
   const checkUnreadMessages = async (currentRooms: Room[]) => {
       if (currentRooms.length === 0) return;
@@ -271,9 +285,16 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           for (const room of currentRooms) {
               const latest = lastActivity.get(room.room_key);
               if (latest === undefined) continue;
-              const lastReadTimestamp = localStorage.getItem(`lastRead_${room.room_key}`);
-              const lastReadTime = lastReadTimestamp ? parseInt(lastReadTimestamp) : Date.now();
-              if (latest > lastReadTime) newUnreadSet.add(room.room_key);
+              const stored = localStorage.getItem(`lastRead_${room.room_key}`);
+              if (stored === null) {
+                  // First time we see this room on this device: baseline to its
+                  // current latest (SERVER time) so pre-existing history isn't
+                  // flagged, and the comparison stays server-vs-server (no client
+                  // clock skew → no phantom unread).
+                  localStorage.setItem(`lastRead_${room.room_key}`, String(latest));
+                  continue;
+              }
+              if (latest > parseInt(stored)) newUnreadSet.add(room.room_key);
           }
           setUnreadRooms(newUnreadSet);
       } catch (err) {
@@ -294,11 +315,19 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           setIsEditingProfile(false);
           setShowLinkInput(false);
       } catch (e: any) {
+          setTempAvatarUrl(avatarUrl); // revert the unsaved preview on failure
           alert("Failed to update profile: " + e.message);
       } finally {
           setIsSavingProfile(false);
       }
   };
+
+  // Fall back to a generated avatar if a custom/google/storage image fails to load.
+  const onAvatarError = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+      const img = e.currentTarget;
+      const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName || 'User')}&background=random`;
+      if (img.src !== fallback) { img.onerror = null; img.src = fallback; }
+  }, [displayName]);
 
   const handleGenerateRandomAvatar = () => {
       const seed = Math.random().toString(36).substring(7);
@@ -308,10 +337,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const handleRestoreGoogleAvatar = () => { if (googleAvatarUrl) setTempAvatarUrl(googleAvatarUrl); };
 
   const handleLinkAvatar = () => {
-      if (linkInput.trim().startsWith('http')) {
-          setTempAvatarUrl(linkInput.trim());
-          setShowLinkInput(false);
-      }
+      const url = linkInput.trim();
+      try {
+          const u = new URL(url);
+          if (u.protocol !== 'https:') { alert('Please use an https:// image URL.'); return; }
+      } catch { alert('Please enter a valid image URL.'); return; }
+      setTempAvatarUrl(url);
+      setShowLinkInput(false);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -331,17 +363,15 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       }
   };
 
-  const handleJoin = (room: Room) => {
+  const handleJoin = useCallback((room: Room) => {
     localStorage.setItem(`lastRead_${room.room_key}`, Date.now().toString());
-    const newUnread = new Set(unreadRooms);
-    newUnread.delete(room.room_key);
-    setUnreadRooms(newUnread);
+    setUnreadRooms(prev => { const next = new Set(prev); next.delete(room.room_key); return next; });
     onJoinRoom({ username: displayName, avatarURL: avatarUrl, roomName: room.room_name, pin: room.pin, roomKey: room.room_key });
-  };
+  }, [displayName, avatarUrl, onJoinRoom]);
 
-  const onRequestDeleteRoom = (roomName: string, roomKey: string, createdBy: string) => {
+  const onRequestDeleteRoom = useCallback((roomName: string, roomKey: string, createdBy: string) => {
       setRoomToDelete({ name: roomName, key: roomKey, isOwner: createdBy === user.uid });
-  };
+  }, [user.uid]);
 
   const handleConfirmDeleteRoom = async () => {
     if (!roomToDelete) return;
@@ -349,20 +379,44 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     const { key, isOwner } = roomToDelete;
     try {
         if (!isOwner) {
+             // "Remove from history": drop only our own membership row.
              await supabase.from('subscribers').delete().eq('room_key', key).eq('uid', user.uid);
-             setRooms(rooms.filter(r => r.room_key !== key));
         } else {
-             await supabase.from('messages').delete().eq('room_key', key);
-             await supabase.from('subscribers').delete().eq('room_key', key);
-             const { data: files } = await supabase.storage.from('attachments').list(key);
-             if (files && files.length > 0) {
-                 const filesToRemove = files.map(x => `${key}/${x.name}`);
-                 await supabase.storage.from('attachments').remove(filesToRemove);
+             // ORDER MATTERS under RLS: delete messages and the room row WHILE we
+             // are still a member AND still the owner — both the is_member() check
+             // (rooms DELETE) and the "room owner" check (messages DELETE) read rows
+             // we're about to remove. Deleting our subscriber row first would drop
+             // membership and silently match 0 rows on the room delete, orphaning it.
+             const { error: msgErr } = await supabase.from('messages').delete().eq('room_key', key);
+             if (msgErr) throw msgErr;
+             const { error: roomErr } = await supabase.from('rooms').delete().eq('room_key', key);
+             if (roomErr) throw roomErr;
+             await supabase.from('subscribers').delete().eq('room_key', key); // own row (RLS-scoped)
+
+             // Best-effort storage cleanup, paginated (list() is capped per call).
+             // Never fail the whole delete on this — room + messages are already gone.
+             try {
+                 const toRemove: string[] = [];
+                 let offset = 0;
+                 const PAGE = 100;
+                 for (;;) {
+                     const { data: files } = await supabase.storage.from('attachments').list(key, { limit: PAGE, offset });
+                     if (!files || files.length === 0) break;
+                     toRemove.push(...files.map(f => `${key}/${f.name}`));
+                     if (files.length < PAGE) break;
+                     offset += PAGE;
+                 }
+                 if (toRemove.length > 0) await supabase.storage.from('attachments').remove(toRemove);
+             } catch (storageErr) {
+                 console.warn('Room storage cleanup failed (non-fatal):', storageErr);
              }
-             const { error } = await supabase.from('rooms').delete().eq('room_key', key);
-             if (error) throw error;
-             setRooms(rooms.filter(r => r.room_key !== key));
         }
+        setRooms(prev => prev.filter(r => r.room_key !== key));
+        // Prune the deleted key from the saved drag order so it can't linger forever.
+        try {
+            const raw = localStorage.getItem(`roomOrder_${user.uid}`);
+            if (raw) localStorage.setItem(`roomOrder_${user.uid}`, JSON.stringify((JSON.parse(raw) as string[]).filter(k => k !== key)));
+        } catch { /* ignore */ }
     } catch (e: any) {
         alert('Operation failed: ' + (e.message || "Unknown error"));
     } finally {
@@ -407,7 +461,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   };
 
   // --- PIN Visibility Toggle ---
-  const togglePinVisibility = (e: React.MouseEvent, roomKey: string) => {
+  const togglePinVisibility = useCallback((e: React.MouseEvent, roomKey: string) => {
     e.stopPropagation();
     setRevealedPins(prev => {
         const next = new Set(prev);
@@ -415,7 +469,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         else next.add(roomKey);
         return next;
     });
-  };
+  }, []);
 
   // --- Drag-to-reorder handlers (dnd-kit) ---
   const handleDragStart = (event: DragStartEvent) => {
@@ -453,11 +507,11 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         />
     )}
 
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300">
+    <div className="min-h-[100dvh] bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300 pt-[env(safe-area-inset-top)]">
         <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
             <header className="flex justify-between items-center mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-3">
-                    <img src="https://konskall.github.io/incognitochat/favicon-96x96.png" alt="Incognito Chat" className="w-10 h-10 rounded-xl shadow-lg shadow-blue-500/20"/>
+                    <img src="https://konskall.github.io/incognitochat/favicon-96x96.png" alt="Incognito Chat" width={40} height={40} className="w-10 h-10 rounded-xl shadow-lg shadow-blue-500/20"/>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
                         <p className="text-xs text-slate-500 dark:text-slate-400">Welcome back to your secure space</p>
@@ -477,7 +531,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                             <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-300 relative z-10">
                                 <div className="flex flex-col items-center gap-4">
                                     <div className="relative group/edit-avatar">
-                                        <img src={tempAvatarUrl} alt="Preview" className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-slate-800 shadow-md ring-1 ring-slate-100 dark:ring-slate-700"/>
+                                        <img src={tempAvatarUrl} alt="Preview" width={96} height={96} loading="lazy" onError={onAvatarError} className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-slate-800 shadow-md ring-1 ring-slate-100 dark:ring-slate-700"/>
                                         <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/edit-avatar:opacity-100 transition-opacity">
                                             <span className="text-white text-xs font-bold">Preview</span>
                                         </div>
@@ -520,7 +574,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                             <div className="flex items-center gap-5 animate-in fade-in zoom-in-95 duration-300 relative z-10">
                                 <div className="relative flex-shrink-0 group/avatar">
                                     <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full opacity-0 group-hover/avatar:opacity-100 transition duration-500 blur-sm"></div>
-                                    <img src={avatarUrl} alt="Profile" className="relative w-20 h-20 rounded-full object-cover border-4 border-white dark:border-slate-900 shadow-lg"/>
+                                    <img src={avatarUrl} alt="Profile" width={80} height={80} loading="lazy" onError={onAvatarError} className="relative w-20 h-20 rounded-full object-cover border-4 border-white dark:border-slate-900 shadow-lg"/>
                                     <button onClick={() => { setTempAvatarUrl(avatarUrl); setIsEditingProfile(true); }} className="absolute bottom-0 right-0 p-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-full shadow-md border border-slate-100 dark:border-slate-700 hover:text-blue-600 hover:scale-110 transition-all z-20" title="Edit Profile"><Edit2 size={12} /></button>
                                 </div>
                                 <div className="flex-1 min-w-0 flex flex-col justify-center h-20">
