@@ -106,9 +106,11 @@ export interface Room {
   id: string;
   room_key: string;
   room_name: string;
+  display_name?: string | null; // Cosmetic owner-set label; room_key/PIN unchanged
   pin: string; // Stored to allow auto-join for creator
   created_at: string;
   created_by: string;
   ai_enabled?: boolean;
   ai_avatar_url?: string;
+  auto_delete_seconds?: number | null; // Ephemeral rooms: auto-delete after inactivity
 }

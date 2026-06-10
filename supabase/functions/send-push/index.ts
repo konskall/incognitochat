@@ -89,8 +89,16 @@ Deno.serve(async (req: Request) => {
       return json({ error: "DB_ERROR" }, 500);
     }
 
+    // Respect per-user "mute" for this room: those users opted out of push.
+    const { data: mutedRows } = await admin
+      .from("room_settings")
+      .select("user_id")
+      .eq("room_key", roomKey)
+      .eq("muted", true);
+    const muted = new Set<string>((mutedRows ?? []).map((m) => m.user_id));
+
     const exclude = new Set<string>([senderUid, ...(excludeUids as string[])]);
-    const targets = (subs ?? []).filter((s) => !exclude.has(s.user_id));
+    const targets = (subs ?? []).filter((s) => !exclude.has(s.user_id) && !muted.has(s.user_id));
     if (targets.length === 0) return json({ sent: 0 }, 200);
 
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
