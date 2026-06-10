@@ -1127,10 +1127,24 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                             <input type="text" value={newRoomPin} onChange={e => setNewRoomPin(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Secret Key" required/>
                                         </div>
                                     </div>
-                                    <label className="flex items-center gap-2.5 cursor-pointer select-none w-fit">
-                                        <input type="checkbox" checked={ephemeral} onChange={(e) => setEphemeral(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500" />
-                                        <span className="text-sm text-slate-600 dark:text-slate-300 flex items-center gap-1.5"><Clock size={14} className="text-amber-500" />Ephemeral — auto-delete 24h after the last message <span className="text-[11px] text-slate-400">(new rooms only)</span></span>
-                                    </label>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={ephemeral}
+                                        onClick={() => setEphemeral((v) => !v)}
+                                        className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all ${ephemeral ? 'border-amber-400/70 bg-amber-50 dark:bg-amber-500/10 ring-1 ring-amber-400/30' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 hover:border-slate-300 dark:hover:border-slate-600'}`}
+                                    >
+                                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${ephemeral ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/30' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+                                            <Clock size={18} />
+                                        </span>
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">Ephemeral room</span>
+                                            <span className="block text-xs text-slate-500 dark:text-slate-400">Auto-deletes 24h after the last message · new rooms only</span>
+                                        </span>
+                                        <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${ephemeral ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                                            <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${ephemeral ? 'translate-x-5' : 'translate-x-0'}`} />
+                                        </span>
+                                    </button>
                                     <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                                         <p className="text-xs text-slate-500 italic">If the room exists, you will join it. Otherwise, a new room will be created.</p>
                                         <div className="flex gap-2">
