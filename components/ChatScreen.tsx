@@ -394,7 +394,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     const handleNetworkChange = () => setIsOffline(!navigator.onLine);
     window.addEventListener('online', handleNetworkChange);
     window.addEventListener('offline', handleNetworkChange);
-    if ('Notification' in window && Notification.permission === 'granted') setNotificationsEnabled(true);
+    // NOTE: notificationsEnabled is NOT derived from Notification.permission here
+    // — that flagged the toggle ON even when no push subscription existed in the
+    // DB. The dedicated effect below re-creates the subscription on every room
+    // open and sets the toggle from whether that actually succeeded.
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) setCanVibrate(true);
 
     return () => {
@@ -402,6 +405,26 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       window.removeEventListener('offline', handleNetworkChange);
     };
   }, []);
+
+  // Keep THIS device's push subscription alive for THIS room. Previously the
+  // subscription was created at most once (on the first manual toggle) and the
+  // toggle's ON state was inferred from Notification.permission alone — so the
+  // row in `push_subscriptions` was never refreshed. Browsers rotate push
+  // subscriptions, and our anonymous auth users churn (push_subscriptions.user_id
+  // → auth.users ON DELETE CASCADE), so the row silently vanished and was never
+  // recreated → send-push had 0 targets → no notifications on a closed mobile
+  // PWA, on any platform. Re-subscribe whenever we open a room with permission
+  // already granted, and reflect the REAL result in the toggle.
+  useEffect(() => {
+    if (!user?.uid || !config.roomKey) return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    let cancelled = false;
+    subscribeToPushNotifications(user.uid, config.roomKey)
+      .then((ok) => { if (!cancelled) setNotificationsEnabled(ok); })
+      .catch(() => { if (!cancelled) setNotificationsEnabled(false); });
+    return () => { cancelled = true; };
+  }, [user?.uid, config.roomKey]);
 
   const checkRoomStatus = useCallback(async () => {
     if (!config.roomKey) return;

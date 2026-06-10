@@ -79,14 +79,24 @@ self.addEventListener('fetch', (event) => {
 
 // --- Web Push (delivered by the `send-push` Edge Function) ---
 self.addEventListener('push', (event) => {
-  if (!(self.Notification && self.Notification.permission === 'granted')) {
-    return;
+  // Do NOT gate on `self.Notification` here. In the iOS/WebKit service-worker
+  // scope the `Notification` interface does not exist, so the old guard
+  // (`self.Notification && self.Notification.permission === 'granted'`) was
+  // ALWAYS falsy on iPhone/iPad and silently dropped every push — which is why
+  // the installed PWA "got no notifications" on iOS. If a push was delivered at
+  // all, the subscription already has permission, and the Push API's
+  // `userVisibleOnly` contract REQUIRES showing a notification for every push
+  // (iOS revokes the subscription otherwise), so always show one.
+  let data = {};
+  try {
+    if (event.data) data = event.data.json();
+  } catch {
+    // Malformed/empty payload — fall back to a generic message below.
   }
 
-  const data = event.data?.json() ?? { title: 'New Message', body: 'You have a new message' };
-
+  const title = data.title || 'New Message';
   const options = {
-    body: data.body,
+    body: data.body || 'You have a new message',
     icon: BASE + 'favicon-96x96.png',
     badge: BASE + 'favicon-96x96.png',
     vibrate: [100, 50, 100],
@@ -97,7 +107,7 @@ self.addEventListener('push', (event) => {
     actions: [{ action: 'open', title: 'Open Chat' }],
   };
 
-  event.waitUntil(self.registration.showNotification(data.title, options));
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', (event) => {
