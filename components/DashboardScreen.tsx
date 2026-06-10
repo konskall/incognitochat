@@ -2,13 +2,14 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom } from '../services/supabase';
-import { User, ChatConfig, Room } from '../types';
+import { User, ChatConfig, Room, Presence } from '../types';
 import { generateRoomKey, compressImage, decryptMessage } from '../utils/helpers';
 import {
   LogOut, Trash2, ArrowRight, Loader2,
   Upload, RotateCcw,
   RefreshCw, Save, X, Edit2, Mail, LogIn, Link as LinkIcon, AlertCircle, Eye, EyeOff, GripVertical,
   Search, Star, Sun, Moon, Zap, MoreVertical, Bell, BellOff, Archive, ArchiveRestore, Clock, Pencil,
+  Check, CheckSquare,
   type LucideIcon
 } from 'lucide-react';
 import {
@@ -44,10 +45,12 @@ type RoomCardProps = {
   room: Room; userUid: string;
   unread: number; muted: boolean; archived: boolean; overview?: Overview;
   revealed: boolean; isFavorite: boolean;
+  selectMode: boolean; selected: boolean; online?: Presence[];
   onJoin: (r: Room) => void;
   onOpenActions: (r: Room) => void;
   onTogglePin: (e: React.MouseEvent, key: string) => void;
   onToggleFav: (e: React.MouseEvent, key: string) => void;
+  onToggleSelect: (key: string) => void;
 };
 
 const CARD_CHROME = "room-card group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border flex flex-col justify-between relative overflow-hidden select-none border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 transition-shadow";
@@ -188,7 +191,7 @@ const RoomActionsSheet: React.FC<{
 };
 
 // Presentational card body, shared by the sortable item and the drag overlay.
-const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, overview, revealed, isFavorite, onJoin, onOpenActions, onTogglePin, onToggleFav }: RoomCardProps) => {
+const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, overview, revealed, isFavorite, selectMode, selected, online, onJoin, onOpenActions, onTogglePin, onToggleFav }: RoomCardProps) => {
   const isOwner = room.created_by === userUid;
   const name = room.display_name || room.room_name;
   const showUnread = unread > 0 && !muted;
@@ -206,20 +209,26 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
             )}
             {muted && <BellOff size={13} className="text-slate-400 shrink-0" />}
           </h4>
-          <div className="flex items-center gap-0.5 shrink-0">
-            <button
-              onPointerDown={stop}
-              onClick={(e) => { e.stopPropagation(); onToggleFav(e, room.room_key); }}
-              aria-pressed={isFavorite}
-              title={isFavorite ? 'Unpin from top' : 'Pin to top'}
-              className={`p-1.5 rounded-lg transition ${isFavorite ? 'text-amber-400 opacity-100' : 'text-slate-300 hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'}`}
-            >
-              <Star size={16} fill={isFavorite ? 'currentColor' : 'none'} />
-            </button>
-            <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onOpenActions(room); }} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" title="Room actions" aria-label="Room actions">
-              <MoreVertical size={16} />
-            </button>
-          </div>
+          {selectMode ? (
+            <span className={`shrink-0 w-5 h-5 rounded-md border flex items-center justify-center transition ${selected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'}`} aria-hidden>
+              {selected && <Check size={14} />}
+            </span>
+          ) : (
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button
+                onPointerDown={stop}
+                onClick={(e) => { e.stopPropagation(); onToggleFav(e, room.room_key); }}
+                aria-pressed={isFavorite}
+                title={isFavorite ? 'Unpin from top' : 'Pin to top'}
+                className={`p-1.5 rounded-lg transition ${isFavorite ? 'text-amber-400 opacity-100' : 'text-slate-300 hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'}`}
+              >
+                <Star size={16} fill={isFavorite ? 'currentColor' : 'none'} />
+              </button>
+              <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onOpenActions(room); }} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" title="Room actions" aria-label="Room actions">
+                <MoreVertical size={16} />
+              </button>
+            </div>
+          )}
         </div>
         <div className="flex items-center flex-wrap gap-x-2 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
           <div onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onTogglePin(e, room.room_key); }} className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono border border-slate-200 dark:border-slate-700 hover:border-blue-300 transition-colors cursor-pointer select-none" title="Click to reveal PIN">
@@ -236,6 +245,16 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
             </span>
           )}
           {archived && <span className="flex items-center gap-1 text-slate-400"><Archive size={11} />Archived</span>}
+          {online && online.length > 0 && (
+            <span className="flex items-center gap-1.5" title={`${online.length} online now`}>
+              <span className="flex -space-x-1.5">
+                {online.slice(0, 3).map((p, i) => (
+                  <img key={(p.uid || '') + i} src={p.avatar} alt="" width={16} height={16} className="w-4 h-4 rounded-full border border-white dark:border-slate-900 object-cover bg-slate-200" />
+                ))}
+              </span>
+              <span className="text-emerald-500 font-medium">{online.length} online</span>
+            </span>
+          )}
         </div>
         <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 min-w-0">
           <span className="truncate min-w-0">
@@ -245,9 +264,15 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
           {overview?.lastAt && <span className="shrink-0 text-slate-400 dark:text-slate-500">· {formatRelative(overview.lastAt)}</span>}
         </div>
       </div>
-      <button onPointerDown={stop} onClick={() => onJoin(room)} className={`w-full py-2.5 font-semibold rounded-xl transition flex items-center justify-center gap-2 z-10 ${showUnread ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/30 group-hover:bg-red-500 group-hover:text-white group-hover:border-red-500' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 group-hover:bg-blue-600 group-hover:text-white dark:group-hover:bg-blue-600 dark:group-hover:text-white'}`}>
-        Enter Room <ArrowRight size={16} />
-      </button>
+      {selectMode ? (
+        <div className="w-full py-2.5 font-semibold rounded-xl flex items-center justify-center gap-2 text-sm border border-dashed border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400">
+          {selected ? <><Check size={16} className="text-blue-500" />Selected</> : 'Tap to select'}
+        </div>
+      ) : (
+        <button onPointerDown={stop} onClick={() => onJoin(room)} className={`w-full py-2.5 font-semibold rounded-xl transition flex items-center justify-center gap-2 z-10 ${showUnread ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/30 group-hover:bg-red-500 group-hover:text-white group-hover:border-red-500' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 group-hover:bg-blue-600 group-hover:text-white dark:group-hover:bg-blue-600 dark:group-hover:text-white'}`}>
+          Enter Room <ArrowRight size={16} />
+        </button>
+      )}
     </>
   );
 });
@@ -281,7 +306,10 @@ const SortableRoomCard = React.memo((props: RoomCardProps) => {
 // Non-draggable card — rendered when search/filter/favorites/archive reorder
 // or hide rooms, so there's no index ambiguity vs. a drag.
 const StaticRoomCard = React.memo((props: RoomCardProps) => (
-  <div className={CARD_CHROME}>
+  <div
+    className={`${CARD_CHROME}${props.selectMode ? ' cursor-pointer' : ''}${props.selected ? ' ring-2 ring-blue-500 border-blue-500 dark:border-blue-500' : ''}`}
+    onClick={props.selectMode ? () => props.onToggleSelect(props.room.room_key) : undefined}
+  >
     <RoomCardInner {...props} />
   </div>
 ));
@@ -306,6 +334,16 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const [roomToDelete, setRoomToDelete] = useState<{name: string, key: string, isOwner: boolean} | null>(null);
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
   const [actionsRoom, setActionsRoom] = useState<Room | null>(null);
+
+  // Bulk multi-select.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  // Online members per room (read-only presence; we never track() so the
+  // dashboard never appears as a phantom participant).
+  const [online, setOnline] = useState<Map<string, Presence[]>>(new Map());
 
   const [revealedPins, setRevealedPins] = useState<Set<string>>(new Set());
 
@@ -491,6 +529,33 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     return () => { supabase.removeChannel(channel); };
   }, [user.uid]);
 
+  // Read-only "who's online" per room. We subscribe to each room's presence
+  // channel but never track() ourselves, so the dashboard is invisible to the
+  // chat (no phantom participant). Capped at 15 rooms to bound open sockets;
+  // keyed on the sorted room-key list so search/reorder don't churn channels.
+  const presenceKeys = useMemo(
+    () => rooms.map(r => r.room_key).slice(0, 15).sort().join('|'),
+    [rooms]
+  );
+  useEffect(() => {
+    const keys = presenceKeys ? presenceKeys.split('|') : [];
+    if (keys.length === 0) { setOnline(new Map()); return; }
+    const channels = keys.map((key) => {
+      const ch = supabase.channel(`presence:${key}`, { config: { presence: { key: `dash:${user.uid}` } } });
+      ch.on('presence', { event: 'sync' }, () => {
+        const state = ch.presenceState() as Record<string, unknown>;
+        const members: Presence[] = [];
+        for (const k in state) {
+          const arr = state[k] as unknown as Presence[];
+          if (arr && arr.length) members.push(arr[0]);
+        }
+        setOnline(prev => { const next = new Map(prev); next.set(key, members); return next; });
+      }).subscribe();
+      return ch;
+    });
+    return () => { channels.forEach(ch => supabase.removeChannel(ch)); };
+  }, [presenceKeys, user.uid]);
+
   const handleSaveProfile = async () => {
       if (!displayName.trim()) { alert("Display name cannot be empty"); return; }
       setIsSavingProfile(true);
@@ -657,68 +722,106 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Delete one room (owner) or leave it (member), plus all local cleanup.
+  // Shared by the single-room confirm and the bulk action. Throws on a fatal
+  // server error so the caller can surface it.
+  const deleteRoomByKey = useCallback(async (key: string, isOwner: boolean) => {
+    if (!isOwner) {
+        // "Leave room": drop only our own membership row.
+        await supabase.from('subscribers').delete().eq('room_key', key).eq('uid', user.uid);
+    } else {
+        // ORDER MATTERS under RLS: delete messages and the room row WHILE we
+        // are still a member AND still the owner — both the is_member() check
+        // (rooms DELETE) and the "room owner" check (messages DELETE) read rows
+        // we're about to remove. Deleting our subscriber row first would drop
+        // membership and silently match 0 rows on the room delete, orphaning it.
+        const { error: msgErr } = await supabase.from('messages').delete().eq('room_key', key);
+        if (msgErr) throw msgErr;
+        const { error: roomErr } = await supabase.from('rooms').delete().eq('room_key', key);
+        if (roomErr) throw roomErr;
+        await supabase.from('subscribers').delete().eq('room_key', key); // own row (RLS-scoped)
+
+        // Best-effort storage cleanup, paginated (list() is capped per call).
+        // Never fail the whole delete on this — room + messages are already gone.
+        try {
+            const toRemove: string[] = [];
+            let offset = 0;
+            const PAGE = 100;
+            for (;;) {
+                const { data: files } = await supabase.storage.from('attachments').list(key, { limit: PAGE, offset });
+                if (!files || files.length === 0) break;
+                toRemove.push(...files.map(f => `${key}/${f.name}`));
+                if (files.length < PAGE) break;
+                offset += PAGE;
+            }
+            if (toRemove.length > 0) await supabase.storage.from('attachments').remove(toRemove);
+        } catch (storageErr) {
+            console.warn('Room storage cleanup failed (non-fatal):', storageErr);
+        }
+    }
+    // Local cleanup — list, saved order, favorites, settings.
+    setRooms(prev => prev.filter(r => r.room_key !== key));
+    try {
+        const raw = localStorage.getItem(`roomOrder_${user.uid}`);
+        if (raw) localStorage.setItem(`roomOrder_${user.uid}`, JSON.stringify((JSON.parse(raw) as string[]).filter(k => k !== key)));
+    } catch { /* ignore */ }
+    setFavorites(prev => {
+        if (!prev.has(key)) return prev;
+        const next = new Set(prev); next.delete(key);
+        try { localStorage.setItem(`roomFav_${user.uid}`, JSON.stringify([...next])); } catch { /* ignore */ }
+        return next;
+    });
+    if (settingsRef.current.has(key)) {
+        setSettings(prev => { const next = new Map(prev); next.delete(key); return next; });
+        supabase.from('room_settings').delete().eq('user_id', user.uid).eq('room_key', key).then(undefined, () => {});
+    }
+  }, [user.uid]);
+
   const handleConfirmDeleteRoom = async () => {
     if (!roomToDelete) return;
     setIsDeletingRoom(true);
-    const { key, isOwner } = roomToDelete;
     try {
-        if (!isOwner) {
-             // "Leave room": drop only our own membership row.
-             await supabase.from('subscribers').delete().eq('room_key', key).eq('uid', user.uid);
-        } else {
-             // ORDER MATTERS under RLS: delete messages and the room row WHILE we
-             // are still a member AND still the owner — both the is_member() check
-             // (rooms DELETE) and the "room owner" check (messages DELETE) read rows
-             // we're about to remove. Deleting our subscriber row first would drop
-             // membership and silently match 0 rows on the room delete, orphaning it.
-             const { error: msgErr } = await supabase.from('messages').delete().eq('room_key', key);
-             if (msgErr) throw msgErr;
-             const { error: roomErr } = await supabase.from('rooms').delete().eq('room_key', key);
-             if (roomErr) throw roomErr;
-             await supabase.from('subscribers').delete().eq('room_key', key); // own row (RLS-scoped)
-
-             // Best-effort storage cleanup, paginated (list() is capped per call).
-             // Never fail the whole delete on this — room + messages are already gone.
-             try {
-                 const toRemove: string[] = [];
-                 let offset = 0;
-                 const PAGE = 100;
-                 for (;;) {
-                     const { data: files } = await supabase.storage.from('attachments').list(key, { limit: PAGE, offset });
-                     if (!files || files.length === 0) break;
-                     toRemove.push(...files.map(f => `${key}/${f.name}`));
-                     if (files.length < PAGE) break;
-                     offset += PAGE;
-                 }
-                 if (toRemove.length > 0) await supabase.storage.from('attachments').remove(toRemove);
-             } catch (storageErr) {
-                 console.warn('Room storage cleanup failed (non-fatal):', storageErr);
-             }
-        }
-        setRooms(prev => prev.filter(r => r.room_key !== key));
-        // Prune the deleted key from the saved drag order so it can't linger forever.
-        try {
-            const raw = localStorage.getItem(`roomOrder_${user.uid}`);
-            if (raw) localStorage.setItem(`roomOrder_${user.uid}`, JSON.stringify((JSON.parse(raw) as string[]).filter(k => k !== key)));
-        } catch { /* ignore */ }
-        // Drop it from favorites so a stale star can't linger.
-        setFavorites(prev => {
-            if (!prev.has(key)) return prev;
-            const next = new Set(prev); next.delete(key);
-            try { localStorage.setItem(`roomFav_${user.uid}`, JSON.stringify([...next])); } catch { /* ignore */ }
-            return next;
-        });
-        // Clean up this user's room_settings row (best-effort).
-        if (settingsRef.current.has(key)) {
-            setSettings(prev => { const next = new Map(prev); next.delete(key); return next; });
-            supabase.from('room_settings').delete().eq('user_id', user.uid).eq('room_key', key).then(undefined, () => {});
-        }
+        await deleteRoomByKey(roomToDelete.key, roomToDelete.isOwner);
     } catch (e: any) {
         alert('Operation failed: ' + (e.message || "Unknown error"));
     } finally {
         setIsDeletingRoom(false);
         setRoomToDelete(null);
     }
+  };
+
+  // --- Bulk actions (multi-select) ---
+  const toggleSelect = useCallback((key: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => { setSelectMode(false); setSelected(new Set()); }, []);
+
+  const handleBulkArchive = useCallback(async () => {
+    const keys = [...selected];
+    for (const key of keys) {
+      if (!settingsRef.current.get(key)?.archived) await updateSetting(key, { archived: true });
+    }
+    exitSelectMode();
+  }, [selected, updateSetting, exitSelectMode]);
+
+  const handleBulkDelete = async () => {
+    setIsBulkDeleting(true);
+    const keys = [...selected];
+    const ownerByKey = new Map(rooms.map(r => [r.room_key, r.created_by === user.uid]));
+    let failed = 0;
+    for (const key of keys) {
+      try { await deleteRoomByKey(key, !!ownerByKey.get(key)); }
+      catch (e) { failed++; console.error('Bulk delete failed for', key, e); }
+    }
+    setIsBulkDeleting(false);
+    setConfirmBulkDelete(false);
+    exitSelectMode();
+    if (failed > 0) alert(`${failed} room(s) could not be deleted.`);
   };
 
   const handleCreateOrJoinRoom = async (e: React.FormEvent) => {
@@ -804,7 +907,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const anyArchived = useMemo(() => rooms.some((r) => settings.get(r.room_key)?.archived), [rooms, settings]);
 
   // Drag is enabled only when the displayed order == the saved canonical order.
-  const dragEnabled = query.trim() === '' && filter === 'all' && favorites.size === 0 && !anyArchived;
+  const dragEnabled = query.trim() === '' && filter === 'all' && favorites.size === 0 && !anyArchived && !selectMode;
 
   const displayRooms = useMemo(() => {
     if (dragEnabled) return rooms;
@@ -833,10 +936,14 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     overview: overview.get(room.room_key),
     revealed: revealedPins.has(room.room_key),
     isFavorite: favorites.has(room.room_key),
+    selectMode,
+    selected: selected.has(room.room_key),
+    online: online.get(room.room_key),
     onJoin: handleJoin,
     onOpenActions: setActionsRoom,
     onTogglePin: togglePinVisibility,
     onToggleFav: toggleFavorite,
+    onToggleSelect: toggleSelect,
   });
 
   return (
@@ -862,6 +969,31 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             onToggleArchive={() => updateSetting(actionsRoom.room_key, { archived: !settings.get(actionsRoom.room_key)?.archived })}
             onDelete={() => onRequestDeleteRoom(actionsRoom.display_name || actionsRoom.room_name, actionsRoom.room_key, actionsRoom.created_by)}
         />
+    )}
+    {selectMode && selected.size > 0 && createPortal(
+        <div className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-[100] animate-in slide-in-from-bottom-4 fade-in duration-300">
+            <div className="flex items-center justify-between gap-4 p-3 pl-5 bg-slate-900/90 dark:bg-white/10 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl text-white ring-1 ring-black/10">
+                <span className="text-sm font-bold whitespace-nowrap">{selected.size} selected</span>
+                <div className="flex gap-2">
+                    <button onClick={handleBulkArchive} className="px-3 py-1.5 text-xs font-bold bg-white/10 hover:bg-white/20 rounded-lg flex items-center gap-1.5 transition"><Archive size={14} />Archive</button>
+                    <button onClick={() => setConfirmBulkDelete(true)} className="px-3 py-1.5 text-xs font-bold bg-red-500 hover:bg-red-600 rounded-lg flex items-center gap-1.5 transition shadow-lg shadow-red-500/20"><Trash2 size={14} />Delete</button>
+                </div>
+            </div>
+        </div>,
+        document.body
+    )}
+    {confirmBulkDelete && createPortal(
+        <div onClick={() => !isBulkDeleting && setConfirmBulkDelete(false)} className="fixed inset-0 z-[110] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-5 animate-in zoom-in-95">
+                <div className="flex items-center gap-2 mb-2"><AlertCircle className="text-red-500" size={20} /><h3 className="font-bold text-slate-800 dark:text-white">Delete {selected.size} room{selected.size > 1 ? 's' : ''}?</h3></div>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Rooms you own are permanently deleted for everyone; rooms you joined are removed from your list. This can't be undone.</p>
+                <div className="flex gap-2">
+                    <button onClick={() => setConfirmBulkDelete(false)} disabled={isBulkDeleting} className="flex-1 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition disabled:opacity-50">Cancel</button>
+                    <button onClick={handleBulkDelete} disabled={isBulkDeleting} className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 text-white text-sm font-bold rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50">{isBulkDeleting ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16} />}Delete</button>
+                </div>
+            </div>
+        </div>,
+        document.body
     )}
 
     <div className="min-h-[100dvh] bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300 pt-[env(safe-area-inset-top)]">
@@ -999,11 +1131,18 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
                     <div>
                         <div className="flex flex-col gap-3 mb-4 px-1">
-                            <div className="flex items-baseline justify-between gap-3">
+                            <div className="flex items-center justify-between gap-3">
                                 <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Your Rooms</h3>
-                                {dragEnabled && rooms.length > 1 && (
-                                    <span className="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">Drag to reorder · long-press on touch</span>
-                                )}
+                                <div className="flex items-center gap-3">
+                                    {dragEnabled && rooms.length > 1 && (
+                                        <span className="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:inline">Drag to reorder · long-press on touch</span>
+                                    )}
+                                    {rooms.length > 1 && (
+                                        <button onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))} className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition ${selectMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}>
+                                            <CheckSquare size={14} />{selectMode ? 'Cancel' : 'Select'}
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                             {rooms.length > 0 && (
                                 <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
