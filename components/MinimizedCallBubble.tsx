@@ -49,7 +49,8 @@ export interface MinimizedCallBubbleProps {
 const MinimizedCallBubble: React.FC<MinimizedCallBubbleProps> = ({
   stream, avatar, name, showVideo, mirror, sharing, isMuted, onToggleMute, onHangup, onRestore,
 }) => {
-  const { box, setBox, startDrag } = useDragResize({ x: 0, y: 0, w: 220, h: 150 }, { snap: true, margin: 12, minW: 160, minH: 110 });
+  // Free placement (no corner snap) — leave it wherever dropped; clamped to the viewport.
+  const { box, setBox, startDrag } = useDragResize({ x: 0, y: 0, w: 220, h: 150 }, { minW: 160, minH: 110 });
   useEffect(() => {
     setBox((b) => ({ ...b, x: window.innerWidth - b.w - 16, y: window.innerHeight - b.h - 90 }));
   }, [setBox]);
