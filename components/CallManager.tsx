@@ -38,7 +38,7 @@ interface CallManagerProps {
 
 // A single video/audio tile (local or remote). Binds the MediaStream to its own
 // <video> element; falls back to an avatar when there's no live video track.
-const CallTile: React.FC<{
+type CallTileProps = {
   stream: MediaStream | null;
   name: string;
   avatar: string;
@@ -49,7 +49,8 @@ const CallTile: React.FC<{
   connecting?: boolean;
   sharing?: boolean;
   objectFit?: 'cover' | 'contain'; // 'cover' fills (may crop); 'contain' fits (letterboxes)
-}> = ({ stream, name, avatar, muted, mirror, showVideo, reconnecting, connecting, sharing, objectFit = 'cover' }) => {
+};
+const CallTile = React.memo(({ stream, name, avatar, muted, mirror, showVideo, reconnecting, connecting, sharing, objectFit = 'cover' }: CallTileProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const el = videoRef.current;
@@ -58,6 +59,10 @@ const CallTile: React.FC<{
       el.play().catch(() => {});
     }
   }, [stream]);
+  useEffect(() => {
+    const el = videoRef.current;
+    if (el && showVideo) el.play().catch(() => {});
+  }, [showVideo]);
 
   return (
     <div className="relative bg-slate-900 rounded-2xl overflow-hidden border border-white/10 shadow-lg w-full h-full min-h-0">
@@ -84,12 +89,11 @@ const CallTile: React.FC<{
       </div>
     </div>
   );
-};
+});
 
 // Draggable self-view picture-in-picture (iPhone-style) for 1-on-1 video. Snaps
 // to the nearest corner on release; works with mouse + touch.
-const SelfViewPiP: React.FC<{ stream: MediaStream | null; mirror: boolean; showVideo: boolean; avatar: string; sharing: boolean }>
-  = ({ stream, mirror, showVideo, avatar, sharing }) => {
+const SelfViewPiP = React.memo(({ stream, mirror, showVideo, avatar, sharing }: { stream: MediaStream | null; mirror: boolean; showVideo: boolean; avatar: string; sharing: boolean }) => {
   // Free placement (no corner snap) — leave it wherever dropped — but kept clear of
   // the top bar (~72px) and controls bar (~150px) so it never hides behind them.
   const { box, setBox, startDrag } = useDragResize({ x: 0, y: 0, w: 130, h: 174 }, { minW: 96, minH: 128, bounds: { top: 72, right: 10, bottom: 150, left: 10 } });
@@ -106,7 +110,7 @@ const SelfViewPiP: React.FC<{ stream: MediaStream | null; mirror: boolean; showV
       <CallTile stream={stream} name="You" avatar={avatar} muted mirror={mirror} showVideo={showVideo} sharing={sharing} />
     </div>
   );
-};
+});
 
 // Tailwind-friendly grid columns for N tiles (incl. the local one).
 function gridColsClass(count: number): string {
@@ -128,11 +132,30 @@ function useIsDesktop(): boolean {
 // Hidden <audio> that plays a remote peer's audio regardless of which video tile
 // (grid / spotlight / bubble / pip) is currently mounted. Video tiles are muted;
 // ALL remote sound comes from these, so minimizing never drops audio.
-const AudioSink: React.FC<{ stream: MediaStream; muted: boolean }> = ({ stream, muted }) => {
-  const ref = React.useRef<HTMLAudioElement>(null);
-  React.useEffect(() => { const el = ref.current; if (el && stream) { el.srcObject = stream; el.play().catch(() => {}); } }, [stream]);
+const AudioSink = React.memo(({ stream, muted }: { stream: MediaStream; muted: boolean }) => {
+  const ref = useRef<HTMLAudioElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !stream) return;
+    el.srcObject = stream;
+    const onGesture = () => {
+      el.play().then(() => {
+        window.removeEventListener('pointerdown', onGesture);
+        window.removeEventListener('touchstart', onGesture);
+      }).catch(() => {});
+    };
+    el.play().catch(() => {
+      // iOS Safari blocks unmuted autoplay until a user gesture — retry on the next one.
+      window.addEventListener('pointerdown', onGesture);
+      window.addEventListener('touchstart', onGesture, { passive: true });
+    });
+    return () => {
+      window.removeEventListener('pointerdown', onGesture);
+      window.removeEventListener('touchstart', onGesture);
+    };
+  }, [stream]);
   return <audio ref={ref} autoPlay muted={muted} style={{ display: 'none' }} />;
-};
+});
 
 // Compact call view rendered INTO the Document-PiP window. No drag wrapper (the OS
 // window is the frame). Video is muted — audio plays from the main doc's AudioSinks.
