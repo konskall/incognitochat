@@ -328,6 +328,15 @@ export function useWebRTC(user: User, config: ChatConfig) {
     };
     pc.ontrack = (e) => {
       entry.stream.addTrack(e.track);
+      // The always-present video transceiver (above) means a video receiver
+      // track exists even in an audio call — it just stays `muted` until the
+      // peer actually sends camera/screen frames. Re-render on mute/unmute so a
+      // tile flips between avatar and video exactly when media starts/stops
+      // (the UI gates on `!track.muted`, see CallManager). Without this, a
+      // screen share started mid-call wouldn't appear until the next re-render.
+      e.track.onunmute = () => syncPeers();
+      e.track.onmute = () => syncPeers();
+      e.track.onended = () => { try { entry.stream.removeTrack(e.track); } catch { /* noop */ } syncPeers(); };
       syncPeers();
     };
     pc.oniceconnectionstatechange = () => {

@@ -176,7 +176,10 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
         {/* Tile grid */}
         <div className={`flex-1 grid ${gridColsClass(tileCount)} gap-2 p-2 pt-16 pb-28 auto-rows-fr overflow-hidden`}>
           {peers.map((p: RemotePeer) => {
-            const hasVideo = p.stream.getVideoTracks().some((t) => t.readyState === 'live');
+            // `!t.muted` excludes the always-present video transceiver's
+            // placeholder track (live but receiving no frames) in an audio call,
+            // so a non-sharing peer shows their avatar, not a black tile.
+            const hasVideo = p.stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted);
             const reconnecting = p.state === 'disconnected' || p.state === 'failed' || p.state === 'checking';
             const peerSharing = sharingUids.has(p.uid);
             return (
