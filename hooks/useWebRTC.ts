@@ -236,6 +236,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
       const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ctx = new Ctx();
       audioCtxRef.current = ctx;
+      ctx.resume().catch(() => {});
       const dest = ctx.createMediaStreamDestination();
 
       if (mic) {
@@ -254,6 +255,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
 
       return dest.stream.getAudioTracks()[0] || mic;
     } catch {
+      if (mic) mic.enabled = !isMutedRef.current;
       return mic;
     }
   }, []);
@@ -803,6 +805,22 @@ export function useWebRTC(user: User, config: ChatConfig) {
 
   // Cleanup on unmount.
   useEffect(() => () => { cleanup(); }, [cleanup]);
+
+  // iOS: a fresh AudioContext starts `suspended` and only advances on a user
+  // gesture. While in a call, resume ours on any pointer/touch/key interaction so
+  // voice-filter / screen-audio output isn't silent to peers.
+  useEffect(() => {
+    if (status !== 'incall') return;
+    const resume = () => { const c = audioCtxRef.current; if (c && c.state === 'suspended') c.resume().catch(() => {}); };
+    window.addEventListener('pointerdown', resume);
+    window.addEventListener('touchstart', resume, { passive: true });
+    window.addEventListener('keydown', resume);
+    return () => {
+      window.removeEventListener('pointerdown', resume);
+      window.removeEventListener('touchstart', resume);
+      window.removeEventListener('keydown', resume);
+    };
+  }, [status]);
 
   return {
     status,
