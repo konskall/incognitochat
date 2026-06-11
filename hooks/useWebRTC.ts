@@ -72,6 +72,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
   const [callType, setCallType] = useState<CallType>('video');
   const [incoming, setIncoming] = useState<IncomingCall | null>(null);
   const [peers, setPeers] = useState<RemotePeer[]>([]);
+  const [sharingUids, setSharingUids] = useState<Set<string>>(new Set());
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
 
   const [isMuted, setIsMuted] = useState(false);
@@ -264,6 +265,10 @@ export function useWebRTC(user: User, config: ChatConfig) {
     if (entry) {
       try { entry.pc.close(); } catch { /* noop */ }
       peersRef.current.delete(uid);
+      setSharingUids((prev) => {
+        if (!prev.has(uid)) return prev;
+        const next = new Set(prev); next.delete(uid); return next;
+      });
       syncPeers();
     }
   }, [syncPeers]);
@@ -419,6 +424,14 @@ export function useWebRTC(user: User, config: ChatConfig) {
         }
         break;
       }
+      case 'screenshare': {
+        setSharingUids((prev) => {
+          const next = new Set(prev);
+          if (data.sharing) next.add(data.fromUid); else next.delete(data.fromUid);
+          return next;
+        });
+        break;
+      }
     }
   }, [user.uid, sendSignal, createPeer, makeOffer, drainCandidates, removePeer]);
 
@@ -491,6 +504,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
     setCallDuration(0);
     setNetworkQuality('good');
     setIsScreenSharing(false);
+    setSharingUids(new Set());
   }, []);
 
   // --- Public actions ---
@@ -689,5 +703,6 @@ export function useWebRTC(user: User, config: ChatConfig) {
     isScreenSharing,
     startScreenShare,
     stopScreenShare,
+    sharingUids,
   };
 }
