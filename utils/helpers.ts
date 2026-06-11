@@ -245,6 +245,28 @@ export function cleanUrl(url: string): string {
   return url.replace(/[.,!?;:'")\]}>]+$/, '');
 }
 
+// True only where the page can INITIATE a screen share. iOS Safari / iOS PWA
+// (WebKit) do not implement getDisplayMedia at all, so this is false there —
+// the UI uses it to show an explanatory toast instead of a broken button.
+export function getDisplayMediaSupported(): boolean {
+  return (
+    typeof navigator !== 'undefined' &&
+    !!navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getDisplayMedia === 'function'
+  );
+}
+
+// User-facing message for a getDisplayMedia failure, or null when the user
+// simply dismissed the picker (NotAllowedError/AbortError) — a deliberate
+// cancel that should show nothing.
+export function displayMediaErrorMessage(err: unknown): string | null {
+  const name = (err as { name?: string })?.name || '';
+  if (name === 'NotAllowedError' || name === 'AbortError') return null;
+  if (name === 'NotReadableError')
+    return 'Could not capture the screen — it may be in use by another app.';
+  return 'Could not start screen sharing on this device.';
+}
+
 // Helper to extract YouTube ID
 export function getYouTubeId(url: string): string | null {
   // Updated regex to include shorts/

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { encryptMessage, decryptMessage, generateRoomKey, getYouTubeId } from './helpers';
+import { describe, it, expect, afterEach } from 'vitest';
+import { encryptMessage, decryptMessage, generateRoomKey, getYouTubeId, getDisplayMediaSupported, displayMediaErrorMessage } from './helpers';
 
 describe('encrypt/decrypt', () => {
   const pin = '1234';
@@ -47,5 +47,38 @@ describe('getYouTubeId', () => {
 
   it('returns null for non-YouTube URLs', () => {
     expect(getYouTubeId('https://example.com/video')).toBeNull();
+  });
+});
+
+describe('getDisplayMediaSupported', () => {
+  const orig = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
+  afterEach(() => {
+    if (orig) Object.defineProperty(navigator, 'mediaDevices', orig);
+  });
+
+  it('is true when getDisplayMedia exists', () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getDisplayMedia: () => {} }, configurable: true,
+    });
+    expect(getDisplayMediaSupported()).toBe(true);
+  });
+
+  it('is false when getDisplayMedia is missing (iOS)', () => {
+    Object.defineProperty(navigator, 'mediaDevices', { value: {}, configurable: true });
+    expect(getDisplayMediaSupported()).toBe(false);
+  });
+});
+
+describe('displayMediaErrorMessage', () => {
+  it('returns null when the user cancels the picker', () => {
+    expect(displayMediaErrorMessage({ name: 'NotAllowedError' })).toBeNull();
+    expect(displayMediaErrorMessage({ name: 'AbortError' })).toBeNull();
+  });
+  it('explains a screen that cannot be captured', () => {
+    expect(displayMediaErrorMessage({ name: 'NotReadableError' })).toMatch(/in use/i);
+  });
+  it('falls back to a generic message', () => {
+    expect(displayMediaErrorMessage({ name: 'WeirdError' })).toMatch(/could not start screen sharing/i);
+    expect(displayMediaErrorMessage(null)).toMatch(/could not start screen sharing/i);
   });
 });
