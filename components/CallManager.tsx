@@ -42,8 +42,9 @@ const CallTile: React.FC<{
   mirror?: boolean;
   showVideo: boolean;
   reconnecting?: boolean;
+  connecting?: boolean;
   sharing?: boolean;
-}> = ({ stream, name, avatar, muted, mirror, showVideo, reconnecting, sharing }) => {
+}> = ({ stream, name, avatar, muted, mirror, showVideo, reconnecting, connecting, sharing }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const el = videoRef.current;
@@ -67,9 +68,9 @@ const CallTile: React.FC<{
           <img src={avatar} alt={name} className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover border-2 border-white/15 shadow-xl bg-slate-800" />
         </div>
       )}
-      {reconnecting && (
+      {(reconnecting || connecting) && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <span className="text-white/80 text-xs font-medium animate-pulse">Reconnecting…</span>
+          <span className="text-white/80 text-xs font-medium animate-pulse">{reconnecting ? 'Reconnecting…' : 'Connecting…'}</span>
         </div>
       )}
       <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/50 backdrop-blur-md rounded-full text-[11px] text-white/90 font-medium max-w-[80%] truncate flex items-center gap-1">
@@ -185,7 +186,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
             // placeholder track (live but receiving no frames) in an audio call,
             // so a non-sharing peer shows their avatar, not a black tile.
             const hasVideo = p.stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted);
-            const reconnecting = p.state === 'disconnected' || p.state === 'failed' || p.state === 'checking';
+            const dropped = p.state === 'disconnected' || p.state === 'failed';
+            const connecting = !p.everConnected && (p.state === 'checking' || p.state === 'new');
             const peerSharing = sharingUids.has(p.uid);
             return (
               <CallTile
@@ -195,7 +197,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                 avatar={p.avatar}
                 muted={isSpeakerMuted}
                 showVideo={hasVideo}
-                reconnecting={reconnecting}
+                reconnecting={dropped}
+                connecting={connecting}
                 sharing={peerSharing}
               />
             );

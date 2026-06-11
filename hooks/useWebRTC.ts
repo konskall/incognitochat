@@ -29,6 +29,7 @@ export interface RemotePeer {
   avatar: string;
   stream: MediaStream;
   state: RTCIceConnectionState;
+  everConnected: boolean;
 }
 
 export interface IncomingCall {
@@ -53,6 +54,7 @@ interface PeerEntry {
   // "find first null-track sender" heuristic would be ambiguous).
   audioSender: RTCRtpSender | null;
   videoSender: RTCRtpSender | null;
+  everConnected: boolean;
 }
 
 export interface CallNotice {
@@ -189,6 +191,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
         avatar: e.avatar,
         stream: e.stream,
         state: e.pc.iceConnectionState,
+        everConnected: e.everConnected,
       }))
     );
   }, []);
@@ -349,7 +352,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
     const stream = new MediaStream();
-    const entry: PeerEntry = { uid, name, avatar, pc, stream, candidateQueue: [], makingOffer: false, audioSender: null, videoSender: null };
+    const entry: PeerEntry = { uid, name, avatar, pc, stream, candidateQueue: [], makingOffer: false, audioSender: null, videoSender: null, everConnected: false };
     peersRef.current.set(uid, entry);
 
     // ALWAYS create exactly one audio + one video sender, even with no mic/camera,
@@ -389,6 +392,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
     };
     pc.oniceconnectionstatechange = () => {
       const st = pc.iceConnectionState;
+      if (st === 'connected' || st === 'completed') entry.everConnected = true;
       if (st === 'failed' || st === 'disconnected') {
         if (user.uid < uid) restartIce(entry); // offerer drives the restart
       }
