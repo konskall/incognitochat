@@ -55,6 +55,7 @@ interface PeerEntry {
   audioSender: RTCRtpSender | null;
   videoSender: RTCRtpSender | null;
   everConnected: boolean;
+  failTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface CallNotice {
@@ -179,6 +180,8 @@ export function useWebRTC(user: User, config: ChatConfig) {
   // Who I directly rang (1-on-1). null for a group ring. Lets a `decline` from
   // that exact person end my "Waiting…" screen instead of hanging forever.
   const directTargetRef = useRef<string | null>(null);
+  const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const incomingQueueRef = useRef<IncomingCall[]>([]);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -307,8 +310,10 @@ export function useWebRTC(user: User, config: ChatConfig) {
   }, []);
 
   const removePeer = useCallback((uid: string) => {
+    pendingCandidates.current.delete(uid); // drop stale buffered candidates either way
     const entry = peersRef.current.get(uid);
     if (entry) {
+      if (entry.failTimer) { clearTimeout(entry.failTimer); entry.failTimer = null; }
       try { entry.pc.close(); } catch { /* noop */ }
       peersRef.current.delete(uid);
       setSharingUids((prev) => {
@@ -316,6 +321,13 @@ export function useWebRTC(user: User, config: ChatConfig) {
         const next = new Set(prev); next.delete(uid); return next;
       });
       syncPeers();
+      // A participant left and none remain → end my call instead of hanging on
+      // "Waiting…/Reconnecting…". (cleanup() runs async-safe: during teardown the
+      // map is already empty + status idle, so this no-ops.)
+      if (statusRef.current === 'incall' && peersRef.current.size === 0) {
+        setNotice({ kind: 'info', text: 'Call ended.' });
+        cleanupRef.current();
+      }
     }
   }, [syncPeers]);
 
@@ -354,7 +366,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
     const stream = new MediaStream();
-    const entry: PeerEntry = { uid, name, avatar, pc, stream, candidateQueue: [], makingOffer: false, audioSender: null, videoSender: null, everConnected: false };
+    const entry: PeerEntry = { uid, name, avatar, pc, stream, candidateQueue: [], makingOffer: false, audioSender: null, videoSender: null, everConnected: false, failTimer: null };
     peersRef.current.set(uid, entry);
 
     // ALWAYS create exactly one audio + one video sender, even with no mic/camera,
@@ -394,9 +406,22 @@ export function useWebRTC(user: User, config: ChatConfig) {
     };
     pc.oniceconnectionstatechange = () => {
       const st = pc.iceConnectionState;
-      if (st === 'connected' || st === 'completed') entry.everConnected = true;
+      if (st === 'connected' || st === 'completed') {
+        entry.everConnected = true;
+        if (entry.failTimer) { clearTimeout(entry.failTimer); entry.failTimer = null; }
+        if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
+      }
       if (st === 'failed' || st === 'disconnected') {
-        if (user.uid < uid) restartIce(entry); // offerer drives the restart
+        if (user.uid < uid) restartIce(entry); // smaller uid drives the ICE restart
+        // Backstop (both sides): if still down after a grace period, drop the dead
+        // peer so the survivor isn't stuck forever (covers a peer that vanished
+        // without sending 'leave', e.g. a mobile tab killed in the background).
+        if (!entry.failTimer) {
+          entry.failTimer = setTimeout(() => {
+            const s = entry.pc.iceConnectionState;
+            if (s === 'failed' || s === 'disconnected') removePeer(uid);
+          }, 15000);
+        }
       }
       if (st === 'closed') removePeer(uid);
       syncPeers();
@@ -422,13 +447,18 @@ export function useWebRTC(user: User, config: ChatConfig) {
           sendSignal({ type: 'present', toUid: data.fromUid, callType: callTypeRef.current });
           const entry = createPeer(data.fromUid, data.fromName, data.fromAvatar);
           if (user.uid < data.fromUid) makeOffer(entry);
-        } else if (statusRef.current === 'idle') {
-          // Someone started/extended a call — ring me so I can join. A `toUid` on
-          // the join means it was aimed only at me (1-on-1); otherwise it's a group ring.
-          setIncoming({ fromUid: data.fromUid, fromName: data.fromName, fromAvatar: data.fromAvatar, callType: data.callType || 'audio', direct: !!data.toUid });
-          setStatus('ringing');
-          initAudio();
-          startRingtone();
+        } else {
+          // idle OR already ringing: enqueue this caller (deduped by uid).
+          const inc: IncomingCall = { fromUid: data.fromUid, fromName: data.fromName, fromAvatar: data.fromAvatar, callType: data.callType || 'audio', direct: !!data.toUid };
+          const q = incomingQueueRef.current;
+          if (!q.some((c) => c.fromUid === inc.fromUid)) q.push(inc);
+          if (statusRef.current === 'idle') {
+            setIncoming(inc);
+            setStatus('ringing');
+            initAudio();
+            startRingtone();
+          }
+          // already 'ringing' → current ring continues; new caller waits in the queue.
         }
         break;
       }
@@ -491,10 +521,11 @@ export function useWebRTC(user: User, config: ChatConfig) {
       }
       case 'leave': {
         removePeer(data.fromUid);
+        incomingQueueRef.current = incomingQueueRef.current.filter((c) => c.fromUid !== data.fromUid);
         if (statusRef.current === 'ringing' && incomingRef.current?.fromUid === data.fromUid) {
-          setIncoming(null);
-          setStatus('idle');
-          stopRingtone();
+          const next = incomingQueueRef.current[0];
+          if (next) { setIncoming(next); } // promote the next caller; ring keeps going
+          else { setIncoming(null); setStatus('idle'); stopRingtone(); }
         }
         break;
       }
@@ -577,7 +608,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
   }, [facingMode]);
 
   const cleanup = useCallback(() => {
-    peersRef.current.forEach((e) => { try { e.pc.close(); } catch { /* noop */ } });
+    peersRef.current.forEach((e) => { if (e.failTimer) clearTimeout(e.failTimer); try { e.pc.close(); } catch { /* noop */ } });
     peersRef.current.clear();
     pendingCandidates.current.clear();
     rawStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -593,6 +624,8 @@ export function useWebRTC(user: User, config: ChatConfig) {
     if (audioCtxRef.current) { audioCtxRef.current.close().catch(() => {}); audioCtxRef.current = null; }
     if (durationIntervalRef.current) { clearInterval(durationIntervalRef.current); durationIntervalRef.current = null; }
     if (statsIntervalRef.current) { clearInterval(statsIntervalRef.current); statsIntervalRef.current = null; }
+    if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
+    incomingQueueRef.current = [];
     stopRingtone();
     setPeers([]);
     setLocalStream(null);
@@ -614,16 +647,28 @@ export function useWebRTC(user: User, config: ChatConfig) {
   const enterCall = useCallback(async (type: CallType, targetUid?: string) => {
     try {
       directTargetRef.current = targetUid ?? null;
-      setNotice(null); // clear any stale banner; getMedia may set its own info notice
+      setNotice(null);
+      stopRingtone();            // stop the ring BEFORE the (slow) permission prompt
+      setIncoming(null);
+      incomingQueueRef.current = [];
       await getMedia(type === 'video');
       setCallType(type);
       callTypeRef.current = type;
       setStatus('incall');
       statusRef.current = 'incall';
-      setIncoming(null);
-      stopRingtone();
       // Announce; existing members reply with `present` and the smaller uid offers.
       sendSignal({ type: 'join', callType: type, toUid: targetUid });
+      // 1-on-1: if the person we rang never connects, stop waiting ("No answer").
+      if (targetUid) {
+        if (ringTimeoutRef.current) clearTimeout(ringTimeoutRef.current);
+        ringTimeoutRef.current = setTimeout(() => {
+          const anyConnected = Array.from(peersRef.current.values()).some((e) => e.everConnected);
+          if (statusRef.current === 'incall' && !anyConnected) {
+            setNotice({ kind: 'info', text: 'No answer.' });
+            cleanupRef.current();
+          }
+        }, 40000);
+      }
     } catch (e) {
       console.error('Could not start/join call', e);
       setNotice({ kind: 'error', text: mediaErrorMessage(e) });
@@ -644,9 +689,10 @@ export function useWebRTC(user: User, config: ChatConfig) {
   const declineCall = useCallback(() => {
     const inc = incomingRef.current;
     if (inc) sendSignal({ type: 'decline', toUid: inc.fromUid }); // let the caller stop waiting
-    setIncoming(null);
-    setStatus('idle');
-    stopRingtone();
+    incomingQueueRef.current = incomingQueueRef.current.filter((c) => c.fromUid !== inc?.fromUid);
+    const next = incomingQueueRef.current[0];
+    if (next) { setIncoming(next); } // there was another caller waiting
+    else { setIncoming(null); setStatus('idle'); stopRingtone(); }
   }, [sendSignal]);
 
   const hangup = useCallback(() => {
@@ -804,7 +850,10 @@ export function useWebRTC(user: User, config: ChatConfig) {
   }, [status]);
 
   // Cleanup on unmount.
-  useEffect(() => () => { cleanup(); }, [cleanup]);
+  useEffect(() => () => {
+    if (statusRef.current === 'incall') { try { sendSignal({ type: 'leave' }); } catch { /* noop */ } }
+    cleanup();
+  }, [cleanup, sendSignal]);
 
   // iOS: a fresh AudioContext starts `suspended` and only advances on a user
   // gesture. While in a call, resume ours on any pointer/touch/key interaction so
