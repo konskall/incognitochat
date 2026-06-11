@@ -89,9 +89,9 @@ const CallTile: React.FC<{
 // to the nearest corner on release; works with mouse + touch.
 const SelfViewPiP: React.FC<{ stream: MediaStream | null; mirror: boolean; showVideo: boolean; avatar: string; sharing: boolean }>
   = ({ stream, mirror, showVideo, avatar, sharing }) => {
-  // Keep the self-view clear of the top bar (~72px) and the controls bar (~150px,
-  // up to 2 rows on phones) so it can never hide behind them and stays grabbable.
-  const { box, setBox, startDrag } = useDragResize({ x: 0, y: 0, w: 130, h: 174 }, { snap: true, minW: 96, minH: 128, margin: 12, bounds: { top: 72, right: 10, bottom: 150, left: 10 } });
+  // Free placement (no corner snap) — leave it wherever dropped — but kept clear of
+  // the top bar (~72px) and controls bar (~150px) so it never hides behind them.
+  const { box, setBox, startDrag } = useDragResize({ x: 0, y: 0, w: 130, h: 174 }, { minW: 96, minH: 128, bounds: { top: 72, right: 10, bottom: 150, left: 10 } });
   useEffect(() => {
     const w = Math.min(140, window.innerWidth * 0.32); const h = w * 1.34;
     setBox({ x: window.innerWidth - w - 14, y: window.innerHeight - h - 158, w, h });
