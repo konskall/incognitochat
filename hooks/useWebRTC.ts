@@ -76,6 +76,17 @@ export function mediaErrorMessage(err: unknown): string {
   return 'Could not start the call. Check your microphone/camera and try again.';
 }
 
+// Defensive validation for untrusted signaling payloads from the broadcast channel.
+const MAX_BUFFERED_CANDIDATES = 100;
+function isValidSdp(p: unknown): p is RTCSessionDescriptionInit {
+  const o = p as { type?: unknown; sdp?: unknown } | null;
+  return !!o && (o.type === 'offer' || o.type === 'answer' || o.type === 'pranswer' || o.type === 'rollback') && typeof o.sdp === 'string';
+}
+function isValidCandidate(p: unknown): p is RTCIceCandidateInit {
+  const o = p as { candidate?: unknown } | null;
+  return !!o && typeof o.candidate === 'string';
+}
+
 // Build the per-filter Web Audio chain from a mic source node; returns the tail
 // node to connect onward. Oscillators are started immediately (GC'd on ctx close).
 function buildVoiceChain(ctx: AudioContext, src: AudioNode, filter: VoiceFilterType): AudioNode {
@@ -449,6 +460,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
 
   // --- Signal handlers ---
   const handleSignal = useCallback(async (data: SignalData) => {
+    if (typeof data.fromUid !== 'string' || !data.fromUid) return; // ignore malformed signals
     if (data.fromUid === user.uid) return;
     if (data.toUid && data.toUid !== user.uid) return;
 
@@ -489,6 +501,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
         // startScreenShare). If both sides offer at once, the "polite" peer (larger
         // uid) rolls back to accept the incoming offer; the impolite peer ignores
         // it and keeps its own. Initial negotiation is always stable → no collision.
+        if (!isValidSdp(data.payload)) return;
         const collision = entry.makingOffer || entry.pc.signalingState !== 'stable';
         const polite = user.uid > data.fromUid;
         if (collision && !polite) return;
@@ -509,6 +522,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
       case 'answer': {
         const entry = peersRef.current.get(data.fromUid);
         if (!entry) return;
+        if (!isValidSdp(data.payload)) return;
         try {
           await entry.pc.setRemoteDescription(new RTCSessionDescription(data.payload as RTCSessionDescriptionInit));
           await drainCandidates(entry);
@@ -518,15 +532,17 @@ export function useWebRTC(user: User, config: ChatConfig) {
         break;
       }
       case 'candidate': {
-        const entry = peersRef.current.get(data.fromUid);
+        if (!isValidCandidate(data.payload)) return;
         const cand = data.payload as RTCIceCandidateInit;
+        const entry = peersRef.current.get(data.fromUid);
         if (!entry) {
           const list = pendingCandidates.current.get(data.fromUid) || [];
-          list.push(cand);
-          pendingCandidates.current.set(data.fromUid, list);
-        } else if (entry.pc.remoteDescription) {
+          if (list.length < MAX_BUFFERED_CANDIDATES) { list.push(cand); pendingCandidates.current.set(data.fromUid, list); }
+          break;
+        }
+        if (entry.pc.remoteDescription) {
           entry.pc.addIceCandidate(new RTCIceCandidate(cand)).catch((e) => console.error('addIceCandidate', e));
-        } else {
+        } else if (entry.candidateQueue.length < MAX_BUFFERED_CANDIDATES) {
           entry.candidateQueue.push(cand);
         }
         break;
