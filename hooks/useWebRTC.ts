@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../services/supabase';
 import { User, ChatConfig, SignalData } from '../types';
-import { initAudio, startRingtone, stopRingtone } from '../utils/helpers';
+import { initAudio, startRingtone, stopRingtone, getDisplayMediaSupported, displayMediaErrorMessage } from '../utils/helpers';
 
 // STUN + TURN (metered.ca). Mesh topology: every participant holds one
 // RTCPeerConnection per other participant, so this scales to small groups
@@ -79,6 +79,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
   const [isSpeakerMuted, setIsSpeakerMuted] = useState(false);
   const [voiceFilter, setVoiceFilter] = useState<VoiceFilterType>('normal');
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [networkQuality, setNetworkQuality] = useState<'good' | 'poor' | 'bad'>('good');
   const [callDuration, setCallDuration] = useState(0);
   // Transient banner for call/media problems (no mic/cam, blocked perms, …).
@@ -111,6 +112,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
   // Screen share (filled in a later task; declared now so the audio graph can read them).
   const screenStreamRef = useRef<MediaStream | null>(null);
   const isScreenSharingRef = useRef(false);
+  const cameraVideoTrackRef = useRef<MediaStreamTrack | null>(null);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -467,6 +469,12 @@ export function useWebRTC(user: User, config: ChatConfig) {
     pendingCandidates.current.clear();
     rawStreamRef.current?.getTracks().forEach((t) => t.stop());
     rawStreamRef.current = null;
+    screenStreamRef.current?.getTracks().forEach((t) => t.stop());
+    screenStreamRef.current = null;
+    cameraVideoTrackRef.current = null;
+    micGainRef.current = null;
+    outgoingAudioTrackRef.current = null;
+    isScreenSharingRef.current = false;
     sendStreamRef.current = null;
     if (audioCtxRef.current) { audioCtxRef.current.close().catch(() => {}); audioCtxRef.current = null; }
     if (durationIntervalRef.current) { clearInterval(durationIntervalRef.current); durationIntervalRef.current = null; }
@@ -482,6 +490,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
     setVoiceFilter('normal');
     setCallDuration(0);
     setNetworkQuality('good');
+    setIsScreenSharing(false);
   }, []);
 
   // --- Public actions ---
@@ -569,6 +578,58 @@ export function useWebRTC(user: User, config: ChatConfig) {
     }
   }, [facingMode, setOutgoingVideo, setLocalView]);
 
+  const stopScreenShare = useCallback(() => {
+    if (!isScreenSharingRef.current) return;
+    const display = screenStreamRef.current;
+
+    // Restore video: camera (video call) or none (audio call → avatar).
+    const restore = callTypeRef.current === 'video' ? cameraVideoTrackRef.current : null;
+    setOutgoingVideo(restore);
+    setLocalView(restore);
+    cameraVideoTrackRef.current = null;
+
+    // Stop the capture AFTER swapping away from its tracks.
+    display?.getTracks().forEach((t) => t.stop());
+    screenStreamRef.current = null;
+
+    applyOutgoingAudio(); // rebuild mix without screen audio
+
+    isScreenSharingRef.current = false;
+    setIsScreenSharing(false);
+    sendSignal({ type: 'screenshare', sharing: false });
+  }, [setOutgoingVideo, setLocalView, applyOutgoingAudio, sendSignal]);
+
+  const startScreenShare = useCallback(async () => {
+    if (statusRef.current !== 'incall' || isScreenSharingRef.current) return;
+    if (!getDisplayMediaSupported()) {
+      setNotice({ kind: 'info', text: "Screen sharing isn't supported on this device (iPhone/iPad). It works on desktop and Android." });
+      return;
+    }
+    let display: MediaStream;
+    try {
+      display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    } catch (err) {
+      const msg = displayMediaErrorMessage(err);
+      if (msg) setNotice({ kind: 'error', text: msg }); // null = user cancelled, stay silent
+      return;
+    }
+    screenStreamRef.current = display;
+    const screenVideo = display.getVideoTracks()[0];
+
+    cameraVideoTrackRef.current =
+      callTypeRef.current === 'video' ? (rawStreamRef.current?.getVideoTracks()[0] || null) : null;
+
+    setOutgoingVideo(screenVideo);
+    setLocalView(screenVideo);
+    applyOutgoingAudio(); // fold screen audio (if any) into the mix
+
+    screenVideo.onended = () => { stopScreenShare(); }; // browser's native "Stop sharing"
+
+    isScreenSharingRef.current = true;
+    setIsScreenSharing(true);
+    sendSignal({ type: 'screenshare', sharing: true });
+  }, [setOutgoingVideo, setLocalView, applyOutgoingAudio, sendSignal, stopScreenShare]);
+
   // --- Duration + connection stats while in a call ---
   useEffect(() => {
     if (status === 'incall') {
@@ -625,5 +686,8 @@ export function useWebRTC(user: User, config: ChatConfig) {
     toggleVideo,
     switchCamera,
     cycleVoiceFilter,
+    isScreenSharing,
+    startScreenShare,
+    stopScreenShare,
   };
 }
