@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon, MonitorUp, MonitorX } from 'lucide-react';
 import { User, ChatConfig, Presence } from '../types';
 import { useWebRTC, RemotePeer, CallType, CallNotice } from '../hooks/useWebRTC';
+import { useDragResize } from '../hooks/useDragResize';
 
 // Transient banner for call/media problems or info (no camera, blocked perms, …).
 const NoticeToast: React.FC<{ notice: CallNotice; onClose: () => void }> = ({ notice, onClose }) => {
@@ -81,6 +82,26 @@ const CallTile: React.FC<{
   );
 };
 
+// Draggable self-view picture-in-picture (iPhone-style) for 1-on-1 video. Snaps
+// to the nearest corner on release; works with mouse + touch.
+const SelfViewPiP: React.FC<{ stream: MediaStream | null; mirror: boolean; showVideo: boolean; avatar: string; sharing: boolean }>
+  = ({ stream, mirror, showVideo, avatar, sharing }) => {
+  const { box, setBox, startDrag } = useDragResize({ x: 0, y: 0, w: 130, h: 174 }, { snap: true, minW: 96, minH: 128, margin: 12 });
+  useEffect(() => {
+    const w = Math.min(140, window.innerWidth * 0.32); const h = w * 1.34;
+    setBox({ x: window.innerWidth - w - 14, y: window.innerHeight - h - 130, w, h });
+  }, [setBox]);
+  return (
+    <div
+      onPointerDown={startDrag}
+      style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+      className="absolute z-40 rounded-2xl overflow-hidden border-2 border-white/25 shadow-2xl cursor-grab active:cursor-grabbing touch-none"
+    >
+      <CallTile stream={stream} name="You" avatar={avatar} muted mirror={mirror} showVideo={showVideo} sharing={sharing} />
+    </div>
+  );
+};
+
 // Tailwind-friendly grid columns for N tiles (incl. the local one).
 function gridColsClass(count: number): string {
   if (count <= 1) return 'grid-cols-1';
@@ -153,6 +174,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     // we're sharing, not sending camera.
     const showLocalVideo = isVideo && !isVideoOff && hasLocalVideo && !isScreenSharing;
     const tileCount = peers.length + 1;
+    const spotlight = isVideo && peers.length === 1;
     return (
       <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col">
         {/* Top bar: signal + timer */}
@@ -179,40 +201,57 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           )}
         </div>
 
-        {/* Tile grid */}
-        <div className={`flex-1 grid ${gridColsClass(tileCount)} gap-2 p-2 pt-16 pb-36 sm:pb-28 auto-rows-fr overflow-hidden`}>
-          {peers.map((p: RemotePeer) => {
-            // `!t.muted` excludes the always-present video transceiver's
-            // placeholder track (live but receiving no frames) in an audio call,
-            // so a non-sharing peer shows their avatar, not a black tile.
-            const hasVideo = p.stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted);
-            const dropped = p.state === 'disconnected' || p.state === 'failed';
-            const connecting = !p.everConnected && (p.state === 'checking' || p.state === 'new');
-            const peerSharing = sharingUids.has(p.uid);
-            return (
-              <CallTile
-                key={p.uid}
-                stream={p.stream}
-                name={p.name}
-                avatar={p.avatar}
-                muted={isSpeakerMuted}
-                showVideo={hasVideo}
-                reconnecting={dropped}
-                connecting={connecting}
-                sharing={peerSharing}
-              />
-            );
-          })}
-          <CallTile
-            stream={localStream}
-            name="You"
-            avatar={config.avatarURL}
-            muted
-            mirror={showLocalVideo}
-            showVideo={showLocalVideo}
-            sharing={isScreenSharing}
-          />
-        </div>
+        {spotlight ? (
+          <div className="flex-1 relative overflow-hidden pt-16 pb-36 sm:pb-28">
+            {(() => {
+              const p = peers[0];
+              const hasVideo = p.stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted);
+              const dropped = p.state === 'disconnected' || p.state === 'failed';
+              const connecting = !p.everConnected && (p.state === 'checking' || p.state === 'new');
+              return (
+                <div className="absolute inset-2 sm:inset-3">
+                  <CallTile stream={p.stream} name={p.name} avatar={p.avatar} muted={isSpeakerMuted} showVideo={hasVideo} reconnecting={dropped} connecting={connecting} sharing={sharingUids.has(p.uid)} />
+                </div>
+              );
+            })()}
+            <SelfViewPiP stream={localStream} mirror={showLocalVideo} showVideo={showLocalVideo} avatar={config.avatarURL} sharing={isScreenSharing} />
+          </div>
+        ) : (
+          /* Tile grid */
+          <div className={`flex-1 grid ${gridColsClass(tileCount)} gap-2 p-2 pt-16 pb-36 sm:pb-28 auto-rows-fr overflow-hidden`}>
+            {peers.map((p: RemotePeer) => {
+              // `!t.muted` excludes the always-present video transceiver's
+              // placeholder track (live but receiving no frames) in an audio call,
+              // so a non-sharing peer shows their avatar, not a black tile.
+              const hasVideo = p.stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted);
+              const dropped = p.state === 'disconnected' || p.state === 'failed';
+              const connecting = !p.everConnected && (p.state === 'checking' || p.state === 'new');
+              const peerSharing = sharingUids.has(p.uid);
+              return (
+                <CallTile
+                  key={p.uid}
+                  stream={p.stream}
+                  name={p.name}
+                  avatar={p.avatar}
+                  muted={isSpeakerMuted}
+                  showVideo={hasVideo}
+                  reconnecting={dropped}
+                  connecting={connecting}
+                  sharing={peerSharing}
+                />
+              );
+            })}
+            <CallTile
+              stream={localStream}
+              name="You"
+              avatar={config.avatarURL}
+              muted
+              mirror={showLocalVideo}
+              showVideo={showLocalVideo}
+              sharing={isScreenSharing}
+            />
+          </div>
+        )}
 
         {peers.length === 0 && (
           <div className="absolute inset-x-0 top-[66%] flex justify-center px-4 pointer-events-none z-20">
