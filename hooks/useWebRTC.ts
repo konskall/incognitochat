@@ -636,6 +636,14 @@ export function useWebRTC(user: User, config: ChatConfig) {
       if (msg) setNotice({ kind: 'error', text: msg }); // null = user cancelled, stay silent
       return;
     }
+    // The picker is async: the call may have ended (hangup / remote left /
+    // unmount → cleanup) while it was open. If so, stop the just-captured stream
+    // and bail — otherwise we'd leak the OS screen-capture (indicator stuck on)
+    // and resurrect sharing state for a call we already left.
+    if (statusRef.current !== 'incall' || !sendStreamRef.current) {
+      display.getTracks().forEach((t) => t.stop());
+      return;
+    }
     screenStreamRef.current = display;
     const screenVideo = display.getVideoTracks()[0];
 
