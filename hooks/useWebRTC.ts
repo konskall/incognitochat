@@ -49,6 +49,7 @@ interface PeerEntry {
   stream: MediaStream;
   candidateQueue: RTCIceCandidateInit[];
   makingOffer: boolean;
+  needsRenegotiation: boolean;
   // Cached senders so we always replaceTrack the RIGHT m-line — even when this
   // peer has no mic/camera (then both senders start with a null track, and a
   // "find first null-track sender" heuristic would be ambiguous).
@@ -159,6 +160,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
   useEffect(() => { incomingRef.current = incoming; }, [incoming]);
   useEffect(() => { voiceFilterRef.current = voiceFilter; }, [voiceFilter]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+  useEffect(() => { isVideoOffRef.current = isVideoOff; }, [isVideoOff]);
 
   const peersRef = useRef<Map<string, PeerEntry>>(new Map());
   const pendingCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
@@ -173,6 +175,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
   const outgoingAudioTrackRef = useRef<MediaStreamTrack | null>(null);
   const voiceFilterRef = useRef(voiceFilter);
   const isMutedRef = useRef(isMuted);
+  const isVideoOffRef = useRef(isVideoOff);
   // Screen share (filled in a later task; declared now so the audio graph can read them).
   const screenStreamRef = useRef<MediaStream | null>(null);
   const isScreenSharingRef = useRef(false);
@@ -332,9 +335,12 @@ export function useWebRTC(user: User, config: ChatConfig) {
   }, [syncPeers]);
 
   const makeOffer = useCallback(async (entry: PeerEntry) => {
-    // Only the smaller-uid side of a pair offers, and only once at a time.
-    if (entry.makingOffer || entry.pc.signalingState !== 'stable') return;
+    // Only one offer at a time, only from a stable connection. If we must skip,
+    // remember to renegotiate when the connection returns to stable (so a screen
+    // share started while a peer was mid-negotiation isn't lost — iOS needs it).
+    if (entry.makingOffer || entry.pc.signalingState !== 'stable') { entry.needsRenegotiation = true; return; }
     entry.makingOffer = true;
+    entry.needsRenegotiation = false;
     try {
       const offer = await entry.pc.createOffer();
       await entry.pc.setLocalDescription(offer);
@@ -366,7 +372,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
     const stream = new MediaStream();
-    const entry: PeerEntry = { uid, name, avatar, pc, stream, candidateQueue: [], makingOffer: false, audioSender: null, videoSender: null, everConnected: false, failTimer: null };
+    const entry: PeerEntry = { uid, name, avatar, pc, stream, candidateQueue: [], makingOffer: false, needsRenegotiation: false, audioSender: null, videoSender: null, everConnected: false, failTimer: null };
     peersRef.current.set(uid, entry);
 
     // ALWAYS create exactly one audio + one video sender, even with no mic/camera,
@@ -404,6 +410,12 @@ export function useWebRTC(user: User, config: ChatConfig) {
       e.track.onended = () => { try { entry.stream.removeTrack(e.track); } catch { /* noop */ } syncPeers(); };
       syncPeers();
     };
+    pc.onsignalingstatechange = () => {
+      if (pc.signalingState === 'stable' && entry.needsRenegotiation) {
+        entry.needsRenegotiation = false;
+        makeOffer(entry);
+      }
+    };
     pc.oniceconnectionstatechange = () => {
       const st = pc.iceConnectionState;
       if (st === 'connected' || st === 'completed') {
@@ -433,7 +445,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
 
     syncPeers();
     return entry;
-  }, [sendSignal, syncPeers, user.uid, restartIce, removePeer]);
+  }, [sendSignal, syncPeers, user.uid, restartIce, removePeer, makeOffer]);
 
   // --- Signal handlers ---
   const handleSignal = useCallback(async (data: SignalData) => {
@@ -636,6 +648,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
     setIsVideoOff(false);
     setIsSpeakerMuted(false);
     setVoiceFilter('normal');
+    setFacingMode('user');
     setCallDuration(0);
     setNetworkQuality('good');
     setIsScreenSharing(false);
@@ -732,9 +745,13 @@ export function useWebRTC(user: User, config: ChatConfig) {
     if (callTypeRef.current !== 'video' || isScreenSharingRef.current) return;
     const newMode = facingMode === 'user' ? 'environment' : 'user';
     try {
-      rawStreamRef.current?.getVideoTracks().forEach((t) => t.stop());
-      const fresh = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: newMode } });
+      // Acquire the NEW camera before stopping the old one, so a failure (single-
+      // camera device / NotReadableError) leaves the current video intact.
+      const fresh = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: newMode } } });
       const newVideo = fresh.getVideoTracks()[0];
+      if (!newVideo) { fresh.getTracks().forEach((t) => t.stop()); return; }
+      newVideo.enabled = !isVideoOffRef.current; // carry the current camera on/off state onto the new track
+      rawStreamRef.current?.getVideoTracks().forEach((t) => t.stop()); // safe to drop the old one now
       const mic = rawStreamRef.current?.getAudioTracks()[0];
       rawStreamRef.current = new MediaStream(mic ? [mic, newVideo] : [newVideo]);
       setOutgoingVideo(newVideo);
@@ -742,6 +759,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
       setFacingMode(newMode);
     } catch (e) {
       console.error('switchCamera failed', e);
+      setNotice({ kind: 'info', text: 'Could not switch camera on this device.' });
     }
   }, [facingMode, setOutgoingVideo, setLocalView]);
 
@@ -895,6 +913,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
     toggleVideo,
     switchCamera,
     cycleVoiceFilter,
+    facingMode,
     isScreenSharing,
     startScreenShare,
     stopScreenShare,
