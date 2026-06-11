@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon, MonitorUp, MonitorX } from 'lucide-react';
 import { User, ChatConfig, Presence } from '../types';
 import { useWebRTC, RemotePeer, CallType, CallNotice } from '../hooks/useWebRTC';
 
@@ -93,6 +93,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     networkQuality, callDuration, notice, dismissNotice,
     startCall, acceptCall, declineCall, hangup,
     toggleMute, toggleVideo, switchCamera, cycleVoiceFilter,
+    isScreenSharing, startScreenShare, stopScreenShare,
   } = useWebRTC(user, config);
 
   const formatTime = (secs: number) => `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}`;
@@ -212,11 +213,19 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
             </button>
           )}
-          {isVideo && hasLocalVideo && (
+          {isVideo && hasLocalVideo && !isScreenSharing && (
             <button onClick={switchCamera} title="Switch camera" className="p-3.5 rounded-full transition-all shadow-lg bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700">
               <RotateCcw size={24} />
             </button>
           )}
+          <button
+            onClick={() => (isScreenSharing ? stopScreenShare() : startScreenShare())}
+            title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
+            aria-label={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
+            className={`p-3.5 rounded-full transition-all shadow-lg ${isScreenSharing ? 'bg-blue-500 text-white' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
+          >
+            {isScreenSharing ? <MonitorX size={24} /> : <MonitorUp size={24} />}
+          </button>
           <button onClick={hangup} className="p-5 rounded-full bg-red-600 text-white hover:bg-red-700 transition-all shadow-xl shadow-red-600/30 transform hover:scale-110">
             <PhoneOff size={32} fill="currentColor" />
           </button>
