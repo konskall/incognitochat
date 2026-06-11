@@ -42,7 +42,8 @@ const CallTile: React.FC<{
   mirror?: boolean;
   showVideo: boolean;
   reconnecting?: boolean;
-}> = ({ stream, name, avatar, muted, mirror, showVideo, reconnecting }) => {
+  sharing?: boolean;
+}> = ({ stream, name, avatar, muted, mirror, showVideo, reconnecting, sharing }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const el = videoRef.current;
@@ -71,7 +72,8 @@ const CallTile: React.FC<{
           <span className="text-white/80 text-xs font-medium animate-pulse">Reconnecting…</span>
         </div>
       )}
-      <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/50 backdrop-blur-md rounded-full text-[11px] text-white/90 font-medium max-w-[80%] truncate">
+      <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/50 backdrop-blur-md rounded-full text-[11px] text-white/90 font-medium max-w-[80%] truncate flex items-center gap-1">
+        {sharing && <MonitorUp size={12} className="shrink-0 text-blue-300" />}
         {name}
       </div>
     </div>
@@ -94,6 +96,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     startCall, acceptCall, declineCall, hangup,
     toggleMute, toggleVideo, switchCamera, cycleVoiceFilter,
     isScreenSharing, startScreenShare, stopScreenShare,
+    sharingUids,
   } = useWebRTC(user, config);
 
   const formatTime = (secs: number) => `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}`;
@@ -173,8 +176,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
         {/* Tile grid */}
         <div className={`flex-1 grid ${gridColsClass(tileCount)} gap-2 p-2 pt-16 pb-28 auto-rows-fr overflow-hidden`}>
           {peers.map((p: RemotePeer) => {
-            const hasVideo = p.stream.getVideoTracks().length > 0;
+            const hasVideo = p.stream.getVideoTracks().some((t) => t.readyState === 'live');
             const reconnecting = p.state === 'disconnected' || p.state === 'failed' || p.state === 'checking';
+            const peerSharing = sharingUids.has(p.uid);
             return (
               <CallTile
                 key={p.uid}
@@ -182,8 +186,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                 name={p.name}
                 avatar={p.avatar}
                 muted={isSpeakerMuted}
-                showVideo={isVideo && hasVideo}
+                showVideo={hasVideo}
                 reconnecting={reconnecting}
+                sharing={peerSharing}
               />
             );
           })}
@@ -192,8 +197,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
             name="You"
             avatar={config.avatarURL}
             muted
-            mirror
-            showVideo={isVideo && !isVideoOff && hasLocalVideo}
+            mirror={!isScreenSharing}
+            showVideo={(isScreenSharing && hasLocalVideo) || (isVideo && !isVideoOff && hasLocalVideo)}
+            sharing={isScreenSharing}
           />
         </div>
 
