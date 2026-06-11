@@ -19,7 +19,7 @@ const ICE_SERVERS: RTCConfiguration = {
   iceCandidatePoolSize: 10,
 };
 
-export type VoiceFilterType = 'normal' | 'deep' | 'robot';
+export type VoiceFilterType = 'normal' | 'deep' | 'robot' | 'monster' | 'alien';
 export type CallStatus = 'idle' | 'ringing' | 'incall';
 export type CallType = 'audio' | 'video';
 
@@ -70,6 +70,61 @@ export function mediaErrorMessage(err: unknown): string {
   if (name === 'NotReadableError' || name === 'TrackStartError')
     return 'Your microphone or camera is already in use by another app.';
   return 'Could not start the call. Check your microphone/camera and try again.';
+}
+
+// Build the per-filter Web Audio chain from a mic source node; returns the tail
+// node to connect onward. Oscillators are started immediately (GC'd on ctx close).
+function buildVoiceChain(ctx: AudioContext, src: AudioNode, filter: VoiceFilterType): AudioNode {
+  if (filter === 'deep') {
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 400;
+    const g = ctx.createGain(); g.gain.value = 1.5;
+    src.connect(lp); lp.connect(g); return g;
+  }
+  if (filter === 'robot') {
+    // Bandpass -> pure ring mod (square ~80Hz) -> comb/flanger -> hard-clip waveshaper.
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1100; bp.Q.value = 0.8;
+    const ring = ctx.createGain(); ring.gain.value = 0; // base 0 => pure ring modulation
+    const carrier = ctx.createOscillator(); carrier.type = 'square'; carrier.frequency.value = 80; carrier.start();
+    carrier.connect(ring.gain);
+    const comb = ctx.createDelay(); comb.delayTime.value = 0.006;
+    const fb = ctx.createGain(); fb.gain.value = 0.5;
+    const shaper = ctx.createWaveShaper(); shaper.curve = makeClipCurve(0.6); shaper.oversample = '2x';
+    const out = ctx.createGain(); out.gain.value = 0.9;
+    src.connect(bp); bp.connect(ring);
+    ring.connect(comb); comb.connect(fb); fb.connect(comb); // feedback loop
+    ring.connect(shaper); comb.connect(shaper);
+    shaper.connect(out); return out;
+  }
+  if (filter === 'monster') {
+    // Heavy lowpass + growl waveshaper + low ring-mod sub-harmonic + boost.
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 220;
+    const shaper = ctx.createWaveShaper(); shaper.curve = makeClipCurve(0.35); shaper.oversample = '4x';
+    const sub = ctx.createGain(); sub.gain.value = 0; // ring mod sub-harmonic
+    const subOsc = ctx.createOscillator(); subOsc.type = 'sine'; subOsc.frequency.value = 30; subOsc.start();
+    subOsc.connect(sub.gain);
+    const boost = ctx.createGain(); boost.gain.value = 1.8;
+    src.connect(lp); lp.connect(shaper); shaper.connect(sub); sub.connect(boost); return boost;
+  }
+  if (filter === 'alien') {
+    // Ring mod (sine ~140Hz) + LFO tremolo + light highpass.
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 300;
+    const ring = ctx.createGain(); ring.gain.value = 0;
+    const carrier = ctx.createOscillator(); carrier.type = 'sine'; carrier.frequency.value = 140; carrier.start();
+    carrier.connect(ring.gain);
+    const trem = ctx.createGain(); trem.gain.value = 0.7;
+    const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 6; lfo.start();
+    const lfoDepth = ctx.createGain(); lfoDepth.gain.value = 0.3;
+    lfo.connect(lfoDepth); lfoDepth.connect(trem.gain);
+    src.connect(hp); hp.connect(ring); ring.connect(trem); return trem;
+  }
+  return src; // normal (only reached when screen audio forces the graph)
+}
+
+// Symmetric clip curve for waveshaper distortion; `amount` in (0,1], higher = harder.
+function makeClipCurve(amount: number): Float32Array<ArrayBuffer> {
+  const n = 1024; const curve = new Float32Array(new ArrayBuffer(n * 4)); const k = amount * 100;
+  for (let i = 0; i < n; i++) { const x = (i * 2) / n - 1; curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x)); }
+  return curve;
 }
 
 export function useWebRTC(user: User, config: ChatConfig) {
@@ -183,20 +238,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
       if (mic) {
         mic.enabled = true; // gain handles mute when the graph is active
         const micSource = ctx.createMediaStreamSource(new MediaStream([mic]));
-        let node: AudioNode = micSource;
-        if (filter === 'deep') {
-          const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 400;
-          const g = ctx.createGain(); g.gain.value = 1.5;
-          micSource.connect(f); f.connect(g); node = g;
-        } else if (filter === 'robot') {
-          const osc = ctx.createOscillator(); osc.type = 'square'; osc.frequency.value = 50; osc.start();
-          const ring = ctx.createGain(); ring.gain.value = 1.0;
-          micSource.connect(ring); osc.connect(ring.gain);
-          const dry = ctx.createGain(); dry.gain.value = 0.4;
-          micSource.connect(dry);
-          const merge = ctx.createGain();
-          ring.connect(merge); dry.connect(merge); node = merge;
-        }
+        const node = buildVoiceChain(ctx, micSource, filter);
         const micGain = ctx.createGain(); micGain.gain.value = muted ? 0 : 1;
         node.connect(micGain); micGain.connect(dest);
         micGainRef.current = micGain;
@@ -615,7 +657,8 @@ export function useWebRTC(user: User, config: ChatConfig) {
   }, []);
 
   const cycleVoiceFilter = useCallback(() => {
-    const next: VoiceFilterType = voiceFilter === 'normal' ? 'deep' : voiceFilter === 'deep' ? 'robot' : 'normal';
+    const order: VoiceFilterType[] = ['normal', 'deep', 'robot', 'monster', 'alien'];
+    const next = order[(order.indexOf(voiceFilter) + 1) % order.length];
     setVoiceFilter(next);
     voiceFilterRef.current = next;
     applyOutgoingAudio();
