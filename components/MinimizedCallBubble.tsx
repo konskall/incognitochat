@@ -5,8 +5,8 @@ import { useDragResize } from '../hooks/useDragResize';
 
 // Small muted <video> for the bubble/pip; audio plays from the always-mounted
 // RemoteAudioSinks in CallManager, so this never carries audio (no double sound).
-const BubbleVideo: React.FC<{ stream: MediaStream | null; avatar: string; showVideo: boolean; mirror: boolean }>
-  = ({ stream, avatar, showVideo, mirror }) => {
+const BubbleVideo: React.FC<{ stream: MediaStream | null; avatar: string; showVideo: boolean; mirror: boolean; sharing: boolean }>
+  = ({ stream, avatar, showVideo, mirror, sharing }) => {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -19,7 +19,7 @@ const BubbleVideo: React.FC<{ stream: MediaStream | null; avatar: string; showVi
         autoPlay
         playsInline
         muted
-        className={`w-full h-full object-cover ${mirror ? 'scale-x-[-1]' : ''} ${showVideo ? '' : 'opacity-0'}`}
+        className={`w-full h-full ${sharing ? 'object-contain' : 'object-cover'} ${mirror ? 'scale-x-[-1]' : ''} ${showVideo ? '' : 'opacity-0'}`}
       />
       {!showVideo && (
         <div className="absolute inset-0 flex items-center justify-center">
@@ -65,7 +65,7 @@ const MinimizedCallBubble: React.FC<MinimizedCallBubbleProps> = ({
     >
       {/* tap the video to restore */}
       <button onClick={onRestore} className="absolute inset-0 z-0" aria-label="Restore call" tabIndex={-1} />
-      <BubbleVideo stream={stream} avatar={avatar} showVideo={showVideo} mirror={mirror} />
+      <BubbleVideo stream={stream} avatar={avatar} showVideo={showVideo} mirror={mirror} sharing={sharing} />
 
       <button
         onClick={onRestore}

@@ -160,13 +160,13 @@ const AudioSink = React.memo(({ stream, muted }: { stream: MediaStream; muted: b
 
 // Compact call view rendered INTO the Document-PiP window. No drag wrapper (the OS
 // window is the frame). Video is muted — audio plays from the main doc's AudioSinks.
-const PipCallView: React.FC<{ stream: MediaStream | null; avatar: string; showVideo: boolean; mirror: boolean; isMuted: boolean; onToggleMute: () => void; onHangup: () => void }>
-  = ({ stream, avatar, showVideo, mirror, isMuted, onToggleMute, onHangup }) => {
+const PipCallView: React.FC<{ stream: MediaStream | null; avatar: string; showVideo: boolean; mirror: boolean; sharing: boolean; isMuted: boolean; onToggleMute: () => void; onHangup: () => void }>
+  = ({ stream, avatar, showVideo, mirror, sharing, isMuted, onToggleMute, onHangup }) => {
   const ref = React.useRef<HTMLVideoElement>(null);
   React.useEffect(() => { const el = ref.current; if (el && stream) { el.srcObject = stream; el.play().catch(() => {}); } }, [stream]);
   return (
     <div className="relative w-screen h-screen bg-slate-900 overflow-hidden">
-      <video ref={ref} autoPlay playsInline muted className={`w-full h-full object-cover ${mirror ? 'scale-x-[-1]' : ''} ${showVideo ? '' : 'opacity-0'}`} />
+      <video ref={ref} autoPlay playsInline muted className={`w-full h-full ${sharing ? 'object-contain' : 'object-cover'} ${mirror ? 'scale-x-[-1]' : ''} ${showVideo ? '' : 'opacity-0'}`} />
       {!showVideo && <div className="absolute inset-0 flex items-center justify-center"><img src={avatar} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-white/15 bg-slate-800" /></div>}
       <div className="absolute bottom-0 inset-x-0 flex items-center justify-center gap-4 p-2 bg-gradient-to-t from-black/80 to-transparent">
         <button onClick={onToggleMute} aria-label={isMuted ? 'Unmute' : 'Mute'} className={`p-2.5 rounded-full transition ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-700/80 text-white hover:bg-slate-600'}`}>{isMuted ? <MicOff size={18} /> : <Mic size={18} />}</button>
@@ -537,6 +537,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           avatar={peers[0] ? safeAvatarUrl(peers[0].avatar) : config.avatarURL}
           showVideo={peers[0] ? peers[0].stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted) : (!!localStream && localStream.getVideoTracks().length > 0 && callType === 'video' && !isVideoOff && !isScreenSharing)}
           mirror={!peers[0]}
+          sharing={peers[0] ? sharingUids.has(peers[0].uid) : isScreenSharing}
           isMuted={isMuted}
           onToggleMute={toggleMute}
           onHangup={hangup}

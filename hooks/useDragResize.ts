@@ -1,9 +1,9 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface Box { x: number; y: number; w: number; h: number; }
 export interface Inset { top: number; right: number; bottom: number; left: number; }
 
-const NO_INSET: Inset = { top: 0, right: 0, bottom: 0, left: 0 };
+export const NO_INSET: Inset = { top: 0, right: 0, bottom: 0, left: 0 };
 
 // Clamp a box so it stays within the viewport MINUS an optional inset (e.g. to
 // keep a floating element clear of a top bar / controls bar). Size is capped to
@@ -36,21 +36,40 @@ export function useDragResize(initial: Box, opts: Opts = {}) {
   const { minW = 240, minH = 160, snap = false, margin = 12, bounds = NO_INSET } = opts;
   const [box, setBox] = useState<Box>(initial);
   const boxRef = useRef(box); boxRef.current = box;
+  const boundsRef = useRef(bounds); boundsRef.current = bounds;
+  const activeRef = useRef<{ move: (e: PointerEvent) => void; up: () => void } | null>(null);
+
+  // Re-clamp on viewport resize/rotation so a floating element can't get stranded off-screen.
+  useEffect(() => {
+    const onResize = () => setBox((b) => clampBox(b, window.innerWidth, window.innerHeight, boundsRef.current));
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => { window.removeEventListener('resize', onResize); window.removeEventListener('orientationchange', onResize); };
+  }, []);
+
+  // Remove any in-flight drag/resize listeners if we unmount mid-gesture.
+  useEffect(() => () => {
+    if (activeRef.current) {
+      window.removeEventListener('pointermove', activeRef.current.move);
+      window.removeEventListener('pointerup', activeRef.current.up);
+      activeRef.current = null;
+    }
+  }, []);
 
   const startDrag = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     const startX = e.clientX, startY = e.clientY;
     const orig = boxRef.current;
     const move = (ev: PointerEvent) => {
-      const next = clampBox({ ...orig, x: orig.x + (ev.clientX - startX), y: orig.y + (ev.clientY - startY) }, window.innerWidth, window.innerHeight, bounds);
-      setBox(next);
+      setBox(clampBox({ ...orig, x: orig.x + (ev.clientX - startX), y: orig.y + (ev.clientY - startY) }, window.innerWidth, window.innerHeight, boundsRef.current));
     };
     const up = () => {
-      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
-      if (snap) setBox((b) => clampBox(nearestCorner(b, window.innerWidth, window.innerHeight, margin, bounds), window.innerWidth, window.innerHeight, bounds));
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); activeRef.current = null;
+      if (snap) setBox((b) => clampBox(nearestCorner(b, window.innerWidth, window.innerHeight, margin, boundsRef.current), window.innerWidth, window.innerHeight, boundsRef.current));
     };
+    activeRef.current = { move, up };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
-  }, [snap, margin, bounds]);
+  }, [snap, margin]);
 
   const startResize = useCallback((e: React.PointerEvent) => {
     e.preventDefault(); e.stopPropagation();
@@ -59,11 +78,12 @@ export function useDragResize(initial: Box, opts: Opts = {}) {
     const move = (ev: PointerEvent) => {
       const w = Math.max(minW, orig.w + (ev.clientX - startX));
       const h = Math.max(minH, orig.h + (ev.clientY - startY));
-      setBox(clampBox({ ...orig, w, h }, window.innerWidth, window.innerHeight, bounds));
+      setBox(clampBox({ ...orig, w, h }, window.innerWidth, window.innerHeight, boundsRef.current));
     };
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); activeRef.current = null; };
+    activeRef.current = { move, up };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
-  }, [minW, minH, bounds]);
+  }, [minW, minH]);
 
   return { box, setBox, startDrag, startResize };
 }

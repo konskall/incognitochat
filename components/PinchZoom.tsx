@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 interface Transform { scale: number; x: number; y: number; }
 
@@ -15,6 +15,8 @@ const PinchZoom: React.FC<{ children: React.ReactNode; className?: string }> = (
   const lastTap = useRef(0);
   const [active, setActive] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number | null>(null);
+  const pendingRef = useRef<Transform | null>(null);
 
   const clampT = useCallback((nt: Transform): Transform => {
     const el = containerRef.current;
@@ -24,6 +26,18 @@ const PinchZoom: React.FC<{ children: React.ReactNode; className?: string }> = (
     const maxY = (el.clientHeight * (scale - 1)) / 2;
     return { scale, x: Math.min(maxX, Math.max(-maxX, nt.x)), y: Math.min(maxY, Math.max(-maxY, nt.y)) };
   }, []);
+
+  const scheduleT = useCallback((next: Transform) => {
+    pendingRef.current = clampT(next);
+    if (rafRef.current == null) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        if (pendingRef.current) { setT(pendingRef.current); pendingRef.current = null; }
+      });
+    }
+  }, [clampT]);
+
+  useEffect(() => () => { if (rafRef.current != null) cancelAnimationFrame(rafRef.current); }, []);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
@@ -35,7 +49,7 @@ const PinchZoom: React.FC<{ children: React.ReactNode; className?: string }> = (
     } else if (ptrs.current.size === 1) {
       panLast.current = { x: e.clientX, y: e.clientY };
       const now = e.timeStamp;
-      if (now - lastTap.current < 300) { setT({ scale: 1, x: 0, y: 0 }); pinchStart.current = null; }
+      if (now - lastTap.current < 300) { pendingRef.current = null; setT({ scale: 1, x: 0, y: 0 }); pinchStart.current = null; }
       lastTap.current = now;
     }
   }, []);
@@ -47,14 +61,16 @@ const PinchZoom: React.FC<{ children: React.ReactNode; className?: string }> = (
       const [a, b] = Array.from(ptrs.current.values());
       const dist = Math.hypot(a.x - b.x, a.y - b.y);
       const scale = pinchStart.current.scale * (dist / pinchStart.current.dist);
-      setT((p) => clampT({ ...p, scale }));
+      const base = pendingRef.current ?? tRef.current;
+      scheduleT({ ...base, scale });
     } else if (ptrs.current.size === 1 && tRef.current.scale > 1 && panLast.current) {
       const dx = e.clientX - panLast.current.x;
       const dy = e.clientY - panLast.current.y;
       panLast.current = { x: e.clientX, y: e.clientY };
-      setT((p) => clampT({ ...p, x: p.x + dx, y: p.y + dy }));
+      const base = pendingRef.current ?? tRef.current;
+      scheduleT({ ...base, x: base.x + dx, y: base.y + dy });
     }
-  }, [clampT]);
+  }, [clampT, scheduleT]);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     ptrs.current.delete(e.pointerId);
