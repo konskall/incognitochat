@@ -227,6 +227,11 @@ export function useWebRTC(user: User, config: ChatConfig) {
       if (track) send.addTrack(track);
     }
     peersRef.current.forEach((e) => {
+      // The `track === null` fallback finds the addTransceiver('video') sender
+      // that has no track yet (audio call before any share). This is unique ONLY
+      // because both peers run identical createPeer code (one audio + one
+      // sendrecv video sender) — there are no recvonly/extra null-track senders.
+      // If that invariant ever changes, match the video transceiver explicitly.
       const sender =
         e.pc.getSenders().find((s) => s.track?.kind === 'video') ||
         e.pc.getSenders().find((s) => s.track === null);
