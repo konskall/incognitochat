@@ -237,6 +237,13 @@ export function stopRingtone() {
     ringNodes = [];
 }
 
+// Avatars from signal payloads are attacker-influenceable; only allow https URLs
+// (block javascript:/data:/http: tracking-or-mixed-content), else a neutral inline avatar.
+const FALLBACK_AVATAR = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="%23334155"/><circle cx="48" cy="38" r="18" fill="%2364748b"/><rect x="20" y="64" width="56" height="34" rx="17" fill="%2364748b"/></svg>';
+export function safeAvatarUrl(url: string | undefined | null): string {
+  return url && /^https:\/\//i.test(url) ? url : FALLBACK_AVATAR;
+}
+
 // Strip trailing punctuation that the greedy URL regex (matches up to
 // whitespace) sucks in — e.g. "see https://example.com." → "https://example.com".
 // Used for link previews, the rendered anchor, and the room "Links" gallery so a

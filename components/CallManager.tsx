@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon, MonitorUp, MonitorX, Minus, Maximize2, Minimize2, Maximize, Minimize, PictureInPicture2 } from 'lucide-react';
 import { docPipSupported, openDocPip } from '../utils/documentPip';
+import { getDisplayMediaSupported, safeAvatarUrl } from '../utils/helpers';
 import { User, ChatConfig, Presence } from '../types';
 import { useWebRTC, RemotePeer, CallType, CallNotice } from '../hooks/useWebRTC';
 import PinchZoom from './PinchZoom';
@@ -198,7 +199,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     startCall, acceptCall, declineCall, hangup,
     toggleMute, toggleVideo, switchCamera, cycleVoiceFilter,
     isScreenSharing, startScreenShare, stopScreenShare,
-    sharingUids,
+    sharingUids, facingMode,
   } = useWebRTC(user, config);
 
   const isDesktop = useIsDesktop();
@@ -207,14 +208,18 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   React.useEffect(() => { if (!isDesktop && windowMode === 'window') setWindowMode('full'); }, [isDesktop, windowMode]);
 
   const canPip = docPipSupported();
+  const canShareScreen = getDisplayMediaSupported();
   const [pipWindow, setPipWindow] = React.useState<Window | null>(null);
+  const pipWindowRef = useRef<Window | null>(null);
   const openPip = async () => {
     const w = await openDocPip(360, 260);
     if (!w) { setWindowMode('min'); return; } // unsupported/blocked → fall back to bubble
-    w.addEventListener('pagehide', () => setPipWindow(null));
+    w.addEventListener('pagehide', () => { pipWindowRef.current = null; setPipWindow(null); });
     setPipWindow(w);
+    pipWindowRef.current = w;
   };
-  React.useEffect(() => { if (status !== 'incall' && pipWindow) { try { pipWindow.close(); } catch { /* noop */ } setPipWindow(null); } }, [status, pipWindow]);
+  React.useEffect(() => { if (status !== 'incall' && pipWindow) { try { pipWindow.close(); } catch { /* noop */ } pipWindowRef.current = null; setPipWindow(null); } }, [status, pipWindow]);
+  React.useEffect(() => () => { try { pipWindowRef.current?.close(); } catch { /* noop */ } }, []);
 
   // How the 1-on-1 spotlight fits the remote: 'contain' = fit (whole frame, no
   // crop — sensible for a shared screen), 'cover' = fill (uses all the space, may
@@ -239,7 +244,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in zoom-in-95 duration-300">
         <div className="flex flex-col items-center gap-8 w-full max-w-sm text-center">
           <div className="relative">
-            <img src={incoming.fromAvatar} alt="Caller" className="w-32 h-32 rounded-full object-cover border-4 border-blue-500 shadow-2xl bg-slate-200" />
+            <img src={safeAvatarUrl(incoming.fromAvatar)} alt="Caller" className="w-32 h-32 rounded-full object-cover border-4 border-blue-500 shadow-2xl bg-slate-200" />
             <div className="absolute inset-0 rounded-full border-4 border-blue-400 animate-ping opacity-30" />
           </div>
           <div>
@@ -329,7 +334,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               const connecting = !p.everConnected && (p.state === 'checking' || p.state === 'new');
               return (
                 <PinchZoom className="absolute inset-2 sm:inset-3 rounded-2xl">
-                  <CallTile stream={p.stream} name={p.name} avatar={p.avatar} muted showVideo={hasVideo} reconnecting={dropped} connecting={connecting} sharing={sharingUids.has(p.uid)} objectFit={remoteFit} />
+                  <CallTile stream={p.stream} name={p.name} avatar={safeAvatarUrl(p.avatar)} muted showVideo={hasVideo} reconnecting={dropped} connecting={connecting} sharing={sharingUids.has(p.uid)} objectFit={remoteFit} />
                 </PinchZoom>
               );
             })()}
@@ -343,7 +348,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
             >
               {remoteFit === 'contain' ? <Maximize size={16} /> : <Minimize size={16} />}
             </button>
-            <SelfViewPiP stream={localStream} mirror={showLocalVideo} showVideo={showLocalVideo} avatar={config.avatarURL} sharing={isScreenSharing} />
+            <SelfViewPiP stream={localStream} mirror={showLocalVideo && facingMode === 'user'} showVideo={showLocalVideo} avatar={config.avatarURL} sharing={isScreenSharing} />
           </div>
         ) : (
           /* Tile grid */
@@ -361,7 +366,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   key={p.uid}
                   stream={p.stream}
                   name={p.name}
-                  avatar={p.avatar}
+                  avatar={safeAvatarUrl(p.avatar)}
                   muted
                   showVideo={hasVideo}
                   reconnecting={dropped}
@@ -376,7 +381,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               name="You"
               avatar={config.avatarURL}
               muted
-              mirror={showLocalVideo}
+              mirror={showLocalVideo && facingMode === 'user'}
               showVideo={showLocalVideo}
               sharing={isScreenSharing}
             />
@@ -396,7 +401,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           <button onClick={toggleMute} className={`p-3 sm:p-3.5 rounded-full transition-all shadow-lg ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}>
             {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
           </button>
-          {isVideo && hasLocalVideo && (
+          {isVideo && hasLocalVideo && !isScreenSharing && (
             <button onClick={toggleVideo} className={`p-3 sm:p-3.5 rounded-full transition-all shadow-lg ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}>
               {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
             </button>
@@ -406,14 +411,16 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               <RotateCcw size={24} />
             </button>
           )}
-          <button
-            onClick={() => (isScreenSharing ? stopScreenShare() : startScreenShare())}
-            title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
-            aria-label={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
-            className={`p-3 sm:p-3.5 rounded-full transition-all shadow-lg ${isScreenSharing ? 'bg-blue-500 text-white' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
-          >
-            {isScreenSharing ? <MonitorX size={24} /> : <MonitorUp size={24} />}
-          </button>
+          {canShareScreen && (
+            <button
+              onClick={() => (isScreenSharing ? stopScreenShare() : startScreenShare())}
+              title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
+              aria-label={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
+              className={`p-3 sm:p-3.5 rounded-full transition-all shadow-lg ${isScreenSharing ? 'bg-blue-500 text-white' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
+            >
+              {isScreenSharing ? <MonitorX size={24} /> : <MonitorUp size={24} />}
+            </button>
+          )}
           <button onClick={hangup} className="p-4 sm:p-5 rounded-full bg-red-600 text-white hover:bg-red-700 transition-all shadow-xl shadow-red-600/30 transform hover:scale-110">
             <PhoneOff size={32} fill="currentColor" />
           </button>
@@ -432,7 +439,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
         <MinimizedCallBubble
           stream={bp ? bp.stream : localStream}
           name={bp ? bp.name : 'You'}
-          avatar={bp ? bp.avatar : config.avatarURL}
+          avatar={bp ? safeAvatarUrl(bp.avatar) : config.avatarURL}
           showVideo={bp ? bp.stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted) : showLocalVideo}
           mirror={!bp}
           sharing={bp ? sharingUids.has(bp.uid) : isScreenSharing}
@@ -527,7 +534,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
       {status === 'incall' && pipWindow && createPortal(
         <PipCallView
           stream={peers[0] ? peers[0].stream : localStream}
-          avatar={peers[0] ? peers[0].avatar : config.avatarURL}
+          avatar={peers[0] ? safeAvatarUrl(peers[0].avatar) : config.avatarURL}
           showVideo={peers[0] ? peers[0].stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted) : (!!localStream && localStream.getVideoTracks().length > 0 && callType === 'video' && !isVideoOff && !isScreenSharing)}
           mirror={!peers[0]}
           isMuted={isMuted}
