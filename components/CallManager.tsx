@@ -146,6 +146,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   if (status === 'incall') {
     const isVideo = callType === 'video';
     const hasLocalVideo = !!localStream && localStream.getVideoTracks().length > 0;
+    // Local tile shows our CAMERA when in a video call. While sharing we show the
+    // avatar + a "sharing" badge instead — never the screen capture — both to
+    // avoid the hall-of-mirrors recursion (see startScreenShare) and so it's clear
+    // we're sharing, not sending camera.
+    const showLocalVideo = isVideo && !isVideoOff && hasLocalVideo && !isScreenSharing;
     const tileCount = peers.length + 1;
     return (
       <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col">
@@ -174,7 +179,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
         </div>
 
         {/* Tile grid */}
-        <div className={`flex-1 grid ${gridColsClass(tileCount)} gap-2 p-2 pt-16 pb-28 auto-rows-fr overflow-hidden`}>
+        <div className={`flex-1 grid ${gridColsClass(tileCount)} gap-2 p-2 pt-16 pb-36 sm:pb-28 auto-rows-fr overflow-hidden`}>
           {peers.map((p: RemotePeer) => {
             // `!t.muted` excludes the always-present video transceiver's
             // placeholder track (live but receiving no frames) in an audio call,
@@ -200,30 +205,32 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
             name="You"
             avatar={config.avatarURL}
             muted
-            mirror={!isScreenSharing}
-            showVideo={(isScreenSharing && hasLocalVideo) || (isVideo && !isVideoOff && hasLocalVideo)}
+            mirror={showLocalVideo}
+            showVideo={showLocalVideo}
             sharing={isScreenSharing}
           />
         </div>
 
         {peers.length === 0 && (
-          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center pointer-events-none z-20">
-            <p className="text-white/70 text-lg font-medium animate-pulse">Waiting for others to join…</p>
+          <div className="absolute inset-x-0 top-[66%] flex justify-center px-4 pointer-events-none z-20">
+            <p className="text-white/90 text-sm font-medium animate-pulse bg-black/50 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-lg">
+              Waiting for others to join…
+            </p>
           </div>
         )}
 
-        {/* Controls */}
-        <div className="absolute bottom-0 left-0 right-0 z-50 px-4 pb-8 pt-6 flex items-center justify-evenly gap-2 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
-          <button onClick={toggleMute} className={`p-3.5 rounded-full transition-all shadow-lg ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}>
+        {/* Controls — wrap to a second row on narrow phones so nothing clips off-screen */}
+        <div className="absolute bottom-0 left-0 right-0 z-50 px-2 sm:px-4 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex flex-wrap items-center justify-center gap-2 sm:gap-3 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
+          <button onClick={toggleMute} className={`p-3 sm:p-3.5 rounded-full transition-all shadow-lg ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}>
             {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
           </button>
           {isVideo && hasLocalVideo && (
-            <button onClick={toggleVideo} className={`p-3.5 rounded-full transition-all shadow-lg ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}>
+            <button onClick={toggleVideo} className={`p-3 sm:p-3.5 rounded-full transition-all shadow-lg ${isVideoOff ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}>
               {isVideoOff ? <VideoOff size={24} /> : <Video size={24} />}
             </button>
           )}
           {isVideo && hasLocalVideo && !isScreenSharing && (
-            <button onClick={switchCamera} title="Switch camera" className="p-3.5 rounded-full transition-all shadow-lg bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700">
+            <button onClick={switchCamera} title="Switch camera" className="p-3 sm:p-3.5 rounded-full transition-all shadow-lg bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700">
               <RotateCcw size={24} />
             </button>
           )}
@@ -231,17 +238,17 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
             onClick={() => (isScreenSharing ? stopScreenShare() : startScreenShare())}
             title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
             aria-label={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
-            className={`p-3.5 rounded-full transition-all shadow-lg ${isScreenSharing ? 'bg-blue-500 text-white' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
+            className={`p-3 sm:p-3.5 rounded-full transition-all shadow-lg ${isScreenSharing ? 'bg-blue-500 text-white' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}
           >
             {isScreenSharing ? <MonitorX size={24} /> : <MonitorUp size={24} />}
           </button>
-          <button onClick={hangup} className="p-5 rounded-full bg-red-600 text-white hover:bg-red-700 transition-all shadow-xl shadow-red-600/30 transform hover:scale-110">
+          <button onClick={hangup} className="p-4 sm:p-5 rounded-full bg-red-600 text-white hover:bg-red-700 transition-all shadow-xl shadow-red-600/30 transform hover:scale-110">
             <PhoneOff size={32} fill="currentColor" />
           </button>
-          <button onClick={() => setIsSpeakerMuted(!isSpeakerMuted)} className={`p-3.5 rounded-full transition-all shadow-lg ${isSpeakerMuted ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}>
+          <button onClick={() => setIsSpeakerMuted(!isSpeakerMuted)} className={`p-3 sm:p-3.5 rounded-full transition-all shadow-lg ${isSpeakerMuted ? 'bg-white text-slate-900' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}>
             {isSpeakerMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
           </button>
-          <button onClick={cycleVoiceFilter} title="Voice filters" className={`p-3.5 rounded-full transition-all shadow-lg ${voiceFilter !== 'normal' ? 'bg-purple-500 text-white' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}>
+          <button onClick={cycleVoiceFilter} title="Voice filters" className={`p-3 sm:p-3.5 rounded-full transition-all shadow-lg ${voiceFilter !== 'normal' ? 'bg-purple-500 text-white' : 'bg-slate-800/80 backdrop-blur-md text-white border border-white/20 hover:bg-slate-700'}`}>
             <Wand2 size={24} />
           </button>
         </div>

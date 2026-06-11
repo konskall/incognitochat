@@ -81,8 +81,10 @@ export interface Presence {
 // - present: "I'm already in the call" (directed reply to a newcomer)
 // - offer/answer/candidate: standard per-peer negotiation (directed via toUid)
 // - leave:   "I left the call" (broadcast)
+// - decline: "I rejected your ring" (directed back to the caller via toUid) so a
+//   1-on-1 caller stops waiting instead of hanging on "Waiting for others…".
 export interface SignalData {
-  type: 'offer' | 'answer' | 'candidate' | 'join' | 'present' | 'leave' | 'screenshare';
+  type: 'offer' | 'answer' | 'candidate' | 'join' | 'present' | 'leave' | 'screenshare' | 'decline';
   payload?: RTCSessionDescriptionInit | RTCIceCandidateInit | null;
   fromUid: string;
   fromName: string;

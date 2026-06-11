@@ -48,6 +48,11 @@ interface PeerEntry {
   stream: MediaStream;
   candidateQueue: RTCIceCandidateInit[];
   makingOffer: boolean;
+  // Cached senders so we always replaceTrack the RIGHT m-line — even when this
+  // peer has no mic/camera (then both senders start with a null track, and a
+  // "find first null-track sender" heuristic would be ambiguous).
+  audioSender: RTCRtpSender | null;
+  videoSender: RTCRtpSender | null;
 }
 
 export interface CallNotice {
@@ -114,6 +119,9 @@ export function useWebRTC(user: User, config: ChatConfig) {
   const screenStreamRef = useRef<MediaStream | null>(null);
   const isScreenSharingRef = useRef(false);
   const cameraVideoTrackRef = useRef<MediaStreamTrack | null>(null);
+  // Who I directly rang (1-on-1). null for a group ring. Lets a `decline` from
+  // that exact person end my "Waiting…" screen instead of hanging forever.
+  const directTargetRef = useRef<string | null>(null);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -216,13 +224,12 @@ export function useWebRTC(user: User, config: ChatConfig) {
     outgoingAudioTrackRef.current = track;
     if (!track) return;
     peersRef.current.forEach((e) => {
-      const sender = e.pc.getSenders().find((s) => s.track?.kind === 'audio');
-      sender?.replaceTrack(track).catch((err) => console.error('replaceTrack audio', err));
+      e.audioSender?.replaceTrack(track).catch((err) => console.error('replaceTrack audio', err));
     });
   }, [buildOutgoingAudio]);
 
   // Swap the outgoing VIDEO track (camera, screen, or null) on sendStreamRef +
-  // every peer's video sender. The video sender always exists (see createPeer).
+  // every peer's cached video sender (always exists — see createPeer).
   const setOutgoingVideo = useCallback((track: MediaStreamTrack | null) => {
     const send = sendStreamRef.current;
     if (send) {
@@ -230,15 +237,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
       if (track) send.addTrack(track);
     }
     peersRef.current.forEach((e) => {
-      // The `track === null` fallback finds the addTransceiver('video') sender
-      // that has no track yet (audio call before any share). This is unique ONLY
-      // because both peers run identical createPeer code (one audio + one
-      // sendrecv video sender) — there are no recvonly/extra null-track senders.
-      // If that invariant ever changes, match the video transceiver explicitly.
-      const sender =
-        e.pc.getSenders().find((s) => s.track?.kind === 'video') ||
-        e.pc.getSenders().find((s) => s.track === null);
-      sender?.replaceTrack(track).catch((err) => console.error('replaceTrack video', err));
+      e.videoSender?.replaceTrack(track).catch((err) => console.error('replaceTrack video', err));
     });
   }, []);
 
@@ -308,20 +307,27 @@ export function useWebRTC(user: User, config: ChatConfig) {
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
     const stream = new MediaStream();
-    const entry: PeerEntry = { uid, name, avatar, pc, stream, candidateQueue: [], makingOffer: false };
+    const entry: PeerEntry = { uid, name, avatar, pc, stream, candidateQueue: [], makingOffer: false, audioSender: null, videoSender: null };
     peersRef.current.set(uid, entry);
 
-    // Attach outgoing tracks. ALWAYS ensure a video sender exists (even in an
-    // audio call) so a later screen share is just replaceTrack — no renegotiation.
+    // ALWAYS create exactly one audio + one video sender, even with no mic/camera,
+    // so (a) the m-lines stay symmetric across peers and (b) a no-device user can
+    // still RECEIVE everyone and later push a screen share via replaceTrack — all
+    // without renegotiation. Senders start with a null track when we have nothing
+    // to send yet.
     const send = sendStreamRef.current;
     const outAudio = send?.getAudioTracks()[0];
-    if (send && outAudio) { try { pc.addTrack(outAudio, send); } catch (e) { console.error('addTrack audio', e); } }
+    try {
+      entry.audioSender = outAudio && send
+        ? pc.addTrack(outAudio, send)
+        : pc.addTransceiver('audio', { direction: 'sendrecv' }).sender;
+    } catch (e) { console.error('add audio sender', e); }
     const outVideo = send?.getVideoTracks()[0];
-    if (send && outVideo) {
-      try { pc.addTrack(outVideo, send); } catch (e) { console.error('addTrack video', e); }
-    } else {
-      try { pc.addTransceiver('video', { direction: 'sendrecv' }); } catch (e) { console.error('addTransceiver video', e); }
-    }
+    try {
+      entry.videoSender = outVideo && send
+        ? pc.addTrack(outVideo, send)
+        : pc.addTransceiver('video', { direction: 'sendrecv' }).sender;
+    } catch (e) { console.error('add video sender', e); }
 
     pc.onicecandidate = (e) => {
       if (e.candidate) sendSignal({ type: 'candidate', payload: e.candidate.toJSON(), toUid: uid });
@@ -441,8 +447,21 @@ export function useWebRTC(user: User, config: ChatConfig) {
         });
         break;
       }
+      case 'decline': {
+        // The one person I rang 1-on-1 rejected and nobody connected yet → stop
+        // waiting. Group rings (directTargetRef null) ignore it; others may join.
+        if (statusRef.current === 'incall' && directTargetRef.current === data.fromUid && peersRef.current.size === 0) {
+          setNotice({ kind: 'info', text: `${data.fromName} declined the call.` });
+          cleanupRef.current();
+        }
+        break;
+      }
     }
   }, [user.uid, sendSignal, createPeer, makeOffer, drainCandidates, removePeer]);
+
+  // Ref indirection so the (memoized-once) signal handler can end a call without
+  // taking `cleanup` as a dependency (cleanup is declared below → would TDZ).
+  const cleanupRef = useRef<() => void>(() => {});
 
   const handleSignalRef = useRef(handleSignal);
   useEffect(() => { handleSignalRef.current = handleSignal; }, [handleSignal]);
@@ -463,21 +482,34 @@ export function useWebRTC(user: User, config: ChatConfig) {
   }, [config.roomKey]);
 
   // --- Media ---
+  // Progressive, never-throwing acquisition: get the best of {mic+cam, mic, cam},
+  // and if the device truly has neither (or permission is blocked) join with an
+  // EMPTY stream so the user can still listen and share their screen. createPeer
+  // always builds both senders, so a track-less participant still receives others.
   const getMedia = useCallback(async (video: boolean) => {
     const audio = { echoCancellation: true, noiseSuppression: true };
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio, video: video ? { facingMode } : false });
-    } catch (err) {
-      // A video call on a device without a (working) camera shouldn't fail
-      // outright — fall back to audio-only so the user can still join.
-      if (video) {
-        stream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
-        setNotice({ kind: 'info', text: 'No camera available — you joined with audio only.' });
-      } else {
-        throw err;
-      }
+    let lastErr: unknown = null;
+    const tryGUM = async (c: MediaStreamConstraints): Promise<MediaStream | null> => {
+      try { return await navigator.mediaDevices.getUserMedia(c); }
+      catch (e) { lastErr = e; return null; }
+    };
+
+    let stream: MediaStream | null = null;
+    if (video) {
+      stream = await tryGUM({ audio, video: { facingMode } });
+      if (!stream) { stream = await tryGUM({ audio, video: false }); if (stream) setNotice({ kind: 'info', text: 'No camera available — you joined with audio only.' }); }
+      if (!stream) { stream = await tryGUM({ audio: false, video: { facingMode } }); if (stream) setNotice({ kind: 'info', text: 'No microphone — you joined with video only.' }); }
+    } else {
+      stream = await tryGUM({ audio, video: false });
     }
+    if (!stream) {
+      stream = new MediaStream(); // listen-only + screen-share capable
+      const name = (lastErr as { name?: string })?.name || '';
+      setNotice(name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError'
+        ? { kind: 'info', text: 'Mic/camera access is blocked — you joined to listen and can share your screen.' }
+        : { kind: 'info', text: 'No mic or camera found — you joined to listen and can share your screen.' });
+    }
+
     rawStreamRef.current = stream;
     sendStreamRef.current = new MediaStream(stream.getTracks());
     outgoingAudioTrackRef.current = stream.getAudioTracks()[0] || null;
@@ -497,6 +529,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
     micGainRef.current = null;
     outgoingAudioTrackRef.current = null;
     isScreenSharingRef.current = false;
+    directTargetRef.current = null;
     sendStreamRef.current = null;
     if (audioCtxRef.current) { audioCtxRef.current.close().catch(() => {}); audioCtxRef.current = null; }
     if (durationIntervalRef.current) { clearInterval(durationIntervalRef.current); durationIntervalRef.current = null; }
@@ -515,11 +548,14 @@ export function useWebRTC(user: User, config: ChatConfig) {
     setIsScreenSharing(false);
     setSharingUids(new Set());
   }, []);
+  useEffect(() => { cleanupRef.current = cleanup; }, [cleanup]);
 
   // --- Public actions ---
   // `targetUid` set ⇒ ring only that person (1-on-1); omitted ⇒ ring the whole room (group).
   const enterCall = useCallback(async (type: CallType, targetUid?: string) => {
     try {
+      directTargetRef.current = targetUid ?? null;
+      setNotice(null); // clear any stale banner; getMedia may set its own info notice
       await getMedia(type === 'video');
       setCallType(type);
       callTypeRef.current = type;
@@ -527,7 +563,6 @@ export function useWebRTC(user: User, config: ChatConfig) {
       statusRef.current = 'incall';
       setIncoming(null);
       stopRingtone();
-      setNotice(null);
       // Announce; existing members reply with `present` and the smaller uid offers.
       sendSignal({ type: 'join', callType: type, toUid: targetUid });
     } catch (e) {
@@ -548,10 +583,12 @@ export function useWebRTC(user: User, config: ChatConfig) {
   }, [enterCall]);
 
   const declineCall = useCallback(() => {
+    const inc = incomingRef.current;
+    if (inc) sendSignal({ type: 'decline', toUid: inc.fromUid }); // let the caller stop waiting
     setIncoming(null);
     setStatus('idle');
     stopRingtone();
-  }, []);
+  }, [sendSignal]);
 
   const hangup = useCallback(() => {
     sendSignal({ type: 'leave' });
@@ -651,7 +688,11 @@ export function useWebRTC(user: User, config: ChatConfig) {
       callTypeRef.current === 'video' ? (rawStreamRef.current?.getVideoTracks()[0] || null) : null;
 
     setOutgoingVideo(screenVideo);
-    setLocalView(screenVideo);
+    // Deliberately DO NOT show the capture in our own tile: when sharing the whole
+    // screen, rendering it locally puts a live copy on the very screen being
+    // captured → infinite "hall of mirrors" (and that recursion is what remote
+    // viewers see too). The sharer already sees their real screen; locally we keep
+    // showing the camera (video call) or avatar (audio call).
     applyOutgoingAudio(); // fold screen audio (if any) into the mix
 
     screenVideo.onended = () => { stopScreenShare(); }; // browser's native "Stop sharing"
