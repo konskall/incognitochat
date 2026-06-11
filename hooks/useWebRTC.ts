@@ -92,6 +92,8 @@ export function useWebRTC(user: User, config: ChatConfig) {
   useEffect(() => { statusRef.current = status; }, [status]);
   useEffect(() => { callTypeRef.current = callType; }, [callType]);
   useEffect(() => { incomingRef.current = incoming; }, [incoming]);
+  useEffect(() => { voiceFilterRef.current = voiceFilter; }, [voiceFilter]);
+  useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
   const peersRef = useRef<Map<string, PeerEntry>>(new Map());
   const pendingCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
@@ -101,6 +103,14 @@ export function useWebRTC(user: User, config: ChatConfig) {
 
   // Web Audio voice filter graph
   const audioCtxRef = useRef<AudioContext | null>(null);
+  // Unified outgoing-audio graph: mic (+voice filter) (+screen audio) → dest.
+  const micGainRef = useRef<GainNode | null>(null);            // mute = gain 0/1 when graph active
+  const outgoingAudioTrackRef = useRef<MediaStreamTrack | null>(null);
+  const voiceFilterRef = useRef(voiceFilter);
+  const isMutedRef = useRef(isMuted);
+  // Screen share (filled in a later task; declared now so the audio graph can read them).
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const isScreenSharingRef = useRef(false);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -133,43 +143,105 @@ export function useWebRTC(user: User, config: ChatConfig) {
     [user.uid, config.username, config.avatarURL]
   );
 
-  // --- Voice filters (Web Audio) ---
-  const buildFilteredAudio = useCallback((raw: MediaStream, type: VoiceFilterType): MediaStream => {
+  // Build the single audio track sent to peers from the current mic, voice
+  // filter, screen audio, and mute state. Fast path (normal filter + no screen
+  // audio) returns the raw mic track (mute via track.enabled). Otherwise it
+  // builds a Web Audio graph: mic → [filter] → micGain → dest, plus screen
+  // audio → dest. Tears down any previous graph first.
+  const buildOutgoingAudio = useCallback((): MediaStreamTrack | null => {
+    const mic = rawStreamRef.current?.getAudioTracks()[0] || null;
+    const screenAudio = screenStreamRef.current?.getAudioTracks()[0] || null;
+    const filter = voiceFilterRef.current;
+    const muted = isMutedRef.current;
+
     if (audioCtxRef.current) { audioCtxRef.current.close().catch(() => {}); audioCtxRef.current = null; }
-    if (type === 'normal') return raw;
+    micGainRef.current = null;
+
+    if (filter === 'normal' && !screenAudio) {
+      if (mic) mic.enabled = !muted;
+      return mic;
+    }
+    if (!mic && !screenAudio) return mic;
+
     try {
       const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ctx = new Ctx();
       audioCtxRef.current = ctx;
-      const source = ctx.createMediaStreamSource(raw);
       const dest = ctx.createMediaStreamDestination();
-      if (type === 'deep') {
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 400;
-        const gain = ctx.createGain();
-        gain.gain.value = 1.5;
-        source.connect(filter); filter.connect(gain); gain.connect(dest);
-      } else {
-        // robot: ring modulation + a little dry signal for intelligibility
-        const osc = ctx.createOscillator();
-        osc.type = 'square';
-        osc.frequency.value = 50;
-        osc.start();
-        const ring = ctx.createGain();
-        ring.gain.value = 1.0;
-        source.connect(ring); osc.connect(ring.gain); ring.connect(dest);
-        const dry = ctx.createGain();
-        dry.gain.value = 0.4;
-        source.connect(dry); dry.connect(dest);
+
+      if (mic) {
+        mic.enabled = true; // gain handles mute when the graph is active
+        const micSource = ctx.createMediaStreamSource(new MediaStream([mic]));
+        let node: AudioNode = micSource;
+        if (filter === 'deep') {
+          const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 400;
+          const g = ctx.createGain(); g.gain.value = 1.5;
+          micSource.connect(f); f.connect(g); node = g;
+        } else if (filter === 'robot') {
+          const osc = ctx.createOscillator(); osc.type = 'square'; osc.frequency.value = 50; osc.start();
+          const ring = ctx.createGain(); ring.gain.value = 1.0;
+          micSource.connect(ring); osc.connect(ring.gain);
+          const dry = ctx.createGain(); dry.gain.value = 0.4;
+          micSource.connect(dry);
+          const merge = ctx.createGain();
+          ring.connect(merge); dry.connect(merge); node = merge;
+        }
+        const micGain = ctx.createGain(); micGain.gain.value = muted ? 0 : 1;
+        node.connect(micGain); micGain.connect(dest);
+        micGainRef.current = micGain;
       }
-      const out = dest.stream;
-      const videoTrack = raw.getVideoTracks()[0];
-      if (videoTrack) out.addTrack(videoTrack);
-      return out;
+
+      if (screenAudio) {
+        const sSource = ctx.createMediaStreamSource(new MediaStream([screenAudio]));
+        sSource.connect(dest);
+      }
+
+      return dest.stream.getAudioTracks()[0] || mic;
     } catch {
-      return raw;
+      return mic;
     }
+  }, []);
+
+  // Rebuild outgoing audio and push it to sendStreamRef + every peer's audio sender.
+  const applyOutgoingAudio = useCallback(() => {
+    const track = buildOutgoingAudio();
+    const send = sendStreamRef.current;
+    if (send) {
+      send.getAudioTracks().forEach((t) => { if (t !== track) send.removeTrack(t); });
+      if (track && !send.getTracks().includes(track)) send.addTrack(track);
+    }
+    outgoingAudioTrackRef.current = track;
+    if (!track) return;
+    peersRef.current.forEach((e) => {
+      const sender = e.pc.getSenders().find((s) => s.track?.kind === 'audio');
+      sender?.replaceTrack(track).catch((err) => console.error('replaceTrack audio', err));
+    });
+  }, [buildOutgoingAudio]);
+
+  // Swap the outgoing VIDEO track (camera, screen, or null) on sendStreamRef +
+  // every peer's video sender. The video sender always exists (see createPeer).
+  const setOutgoingVideo = useCallback((track: MediaStreamTrack | null) => {
+    const send = sendStreamRef.current;
+    if (send) {
+      send.getVideoTracks().forEach((t) => send.removeTrack(t));
+      if (track) send.addTrack(track);
+    }
+    peersRef.current.forEach((e) => {
+      const sender =
+        e.pc.getSenders().find((s) => s.track?.kind === 'video') ||
+        e.pc.getSenders().find((s) => s.track === null);
+      sender?.replaceTrack(track).catch((err) => console.error('replaceTrack video', err));
+    });
+  }, []);
+
+  // Rebuild the LOCAL preview stream (mic + the given video track) as a NEW
+  // MediaStream so CallTile's effect re-binds it.
+  const setLocalView = useCallback((videoTrack: MediaStreamTrack | null) => {
+    const mic = rawStreamRef.current?.getAudioTracks()[0];
+    const tracks: MediaStreamTrack[] = [];
+    if (mic) tracks.push(mic);
+    if (videoTrack) tracks.push(videoTrack);
+    setLocalStream(new MediaStream(tracks));
   }, []);
 
   // --- Peer lifecycle ---
@@ -227,10 +299,17 @@ export function useWebRTC(user: User, config: ChatConfig) {
     const entry: PeerEntry = { uid, name, avatar, pc, stream, candidateQueue: [], makingOffer: false };
     peersRef.current.set(uid, entry);
 
-    // Attach our outgoing tracks.
-    sendStreamRef.current?.getTracks().forEach((t) => {
-      try { pc.addTrack(t, sendStreamRef.current!); } catch (e) { console.error('addTrack', e); }
-    });
+    // Attach outgoing tracks. ALWAYS ensure a video sender exists (even in an
+    // audio call) so a later screen share is just replaceTrack — no renegotiation.
+    const send = sendStreamRef.current;
+    const outAudio = send?.getAudioTracks()[0];
+    if (send && outAudio) { try { pc.addTrack(outAudio, send); } catch (e) { console.error('addTrack audio', e); } }
+    const outVideo = send?.getVideoTracks()[0];
+    if (send && outVideo) {
+      try { pc.addTrack(outVideo, send); } catch (e) { console.error('addTrack video', e); }
+    } else {
+      try { pc.addTransceiver('video', { direction: 'sendrecv' }); } catch (e) { console.error('addTransceiver video', e); }
+    }
 
     pc.onicecandidate = (e) => {
       if (e.candidate) sendSignal({ type: 'candidate', payload: e.candidate.toJSON(), toUid: uid });
@@ -371,7 +450,8 @@ export function useWebRTC(user: User, config: ChatConfig) {
       }
     }
     rawStreamRef.current = stream;
-    sendStreamRef.current = stream;
+    sendStreamRef.current = new MediaStream(stream.getTracks());
+    outgoingAudioTrackRef.current = stream.getAudioTracks()[0] || null;
     setLocalStream(stream);
     return stream;
   }, [facingMode]);
@@ -442,12 +522,14 @@ export function useWebRTC(user: User, config: ChatConfig) {
   }, [sendSignal, cleanup]);
 
   const toggleMute = useCallback(() => {
-    const s = rawStreamRef.current;
-    if (!s) return;
-    let muted = false;
-    s.getAudioTracks().forEach((t) => { t.enabled = !t.enabled; muted = !t.enabled; });
-    sendStreamRef.current?.getAudioTracks().forEach((t) => { t.enabled = !muted; });
-    setIsMuted(muted);
+    const next = !isMutedRef.current;
+    isMutedRef.current = next;
+    setIsMuted(next);
+    if (micGainRef.current) {
+      micGainRef.current.gain.value = next ? 0 : 1; // graph active (filter/screen)
+    } else {
+      rawStreamRef.current?.getAudioTracks().forEach((t) => { t.enabled = !next; });
+    }
   }, []);
 
   const toggleVideo = useCallback(() => {
@@ -458,46 +540,29 @@ export function useWebRTC(user: User, config: ChatConfig) {
     setIsVideoOff(off);
   }, []);
 
-  const cycleVoiceFilter = useCallback(async () => {
-    if (!rawStreamRef.current) return;
+  const cycleVoiceFilter = useCallback(() => {
     const next: VoiceFilterType = voiceFilter === 'normal' ? 'deep' : voiceFilter === 'deep' ? 'robot' : 'normal';
-    const filtered = buildFilteredAudio(rawStreamRef.current, next);
-    sendStreamRef.current = filtered;
-    const audioTrack = filtered.getAudioTracks()[0];
-    if (audioTrack) {
-      // keep mute state across the swap
-      audioTrack.enabled = !isMuted;
-      peersRef.current.forEach((e) => {
-        const sender = e.pc.getSenders().find((s) => s.track?.kind === 'audio');
-        sender?.replaceTrack(audioTrack).catch((err) => console.error('replaceTrack', err));
-      });
-    }
     setVoiceFilter(next);
-  }, [voiceFilter, buildFilteredAudio, isMuted]);
+    voiceFilterRef.current = next;
+    applyOutgoingAudio();
+  }, [voiceFilter, applyOutgoingAudio]);
 
   const switchCamera = useCallback(async () => {
-    if (!rawStreamRef.current || callTypeRef.current !== 'video') return;
+    if (callTypeRef.current !== 'video' || isScreenSharingRef.current) return;
     const newMode = facingMode === 'user' ? 'environment' : 'user';
     try {
-      rawStreamRef.current.getVideoTracks().forEach((t) => t.stop());
+      rawStreamRef.current?.getVideoTracks().forEach((t) => t.stop());
       const fresh = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: newMode } });
       const newVideo = fresh.getVideoTracks()[0];
-      peersRef.current.forEach((e) => {
-        const sender = e.pc.getSenders().find((s) => s.track?.kind === 'video');
-        sender?.replaceTrack(newVideo).catch((err) => console.error('replaceTrack', err));
-      });
-      // rebuild local display stream (existing audio + new video)
-      const audio = rawStreamRef.current.getAudioTracks()[0];
-      const combined = new MediaStream(audio ? [audio, newVideo] : [newVideo]);
-      rawStreamRef.current = combined;
-      if (voiceFilter === 'normal') sendStreamRef.current = combined;
-      else if (sendStreamRef.current) { sendStreamRef.current.getVideoTracks().forEach((t) => sendStreamRef.current!.removeTrack(t)); sendStreamRef.current.addTrack(newVideo); }
-      setLocalStream(combined);
+      const mic = rawStreamRef.current?.getAudioTracks()[0];
+      rawStreamRef.current = new MediaStream(mic ? [mic, newVideo] : [newVideo]);
+      setOutgoingVideo(newVideo);
+      setLocalView(newVideo);
       setFacingMode(newMode);
     } catch (e) {
       console.error('switchCamera failed', e);
     }
-  }, [facingMode, voiceFilter]);
+  }, [facingMode, setOutgoingVideo, setLocalView]);
 
   // --- Duration + connection stats while in a call ---
   useEffect(() => {
