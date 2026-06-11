@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon, MonitorUp, MonitorX, Minus, Maximize2, Minimize2, PictureInPicture2 } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon, MonitorUp, MonitorX, Minus, Maximize2, Minimize2, Maximize, Minimize, PictureInPicture2 } from 'lucide-react';
 import { docPipSupported, openDocPip } from '../utils/documentPip';
 import { User, ChatConfig, Presence } from '../types';
 import { useWebRTC, RemotePeer, CallType, CallNotice } from '../hooks/useWebRTC';
@@ -48,7 +48,8 @@ const CallTile: React.FC<{
   reconnecting?: boolean;
   connecting?: boolean;
   sharing?: boolean;
-}> = ({ stream, name, avatar, muted, mirror, showVideo, reconnecting, connecting, sharing }) => {
+  objectFit?: 'cover' | 'contain'; // 'cover' fills (may crop); 'contain' fits (letterboxes)
+}> = ({ stream, name, avatar, muted, mirror, showVideo, reconnecting, connecting, sharing, objectFit = 'cover' }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const el = videoRef.current;
@@ -65,7 +66,7 @@ const CallTile: React.FC<{
         autoPlay
         playsInline
         muted={muted}
-        className={`w-full h-full ${sharing ? 'object-contain' : 'object-cover'} ${mirror ? 'scale-x-[-1]' : ''} ${showVideo ? '' : 'opacity-0'}`}
+        className={`w-full h-full ${objectFit === 'contain' ? 'object-contain' : 'object-cover'} ${mirror ? 'scale-x-[-1]' : ''} ${showVideo ? '' : 'opacity-0'}`}
       />
       {!showVideo && (
         <div className="absolute inset-0 flex items-center justify-center">
@@ -192,6 +193,14 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   };
   React.useEffect(() => { if (status !== 'incall' && pipWindow) { try { pipWindow.close(); } catch { /* noop */ } setPipWindow(null); } }, [status, pipWindow]);
 
+  // How the 1-on-1 spotlight fits the remote: 'contain' = fit (whole frame, no
+  // crop — sensible for a shared screen), 'cover' = fill (uses all the space, may
+  // crop — sensible for a camera). User can flip it; we reset to the sensible
+  // default whenever the peer starts/stops sharing.
+  const spotlightSharing = callType === 'video' && peers.length === 1 && sharingUids.has(peers[0].uid);
+  const [remoteFit, setRemoteFit] = React.useState<'cover' | 'contain'>('cover');
+  React.useEffect(() => { setRemoteFit(spotlightSharing ? 'contain' : 'cover'); }, [spotlightSharing]);
+
   const formatTime = (secs: number) => `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}`;
 
   // targetUid set ⇒ ring just that person (1-on-1); omitted ⇒ ring the whole room.
@@ -297,10 +306,20 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               const connecting = !p.everConnected && (p.state === 'checking' || p.state === 'new');
               return (
                 <PinchZoom className="absolute inset-2 sm:inset-3 rounded-2xl">
-                  <CallTile stream={p.stream} name={p.name} avatar={p.avatar} muted showVideo={hasVideo} reconnecting={dropped} connecting={connecting} sharing={sharingUids.has(p.uid)} />
+                  <CallTile stream={p.stream} name={p.name} avatar={p.avatar} muted showVideo={hasVideo} reconnecting={dropped} connecting={connecting} sharing={sharingUids.has(p.uid)} objectFit={remoteFit} />
                 </PinchZoom>
               );
             })()}
+            {/* Fit ↔ Fill: adjust how the interlocutor fills the frame (uses the
+                empty space when 'fill'; pinch-zoom still available for detail). */}
+            <button
+              onClick={() => setRemoteFit((f) => (f === 'contain' ? 'cover' : 'contain'))}
+              aria-label={remoteFit === 'contain' ? 'Fill screen' : 'Fit screen'}
+              title={remoteFit === 'contain' ? 'Fill' : 'Fit'}
+              className="absolute top-[4.5rem] left-3 z-30 p-2 rounded-full bg-black/40 backdrop-blur-md text-white/90 border border-white/10 shadow-lg hover:bg-black/60 transition"
+            >
+              {remoteFit === 'contain' ? <Maximize size={16} /> : <Minimize size={16} />}
+            </button>
             <SelfViewPiP stream={localStream} mirror={showLocalVideo} showVideo={showLocalVideo} avatar={config.avatarURL} sharing={isScreenSharing} />
           </div>
         ) : (
@@ -325,6 +344,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   reconnecting={dropped}
                   connecting={connecting}
                   sharing={peerSharing}
+                  objectFit={peerSharing ? 'contain' : 'cover'}
                 />
               );
             })}
