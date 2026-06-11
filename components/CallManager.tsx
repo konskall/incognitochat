@@ -1,9 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon, MonitorUp, MonitorX } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon, MonitorUp, MonitorX, Minus, Maximize2, Minimize2 } from 'lucide-react';
 import { User, ChatConfig, Presence } from '../types';
 import { useWebRTC, RemotePeer, CallType, CallNotice } from '../hooks/useWebRTC';
 import { useDragResize } from '../hooks/useDragResize';
+import MinimizedCallBubble from './MinimizedCallBubble';
 
 // Transient banner for call/media problems or info (no camera, blocked perms, …).
 const NoticeToast: React.FC<{ notice: CallNotice; onClose: () => void }> = ({ notice, onClose }) => {
@@ -110,6 +111,39 @@ function gridColsClass(count: number): string {
   return 'grid-cols-2 sm:grid-cols-3';
 }
 
+function useIsDesktop(): boolean {
+  const [d, setD] = React.useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px) and (pointer: fine)').matches);
+  React.useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px) and (pointer: fine)');
+    const on = () => setD(mq.matches); mq.addEventListener('change', on); return () => mq.removeEventListener('change', on);
+  }, []);
+  return d;
+}
+
+// Hidden <audio> that plays a remote peer's audio regardless of which video tile
+// (grid / spotlight / bubble / pip) is currently mounted. Video tiles are muted;
+// ALL remote sound comes from these, so minimizing never drops audio.
+const AudioSink: React.FC<{ stream: MediaStream; muted: boolean }> = ({ stream, muted }) => {
+  const ref = React.useRef<HTMLAudioElement>(null);
+  React.useEffect(() => { const el = ref.current; if (el && stream) { el.srcObject = stream; el.play().catch(() => {}); } }, [stream]);
+  return <audio ref={ref} autoPlay muted={muted} style={{ display: 'none' }} />;
+};
+
+// Desktop floating call window: draggable by a center strip on the top bar
+// (leaving the left signal chip + right window buttons clickable) and resizable
+// from the bottom-right corner. Clamped to the viewport.
+const DraggableWindow: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const init = { x: Math.max(12, (window.innerWidth - 760) / 2), y: 56, w: Math.min(760, window.innerWidth - 24), h: Math.min(560, window.innerHeight - 96) };
+  const { box, startDrag, startResize } = useDragResize(init, { minW: 360, minH: 300 });
+  return (
+    <div style={{ left: box.x, top: box.y, width: box.w, height: box.h }} className="fixed z-[100] rounded-2xl overflow-hidden shadow-2xl border border-white/15 bg-slate-950">
+      <div onPointerDown={startDrag} className="absolute top-0 left-20 right-28 h-14 z-40 cursor-grab active:cursor-grabbing touch-none" />
+      <div className="w-full h-full">{children}</div>
+      <div onPointerDown={startResize} className="absolute bottom-0 right-0 w-5 h-5 z-[60] cursor-nwse-resize" title="Resize" />
+    </div>
+  );
+};
+
 const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseParticipants, showParticipants, roomCreatorId }) => {
   const {
     status, callType, incoming, peers, localStream,
@@ -120,6 +154,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     isScreenSharing, startScreenShare, stopScreenShare,
     sharingUids,
   } = useWebRTC(user, config);
+
+  const isDesktop = useIsDesktop();
+  const [windowMode, setWindowMode] = React.useState<'full' | 'window' | 'min'>('full');
+  React.useEffect(() => { if (status !== 'incall') setWindowMode('full'); }, [status]);
+  React.useEffect(() => { if (!isDesktop && windowMode === 'window') setWindowMode('full'); }, [isDesktop, windowMode]);
 
   const formatTime = (secs: number) => `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}`;
 
@@ -175,8 +214,8 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     const showLocalVideo = isVideo && !isVideoOff && hasLocalVideo && !isScreenSharing;
     const tileCount = peers.length + 1;
     const spotlight = isVideo && peers.length === 1;
-    return (
-      <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col">
+    const surface = (
+      <div className="relative w-full h-full bg-slate-950 flex flex-col overflow-hidden">
         {/* Top bar: signal + timer */}
         <div className="absolute top-0 left-0 right-0 p-4 pt-[calc(1rem+env(safe-area-inset-top))] z-30 pointer-events-none">
           <div className="relative flex justify-between items-center">
@@ -188,9 +227,19 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               <Clock size={16} className="text-white/80" />
               <span className="text-sm text-white font-mono font-medium">{formatTime(callDuration)}</span>
             </div>
-            <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 shadow-lg">
-              <UsersIcon size={15} className="text-white/80" />
-              <span className="text-xs text-white/90 font-medium">{tileCount}</span>
+            <div className="flex items-center gap-2 pointer-events-auto relative z-50">
+              <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 shadow-lg">
+                <UsersIcon size={15} className="text-white/80" />
+                <span className="text-xs text-white/90 font-medium">{tileCount}</span>
+              </div>
+              {isDesktop && (
+                <button onClick={() => setWindowMode((m) => (m === 'window' ? 'full' : 'window'))} aria-label={windowMode === 'window' ? 'Fullscreen' : 'Windowed'} title={windowMode === 'window' ? 'Fullscreen' : 'Windowed'} className="p-2 rounded-full bg-black/40 backdrop-blur-md text-white/90 border border-white/10 shadow-lg hover:bg-black/60 transition">
+                  {windowMode === 'window' ? <Maximize2 size={15} /> : <Minimize2 size={15} />}
+                </button>
+              )}
+              <button onClick={() => setWindowMode('min')} aria-label="Minimize call" title="Minimize" className="p-2 rounded-full bg-black/40 backdrop-blur-md text-white/90 border border-white/10 shadow-lg hover:bg-black/60 transition">
+                <Minus size={15} />
+              </button>
             </div>
           </div>
           {voiceFilter !== 'normal' && (
@@ -210,7 +259,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               const connecting = !p.everConnected && (p.state === 'checking' || p.state === 'new');
               return (
                 <div className="absolute inset-2 sm:inset-3">
-                  <CallTile stream={p.stream} name={p.name} avatar={p.avatar} muted={isSpeakerMuted} showVideo={hasVideo} reconnecting={dropped} connecting={connecting} sharing={sharingUids.has(p.uid)} />
+                  <CallTile stream={p.stream} name={p.name} avatar={p.avatar} muted showVideo={hasVideo} reconnecting={dropped} connecting={connecting} sharing={sharingUids.has(p.uid)} />
                 </div>
               );
             })()}
@@ -233,7 +282,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   stream={p.stream}
                   name={p.name}
                   avatar={p.avatar}
-                  muted={isSpeakerMuted}
+                  muted
                   showVideo={hasVideo}
                   reconnecting={dropped}
                   connecting={connecting}
@@ -296,6 +345,25 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
         </div>
       </div>
     );
+    if (windowMode === 'min') {
+      const bp = peers[0];
+      return (
+        <MinimizedCallBubble
+          stream={bp ? bp.stream : localStream}
+          name={bp ? bp.name : 'You'}
+          avatar={bp ? bp.avatar : config.avatarURL}
+          showVideo={bp ? bp.stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted) : showLocalVideo}
+          mirror={!bp}
+          sharing={bp ? sharingUids.has(bp.uid) : isScreenSharing}
+          isMuted={isMuted}
+          onToggleMute={toggleMute}
+          onHangup={hangup}
+          onRestore={() => setWindowMode('full')}
+        />
+      );
+    }
+    if (windowMode === 'window' && isDesktop) return <DraggableWindow>{surface}</DraggableWindow>;
+    return <div className="fixed inset-0 z-[100] bg-slate-950">{surface}</div>;
   }
 
   // --- Participants panel (idle) ---
@@ -374,6 +442,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   return (
     <>
       {notice && <NoticeToast notice={notice} onClose={dismissNotice} />}
+      {status === 'incall' && peers.map((p) => <AudioSink key={p.uid} stream={p.stream} muted={isSpeakerMuted} />)}
       {renderContent()}
     </>
   );
