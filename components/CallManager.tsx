@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon, MonitorUp, MonitorX, Minus, Maximize2, Minimize2 } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon, MonitorUp, MonitorX, Minus, Maximize2, Minimize2, PictureInPicture2 } from 'lucide-react';
+import { docPipSupported, openDocPip } from '../utils/documentPip';
 import { User, ChatConfig, Presence } from '../types';
 import { useWebRTC, RemotePeer, CallType, CallNotice } from '../hooks/useWebRTC';
 import { useDragResize } from '../hooks/useDragResize';
@@ -129,6 +130,24 @@ const AudioSink: React.FC<{ stream: MediaStream; muted: boolean }> = ({ stream, 
   return <audio ref={ref} autoPlay muted={muted} style={{ display: 'none' }} />;
 };
 
+// Compact call view rendered INTO the Document-PiP window. No drag wrapper (the OS
+// window is the frame). Video is muted — audio plays from the main doc's AudioSinks.
+const PipCallView: React.FC<{ stream: MediaStream | null; avatar: string; showVideo: boolean; mirror: boolean; isMuted: boolean; onToggleMute: () => void; onHangup: () => void }>
+  = ({ stream, avatar, showVideo, mirror, isMuted, onToggleMute, onHangup }) => {
+  const ref = React.useRef<HTMLVideoElement>(null);
+  React.useEffect(() => { const el = ref.current; if (el && stream) { el.srcObject = stream; el.play().catch(() => {}); } }, [stream]);
+  return (
+    <div className="relative w-screen h-screen bg-slate-900 overflow-hidden">
+      <video ref={ref} autoPlay playsInline muted className={`w-full h-full object-cover ${mirror ? 'scale-x-[-1]' : ''} ${showVideo ? '' : 'opacity-0'}`} />
+      {!showVideo && <div className="absolute inset-0 flex items-center justify-center"><img src={avatar} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-white/15 bg-slate-800" /></div>}
+      <div className="absolute bottom-0 inset-x-0 flex items-center justify-center gap-4 p-2 bg-gradient-to-t from-black/80 to-transparent">
+        <button onClick={onToggleMute} aria-label={isMuted ? 'Unmute' : 'Mute'} className={`p-2.5 rounded-full transition ${isMuted ? 'bg-white text-slate-900' : 'bg-slate-700/80 text-white hover:bg-slate-600'}`}>{isMuted ? <MicOff size={18} /> : <Mic size={18} />}</button>
+        <button onClick={onHangup} aria-label="Hang up" className="p-2.5 rounded-full bg-red-600 text-white hover:bg-red-700 transition"><PhoneOff size={18} fill="currentColor" /></button>
+      </div>
+    </div>
+  );
+};
+
 // Desktop floating call window: draggable by a center strip on the top bar
 // (leaving the left signal chip + right window buttons clickable) and resizable
 // from the bottom-right corner. Clamped to the viewport.
@@ -159,6 +178,16 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   const [windowMode, setWindowMode] = React.useState<'full' | 'window' | 'min'>('full');
   React.useEffect(() => { if (status !== 'incall') setWindowMode('full'); }, [status]);
   React.useEffect(() => { if (!isDesktop && windowMode === 'window') setWindowMode('full'); }, [isDesktop, windowMode]);
+
+  const canPip = docPipSupported();
+  const [pipWindow, setPipWindow] = React.useState<Window | null>(null);
+  const openPip = async () => {
+    const w = await openDocPip(360, 260);
+    if (!w) { setWindowMode('min'); return; } // unsupported/blocked → fall back to bubble
+    w.addEventListener('pagehide', () => setPipWindow(null));
+    setPipWindow(w);
+  };
+  React.useEffect(() => { if (status !== 'incall' && pipWindow) { try { pipWindow.close(); } catch { /* noop */ } setPipWindow(null); } }, [status, pipWindow]);
 
   const formatTime = (secs: number) => `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}`;
 
@@ -205,6 +234,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
 
   // --- Active call (grid) ---
   if (status === 'incall') {
+    if (pipWindow) return null;
     const isVideo = callType === 'video';
     const hasLocalVideo = !!localStream && localStream.getVideoTracks().length > 0;
     // Local tile shows our CAMERA when in a video call. While sharing we show the
@@ -235,6 +265,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               {isDesktop && (
                 <button onClick={() => setWindowMode((m) => (m === 'window' ? 'full' : 'window'))} aria-label={windowMode === 'window' ? 'Fullscreen' : 'Windowed'} title={windowMode === 'window' ? 'Fullscreen' : 'Windowed'} className="p-2 rounded-full bg-black/40 backdrop-blur-md text-white/90 border border-white/10 shadow-lg hover:bg-black/60 transition">
                   {windowMode === 'window' ? <Maximize2 size={15} /> : <Minimize2 size={15} />}
+                </button>
+              )}
+              {canPip && (
+                <button onClick={openPip} aria-label="Pop out" title="Pop out" className="p-2 rounded-full bg-black/40 backdrop-blur-md text-white/90 border border-white/10 shadow-lg hover:bg-black/60 transition">
+                  <PictureInPicture2 size={15} />
                 </button>
               )}
               <button onClick={() => setWindowMode('min')} aria-label="Minimize call" title="Minimize" className="p-2 rounded-full bg-black/40 backdrop-blur-md text-white/90 border border-white/10 shadow-lg hover:bg-black/60 transition">
@@ -443,6 +478,18 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     <>
       {notice && <NoticeToast notice={notice} onClose={dismissNotice} />}
       {status === 'incall' && peers.map((p) => <AudioSink key={p.uid} stream={p.stream} muted={isSpeakerMuted} />)}
+      {status === 'incall' && pipWindow && createPortal(
+        <PipCallView
+          stream={peers[0] ? peers[0].stream : localStream}
+          avatar={peers[0] ? peers[0].avatar : config.avatarURL}
+          showVideo={peers[0] ? peers[0].stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted) : (!!localStream && localStream.getVideoTracks().length > 0 && callType === 'video' && !isVideoOff && !isScreenSharing)}
+          mirror={!peers[0]}
+          isMuted={isMuted}
+          onToggleMute={toggleMute}
+          onHangup={hangup}
+        />,
+        pipWindow.document.body,
+      )}
       {renderContent()}
     </>
   );
