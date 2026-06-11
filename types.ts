@@ -82,13 +82,17 @@ export interface Presence {
 // - offer/answer/candidate: standard per-peer negotiation (directed via toUid)
 // - leave:   "I left the call" (broadcast)
 export interface SignalData {
-  type: 'offer' | 'answer' | 'candidate' | 'join' | 'present' | 'leave';
+  type: 'offer' | 'answer' | 'candidate' | 'join' | 'present' | 'leave' | 'screenshare';
   payload?: RTCSessionDescriptionInit | RTCIceCandidateInit | null;
   fromUid: string;
   fromName: string;
   fromAvatar: string;
   toUid?: string;
   callType?: 'audio' | 'video';
+  // For type === 'screenshare': whether the sender just started (true) or
+  // stopped (false) sharing. Cosmetic only — drives a tile badge; media never
+  // depends on it.
+  sharing?: boolean;
 }
 
 export interface Subscriber {
