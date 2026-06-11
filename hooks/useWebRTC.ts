@@ -608,6 +608,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
   }, [facingMode]);
 
   const cleanup = useCallback(() => {
+    statusRef.current = 'idle'; // synchronously, so a close()-triggered removePeer can't re-enter cleanup
     peersRef.current.forEach((e) => { if (e.failTimer) clearTimeout(e.failTimer); try { e.pc.close(); } catch { /* noop */ } });
     peersRef.current.clear();
     pendingCandidates.current.clear();
