@@ -440,7 +440,18 @@ export function useWebRTC(user: User, config: ChatConfig) {
       case 'offer': {
         if (statusRef.current !== 'incall') return;
         const entry = peersRef.current.get(data.fromUid) || createPeer(data.fromUid, data.fromName, data.fromAvatar);
+        // Perfect-negotiation glare handling for MID-CALL renegotiation (a screen
+        // share from a peer that had no video track renegotiates — see
+        // startScreenShare). If both sides offer at once, the "polite" peer (larger
+        // uid) rolls back to accept the incoming offer; the impolite peer ignores
+        // it and keeps its own. Initial negotiation is always stable → no collision.
+        const collision = entry.makingOffer || entry.pc.signalingState !== 'stable';
+        const polite = user.uid > data.fromUid;
+        if (collision && !polite) return;
         try {
+          if (collision) {
+            try { await entry.pc.setLocalDescription({ type: 'rollback' }); } catch { /* noop */ }
+          }
           await entry.pc.setRemoteDescription(new RTCSessionDescription(data.payload as RTCSessionDescriptionInit));
           await drainCandidates(entry);
           const answer = await entry.pc.createAnswer();
@@ -701,10 +712,14 @@ export function useWebRTC(user: User, config: ChatConfig) {
 
     applyOutgoingAudio(); // rebuild mix without screen audio
 
+    // Going back to a track-less video m-line (audio call / no-camera): renegotiate
+    // so receivers cleanly drop the screen (mirror of the start path).
+    if (!restore) peersRef.current.forEach((e) => makeOffer(e));
+
     isScreenSharingRef.current = false;
     setIsScreenSharing(false);
     sendSignal({ type: 'screenshare', sharing: false });
-  }, [setOutgoingVideo, setLocalView, applyOutgoingAudio, sendSignal]);
+  }, [setOutgoingVideo, setLocalView, applyOutgoingAudio, sendSignal, makeOffer]);
 
   const startScreenShare = useCallback(async () => {
     if (statusRef.current !== 'incall' || isScreenSharingRef.current) return;
@@ -734,6 +749,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
     cameraVideoTrackRef.current =
       callTypeRef.current === 'video' ? (rawStreamRef.current?.getVideoTracks()[0] || null) : null;
 
+    const hadVideo = !!cameraVideoTrackRef.current; // a live camera track we just swapped away from
     setOutgoingVideo(screenVideo);
     // Deliberately DO NOT show the capture in our own tile: when sharing the whole
     // screen, rendering it locally puts a live copy on the very screen being
@@ -742,12 +758,18 @@ export function useWebRTC(user: User, config: ChatConfig) {
     // showing the camera (video call) or avatar (audio call).
     applyOutgoingAudio(); // fold screen audio (if any) into the mix
 
+    // If our video m-line had NO prior track (audio call / no-camera device), it
+    // goes track-less → active. Safari/iOS won't render a track that appears via
+    // replaceTrack alone, so renegotiate to make receivers (esp. iPhone) pick it
+    // up. Camera→screen (hadVideo) keeps a live track → replaceTrack is enough.
+    if (!hadVideo) peersRef.current.forEach((e) => makeOffer(e));
+
     screenVideo.onended = () => { stopScreenShare(); }; // browser's native "Stop sharing"
 
     isScreenSharingRef.current = true;
     setIsScreenSharing(true);
     sendSignal({ type: 'screenshare', sharing: true });
-  }, [setOutgoingVideo, setLocalView, applyOutgoingAudio, sendSignal, stopScreenShare]);
+  }, [setOutgoingVideo, setLocalView, applyOutgoingAudio, sendSignal, stopScreenShare, makeOffer]);
 
   // --- Duration + connection stats while in a call ---
   useEffect(() => {

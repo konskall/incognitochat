@@ -4,6 +4,7 @@ import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertC
 import { docPipSupported, openDocPip } from '../utils/documentPip';
 import { User, ChatConfig, Presence } from '../types';
 import { useWebRTC, RemotePeer, CallType, CallNotice } from '../hooks/useWebRTC';
+import PinchZoom from './PinchZoom';
 import { useDragResize } from '../hooks/useDragResize';
 import MinimizedCallBubble from './MinimizedCallBubble';
 
@@ -64,7 +65,7 @@ const CallTile: React.FC<{
         autoPlay
         playsInline
         muted={muted}
-        className={`w-full h-full object-cover ${mirror ? 'scale-x-[-1]' : ''} ${showVideo ? '' : 'opacity-0'}`}
+        className={`w-full h-full ${sharing ? 'object-contain' : 'object-cover'} ${mirror ? 'scale-x-[-1]' : ''} ${showVideo ? '' : 'opacity-0'}`}
       />
       {!showVideo && (
         <div className="absolute inset-0 flex items-center justify-center">
@@ -88,10 +89,12 @@ const CallTile: React.FC<{
 // to the nearest corner on release; works with mouse + touch.
 const SelfViewPiP: React.FC<{ stream: MediaStream | null; mirror: boolean; showVideo: boolean; avatar: string; sharing: boolean }>
   = ({ stream, mirror, showVideo, avatar, sharing }) => {
-  const { box, setBox, startDrag } = useDragResize({ x: 0, y: 0, w: 130, h: 174 }, { snap: true, minW: 96, minH: 128, margin: 12 });
+  // Keep the self-view clear of the top bar (~72px) and the controls bar (~150px,
+  // up to 2 rows on phones) so it can never hide behind them and stays grabbable.
+  const { box, setBox, startDrag } = useDragResize({ x: 0, y: 0, w: 130, h: 174 }, { snap: true, minW: 96, minH: 128, margin: 12, bounds: { top: 72, right: 10, bottom: 150, left: 10 } });
   useEffect(() => {
     const w = Math.min(140, window.innerWidth * 0.32); const h = w * 1.34;
-    setBox({ x: window.innerWidth - w - 14, y: window.innerHeight - h - 130, w, h });
+    setBox({ x: window.innerWidth - w - 14, y: window.innerHeight - h - 158, w, h });
   }, [setBox]);
   return (
     <div
@@ -293,9 +296,9 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               const dropped = p.state === 'disconnected' || p.state === 'failed';
               const connecting = !p.everConnected && (p.state === 'checking' || p.state === 'new');
               return (
-                <div className="absolute inset-2 sm:inset-3">
+                <PinchZoom className="absolute inset-2 sm:inset-3 rounded-2xl">
                   <CallTile stream={p.stream} name={p.name} avatar={p.avatar} muted showVideo={hasVideo} reconnecting={dropped} connecting={connecting} sharing={sharingUids.has(p.uid)} />
-                </div>
+                </PinchZoom>
               );
             })()}
             <SelfViewPiP stream={localStream} mirror={showLocalVideo} showVideo={showLocalVideo} avatar={config.avatarURL} sharing={isScreenSharing} />
