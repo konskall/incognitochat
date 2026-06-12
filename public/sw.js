@@ -1,6 +1,25 @@
 // Incognito Chat service worker — offline app shell + Web Push.
 
+// Bumped on every push-logic change; the page can query it (INCO_GET_VERSION)
+// and shows it in the UI, so a device running a stale SW is diagnosable
+// without devtools (iOS especially).
+const SW_VERSION = 'push-v9';
+
 const CACHE = 'incognito-cache-v2';
+// Page-written suppression beacon (see utils/swBridge.ts): MUST survive the
+// activate-time cache cleanup below.
+const STATE_CACHE = 'inco-state-v1';
+const BEACON_FRESH_MS = 25000;
+// WebKit enforces userVisibleOnly with a SILENT-PUSH BUDGET (~3 consecutive
+// pushes without a shown notification revoke the subscription, with no
+// visible-client exemption like Chrome's). So suppression must be bounded:
+// after MAX_SILENT consecutive suppressed pushes we force-show the (tagged,
+// collapsed) notification anyway — the page's INCO_PUSH_SHOWN handler closes
+// it instantly when the user really is looking at that room, so on desktop
+// it's invisible and on iOS it's an occasional flash instead of a revoked
+// subscription (= every future push lost).
+const MAX_SILENT = 2;
+const SUPPRESS_COUNT_KEY = '__inco_suppress_n';
 // Resolve the deploy base (e.g. "/incognitochat/") from the SW's own location so
 // this works identically on GitHub Pages and in local dev.
 const BASE = self.location.pathname.replace(/sw\.js$/, '');
@@ -21,9 +40,9 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      // Drop caches from older versions.
+      // Drop caches from older versions (but never the page's state beacon).
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+      await Promise.all(keys.filter((k) => k !== CACHE && k !== STATE_CACHE).map((k) => caches.delete(k)));
       await self.clients.claim();
     })()
   );
@@ -113,20 +132,35 @@ self.addEventListener('push', (event) => {
     actions: [{ action: 'open', title: 'Open Chat' }],
   };
 
-  // Suppress ONLY on a live, affirmative answer; otherwise ALWAYS show.
-  // We ask every open tab whether it is visible AND currently viewing this
-  // push's room. Only a running page can answer — a closed PWA, suspended tab
-  // or zombie client entry simply doesn't reply and the short timeout falls
-  // through to showNotification, so a notification can never be lost to a stale
-  // visibility reading. Asking BEFORE showing matters on iOS: show-then-close
-  // still flashed the OS banner while the user was reading that exact room.
+  // Suppress ONLY on an affirmative, FRESH signal; otherwise ALWAYS show.
+  // Two independent channels (either suffices):
+  //   1. The Cache Storage beacon the page heartbeats while visible — read
+  //      synchronously here, no message round-trip (immune to the iOS/WebKit
+  //      postMessage quirks). Stale beacon (>25s) is ignored, so a closed or
+  //      backgrounded PWA can't suppress anything.
+  //   2. The live INCO_QUERY_ACTIVE_ROOM round-trip to every open tab.
+  // Suppression applies when the user is VIEWING THIS ROOM or is on the
+  // DASHBOARD (which shows live unread badges — an OS banner there is noise).
+  // A closed PWA / suspended tab answers neither and the push shows, so a
+  // notification can never be lost to stale state. Asking BEFORE showing
+  // matters on iOS: show-then-close still flashed the OS banner.
   // After showing we still broadcast INCO_PUSH_SHOWN so a tab that became
   // visible mid-flight can dismiss the stale banner (belt & suspenders).
   event.waitUntil(
     (async () => {
-      const viewing = await anyLiveClientViewingRoom(data.roomKey);
-      if (viewing) return;
+      const suppress = await shouldSuppressPush(data.roomKey);
+      if (suppress) {
+        // Bound the consecutive-silent streak (see MAX_SILENT above): stay
+        // under WebKit's silent-push budget by force-showing every Nth push.
+        const n = await readSuppressCount();
+        if (n < MAX_SILENT) {
+          await writeSuppressCount(n + 1);
+          return;
+        }
+        // Fall through to show (and reset the counter below).
+      }
 
+      await writeSuppressCount(0);
       await self.registration.showNotification(title, options);
       try {
         const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -153,16 +187,87 @@ const pendingRoomQueries = new Map(); // qid -> { roomKey, remaining, finish }
 
 self.addEventListener('message', (event) => {
   const d = event.data || {};
+  if (d.type === 'INCO_GET_VERSION') {
+    try {
+      if (event.source) event.source.postMessage({ type: 'INCO_SW_VERSION', version: SW_VERSION });
+    } catch { /* best-effort */ }
+    return;
+  }
   if (d.type !== 'INCO_ANSWER_ACTIVE_ROOM') return;
   const q = pendingRoomQueries.get(d.qid);
   if (!q) return;
-  if (d.visible === true && d.activeRoomKey === q.roomKey) {
+  if (d.visible === true && (d.activeRoomKey === q.roomKey || d.onDashboard === true)) {
     q.finish(true);
     return;
   }
   q.remaining -= 1;
   if (q.remaining <= 0) q.finish(false);
 });
+
+// Consecutive-suppression counter, persisted next to the beacon so it survives
+// SW restarts between pushes. Best-effort: any error reads as 0 / ignores.
+async function readSuppressCount() {
+  try {
+    const cache = await caches.open(STATE_CACHE);
+    const res = await cache.match(BASE + SUPPRESS_COUNT_KEY);
+    if (!res) return 0;
+    const v = await res.json();
+    return typeof v === 'number' && v >= 0 ? v : 0;
+  } catch {
+    return 0;
+  }
+}
+async function writeSuppressCount(n) {
+  try {
+    const cache = await caches.open(STATE_CACHE);
+    await cache.put(BASE + SUPPRESS_COUNT_KEY, new Response(JSON.stringify(n)));
+  } catch {
+    // Best-effort only.
+  }
+}
+
+const IS_IOS = /iPhone|iPad|iPod/i.test((self.navigator && self.navigator.userAgent) || '');
+
+// Decide whether to keep this push silent. Beacon first (no round-trip), then
+// the live tab query. Both are affirmative-only: any error, staleness or
+// silence falls through to showing the notification.
+async function shouldSuppressPush(roomKey) {
+  if (!roomKey) return false;
+  try {
+    const cache = await caches.open(STATE_CACHE);
+    const res = await cache.match(BASE + '__inco_state');
+    if (res) {
+      const s = await res.json();
+      if (
+        s &&
+        s.visible === true &&
+        typeof s.ts === 'number' &&
+        Date.now() - s.ts < BEACON_FRESH_MS &&
+        (s.activeRoomKey === roomKey || s.onDashboard === true)
+      ) {
+        // Guard the beacon's staleness window: if the PWA was KILLED without a
+        // visibilitychange (crash/OOM/swipe), the beacon can read fresh+visible
+        // for up to 25s with nobody actually there — suppressing then makes
+        // Chrome show its generic "site updated in the background" junk banner.
+        // Require a really-visible window client — except on iOS, where client
+        // visibility misreports for live PWAs (the original zombie-client bug)
+        // and Cache Storage beacon freshness is the trustworthy signal.
+        if (IS_IOS) return true;
+        try {
+          const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+          if (wins.some((c) => c.visibilityState === 'visible')) return true;
+          // Beacon claims visible but no visible client exists — stale kill
+          // window. Fall through to the live query (which will show).
+        } catch {
+          return true; // matchAll failed — trust the fresh beacon.
+        }
+      }
+    }
+  } catch {
+    // Beacon unreadable — fall through to the live query.
+  }
+  return anyLiveClientViewingRoom(roomKey);
+}
 
 // Resolves true on the first live "I'm visible and on this room" answer; false
 // once all clients answered otherwise or after a short timeout — no answer

@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom } from '../services/supabase';
+import { setDashboardActive, getSwVersion } from '../utils/swBridge';
+import { subscribeToPushNotifications } from '../utils/pushService';
 import { User, ChatConfig, Room, Presence } from '../types';
 import { generateRoomKey, compressImage, decryptMessage, beginThemeTransition, ROOM_NAME_RE, ROOM_PIN_RE, ROOM_NAME_RULE, ROOM_PIN_RULE } from '../utils/helpers';
 import {
@@ -365,6 +367,18 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
   );
 
+  // Tell the push SW the dashboard is on screen: it shows live unread badges,
+  // so OS notifications are suppressed while it's actually visible.
+  useEffect(() => {
+    setDashboardActive(true);
+    return () => setDashboardActive(false);
+  }, []);
+
+  // Which service-worker version this device runs (push-vN). Shown as a tiny
+  // footer so a stale SW is diagnosable on a phone without devtools.
+  const [swVersion, setSwVersion] = useState<string | null>(null);
+  useEffect(() => { getSwVersion().then(setSwVersion).catch(() => {}); }, []);
+
   const [activeDragKey, setActiveDragKey] = useState<string | null>(null);
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -487,6 +501,17 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
         setRooms(allRooms);
         loadOverview(allRooms);
+
+        // Self-heal push from the dashboard too (not only on room open): if the
+        // platform revoked this device's subscription (e.g. iOS silent-push
+        // budget), every room's row points at a dead endpoint until the user
+        // happens to reopen each room. Refresh them all here, fire-and-forget.
+        if (
+          typeof Notification !== 'undefined' && Notification.permission === 'granted' &&
+          'serviceWorker' in navigator && 'PushManager' in window
+        ) {
+          allRooms.forEach(r => { subscribeToPushNotifications(user.uid, r.room_key).catch(() => {}); });
+        }
       } catch (error) {
         console.error('Error fetching rooms:', error);
       } finally {
@@ -783,6 +808,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         setSettings(prev => { const next = new Map(prev); next.delete(key); return next; });
     }
     supabase.from('room_settings').delete().eq('user_id', user.uid).eq('room_key', key).then(undefined, () => {});
+    // Stop push for a room we left/deleted: the subscription row would
+    // otherwise keep this device a send-push target forever (and room keys are
+    // deterministic name+pin, so a re-created room would resurrect it).
+    supabase.from('push_subscriptions').delete().eq('user_id', user.uid).eq('room_key', key).then(undefined, () => {});
   }, [user.uid]);
 
   const handleConfirmDeleteRoom = async () => {
@@ -1274,6 +1303,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 ))}
                             </div>
                         )}
+                        <p className="text-center text-[10px] text-slate-300 dark:text-slate-700 mt-8 select-none" title="Service worker version on this device">
+                            SW {swVersion ?? 'unknown (stale or none)'}
+                        </p>
                     </div>
                 </div>
             </div>

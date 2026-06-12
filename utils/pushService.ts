@@ -52,13 +52,18 @@ export async function subscribeToPushNotifications(userId: string, roomKey: stri
     // Serialize subscription
     const subJson = JSON.parse(JSON.stringify(subscription));
 
-    // Save to Supabase
+    // Save to Supabase. created_at is refreshed EXPLICITLY: the conflict-UPDATE
+    // path would otherwise keep the original insert time, and send-push picks
+    // one row per device endpoint by NEWEST created_at — it must track the
+    // device's currently-active identity (Google <-> anonymous switches), not
+    // whichever identity happened to subscribe first.
     const { error } = await supabase.from('push_subscriptions').upsert({
       user_id: userId,
       room_key: roomKey,
       endpoint: subJson.endpoint,
       p256dh: subJson.keys.p256dh,
-      auth: subJson.keys.auth
+      auth: subJson.keys.auth,
+      created_at: new Date().toISOString()
     }, { onConflict: 'user_id, room_key, endpoint' });
 
     if (error) {

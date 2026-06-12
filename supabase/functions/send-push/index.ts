@@ -82,27 +82,96 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
     const { data: subs, error: subErr } = await admin
       .from("push_subscriptions")
-      .select("id, user_id, endpoint, p256dh, auth")
+      .select("id, user_id, endpoint, p256dh, auth, created_at")
       .eq("room_key", roomKey);
     if (subErr) {
       console.error("push_subscriptions read failed", subErr);
       return json({ error: "DB_ERROR" }, 500);
     }
 
+    // Only CURRENT members get pushed. A subscription row outlives a "leave
+    // room" (and room keys are deterministic name+pin, so a re-created room
+    // would otherwise resurrect rows from its previous life and push strangers).
+    // The error MUST be checked: an unchecked transient failure here would make
+    // `members` an empty set and the garbage sweep below would mass-delete
+    // every subscription row in the room.
+    const { data: memberRows, error: memberErr } = await admin
+      .from("subscribers")
+      .select("uid")
+      .eq("room_key", roomKey);
+    if (memberErr) {
+      console.error("subscribers read failed", memberErr);
+      return json({ error: "DB_ERROR" }, 500);
+    }
+    const members = new Set<string>((memberRows ?? []).map((m) => String(m.uid).toLowerCase()));
+    // The caller just passed is_member, so an empty member set is an
+    // inconsistency signal, never reality — fall back to the unfiltered list
+    // and DELETE NOTHING rather than treating everyone as garbage.
+    const membersTrustworthy = members.size > 0;
+    const memberSubs = membersTrustworthy
+      ? (subs ?? []).filter((s) => members.has(String(s.user_id).toLowerCase()))
+      : (subs ?? []);
+
+    // One push per device: churned anonymous uids leave OLDER rows for the
+    // SAME endpoint behind, and each row used to get its own send → duplicate
+    // banners on that device. Keep only the newest row per endpoint (the client
+    // upsert refreshes created_at, so newest == the device's active identity).
+    const byEndpoint = new Map<string, (typeof memberSubs)[number]>();
+    for (const s of memberSubs) {
+      const prev = byEndpoint.get(s.endpoint);
+      if (
+        !prev ||
+        s.created_at > prev.created_at ||
+        (s.created_at === prev.created_at && s.id > prev.id)
+      ) {
+        byEndpoint.set(s.endpoint, s);
+      }
+    }
+    const deduped = [...byEndpoint.values()];
+
+    // Garbage = non-member rows + older duplicate-endpoint rows. Delete them
+    // opportunistically so the table converges to one row per member-device.
+    // Only when the member read is verifiably healthy (see above).
+    const keepIds = new Set(deduped.map((s) => s.id));
+    const garbageIds = membersTrustworthy
+      ? (subs ?? []).filter((s) => !keepIds.has(s.id)).map((s) => s.id)
+      : [];
+    if (garbageIds.length > 0) {
+      await admin.from("push_subscriptions").delete().in("id", garbageIds);
+    }
+
     // Respect per-user "mute" for this room: those users opted out of push.
-    const { data: mutedRows } = await admin
+    // A transient error here only risks pushing a muted user once (log and
+    // proceed) — never dropping or deleting anything.
+    const { data: mutedRows, error: mutedErr } = await admin
       .from("room_settings")
       .select("user_id")
       .eq("room_key", roomKey)
       .eq("muted", true);
-    const muted = new Set<string>((mutedRows ?? []).map((m) => m.user_id));
+    if (mutedErr) console.error("room_settings muted read failed", mutedErr);
+    const muted = new Set<string>((mutedRows ?? []).map((m) => String(m.user_id).toLowerCase()));
 
-    const exclude = new Set<string>([senderUid, ...(excludeUids as string[])]);
-    const targets = (subs ?? []).filter((s) => !exclude.has(s.user_id) && !muted.has(s.user_id));
+    const exclude = new Set<string>(
+      [senderUid, ...(excludeUids as string[])].map((u) => String(u).toLowerCase()),
+    );
+    // Exclusion is per DEVICE (endpoint), not per row: one device can carry
+    // rows under several identities (Google <-> anonymous switches), and the
+    // kept row's uid may be the stale one. If ANY identity on an endpoint is
+    // the sender or muted, that device is excluded.
+    const excludedEndpoints = new Set<string>(
+      memberSubs
+        .filter((s) => {
+          const uid = String(s.user_id).toLowerCase();
+          return exclude.has(uid) || muted.has(uid);
+        })
+        .map((s) => s.endpoint),
+    );
+    const targets = deduped.filter((s) => !excludedEndpoints.has(s.endpoint));
     // Structured log so delivery is diagnosable from the dashboard: how many
-    // subscriptions the room has, how many were excluded/muted, how many remain.
+    // subscriptions the room has, how many survived member/dedupe filtering,
+    // how many devices were excluded (sender/muted), how many remain.
     console.log(
-      `send-push room=${roomKey} subs=${subs?.length ?? 0} excluded=${exclude.size} muted=${muted.size} targets=${targets.length}`,
+      `send-push v9 room=${roomKey} subs=${subs?.length ?? 0} members=${memberSubs.length} deduped=${deduped.length} garbage=${garbageIds.length} excludedDevices=${excludedEndpoints.size} targets=${targets.length}${membersTrustworthy ? "" : " MEMBERS_READ_EMPTY"}`,
     );
     if (targets.length === 0) return json({ sent: 0 }, 200);
 
