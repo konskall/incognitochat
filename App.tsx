@@ -133,7 +133,9 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     // Clear all per-user local data so the next person on a shared device can't
-    // see the previous user's identity, room list, ordering or read state.
+    // see the previous user's identity, room list or read state. (Custom room
+    // order now lives server-side in room_settings.sort_order; the roomOrder_*
+    // sweep here just purges legacy localStorage copies left by older builds.)
     try {
       Object.keys(localStorage).forEach((k) => {
         if (

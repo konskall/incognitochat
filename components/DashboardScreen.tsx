@@ -447,7 +447,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         ] = await Promise.all([
           supabase.from('rooms').select('*').eq('created_by', user.uid),
           supabase.from('subscribers').select('room_key').eq('uid', user.uid),
-          supabase.from('room_settings').select('room_key,archived,muted').eq('user_id', user.uid),
+          supabase.from('room_settings').select('room_key,archived,muted,sort_order').eq('user_id', user.uid),
         ]);
         if (createdError) throw createdError;
         if (subError) throw subError;
@@ -468,27 +468,22 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
         const allRooms = Array.from(roomMap.values());
 
-        // Custom drag order (guard against corrupted localStorage so a bad value
-        // can't blank the dashboard), and prune saved keys whose rooms are gone.
-        let orderKeys: string[] | null = null;
-        const savedOrder = localStorage.getItem(`roomOrder_${user.uid}`);
-        if (savedOrder) { try { const p = JSON.parse(savedOrder); if (Array.isArray(p)) orderKeys = p; } catch { /* ignore corrupt */ } }
-        if (orderKeys) {
-            const order = orderKeys;
-            allRooms.sort((a, b) => {
-                const indexA = order.indexOf(a.room_key);
-                const indexB = order.indexOf(b.room_key);
-                if (indexA === -1 && indexB === -1) return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-                if (indexA === -1) return 1;
-                if (indexB === -1) return -1;
-                return indexA - indexB;
-            });
-            const liveKeys = new Set(allRooms.map(r => r.room_key));
-            const pruned = order.filter(k => liveKeys.has(k));
-            if (pruned.length !== order.length) localStorage.setItem(`roomOrder_${user.uid}`, JSON.stringify(pruned));
-        } else {
-            allRooms.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        // Custom dashboard order lives per-user in room_settings.sort_order
+        // (server-side, so it survives logout/login and syncs across devices).
+        // Rooms with an explicit sort_order come first, in that order; the rest
+        // (e.g. newly created rooms) fall to the bottom, newest first.
+        const orderByKey = new Map<string, number>();
+        for (const s of (settingsRows || []) as any[]) {
+            if (s.sort_order !== null && s.sort_order !== undefined) orderByKey.set(s.room_key, s.sort_order);
         }
+        allRooms.sort((a, b) => {
+            const oa = orderByKey.get(a.room_key);
+            const ob = orderByKey.get(b.room_key);
+            if (oa !== undefined && ob !== undefined) return oa - ob;
+            if (oa !== undefined) return -1;
+            if (ob !== undefined) return 1;
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
 
         setRooms(allRooms);
         loadOverview(allRooms);
@@ -773,22 +768,21 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             console.warn('Room storage cleanup failed (non-fatal):', storageErr);
         }
     }
-    // Local cleanup — list, saved order, favorites, settings.
+    // Local cleanup — list, favorites, per-user settings (archive/mute/order).
     setRooms(prev => prev.filter(r => r.room_key !== key));
-    try {
-        const raw = localStorage.getItem(`roomOrder_${user.uid}`);
-        if (raw) localStorage.setItem(`roomOrder_${user.uid}`, JSON.stringify((JSON.parse(raw) as string[]).filter(k => k !== key)));
-    } catch { /* ignore */ }
     setFavorites(prev => {
         if (!prev.has(key)) return prev;
         const next = new Set(prev); next.delete(key);
         try { localStorage.setItem(`roomFav_${user.uid}`, JSON.stringify([...next])); } catch { /* ignore */ }
         return next;
     });
+    // Drop the room_settings row unconditionally: it now also carries sort_order,
+    // so a reordered-but-never-archived/muted room still has a row to clean up
+    // (and deleting a non-existent row is a harmless no-op).
     if (settingsRef.current.has(key)) {
         setSettings(prev => { const next = new Map(prev); next.delete(key); return next; });
-        supabase.from('room_settings').delete().eq('user_id', user.uid).eq('room_key', key).then(undefined, () => {});
     }
+    supabase.from('room_settings').delete().eq('user_id', user.uid).eq('room_key', key).then(undefined, () => {});
   }, [user.uid]);
 
   const handleConfirmDeleteRoom = async () => {
@@ -896,18 +890,32 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     if ('vibrate' in navigator) navigator.vibrate(40);
   };
 
+  // Persist the current room order to the user's account in one batched upsert
+  // (room_settings.sort_order). Server-side, so it survives logout/login and
+  // syncs across devices. Sends ONLY sort_order/updated_at so it never clobbers
+  // archived/muted on an existing row (PostgREST updates only payload columns).
+  const persistOrder = useCallback(async (ordered: Room[]) => {
+    const ts = new Date().toISOString();
+    const rows = ordered.map((r, i) => ({ user_id: user.uid, room_key: r.room_key, sort_order: i, updated_at: ts }));
+    try {
+      const { error } = await supabase.from('room_settings').upsert(rows, { onConflict: 'user_id,room_key' });
+      if (error) throw error;
+    } catch (e) {
+      console.error('Could not save room order', e);
+    }
+  }, [user.uid]);
+
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveDragKey(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    setRooms((prev) => {
-      const oldIndex = prev.findIndex((r) => r.room_key === active.id);
-      const newIndex = prev.findIndex((r) => r.room_key === over.id);
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      const next = arrayMove(prev, oldIndex, newIndex);
-      localStorage.setItem(`roomOrder_${user.uid}`, JSON.stringify(next.map((r) => r.room_key)));
-      return next;
-    });
+    const prev = roomsRef.current;
+    const oldIndex = prev.findIndex((r) => r.room_key === active.id);
+    const newIndex = prev.findIndex((r) => r.room_key === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const next = arrayMove(prev, oldIndex, newIndex);
+    setRooms(next);
+    persistOrder(next);
   };
 
   const handleDragCancel = () => setActiveDragKey(null);
