@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom } from '../services/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { parseRoomDeletedPayload } from '../utils/roomLifecycle';
+import { broadcastRoomDeleted, parseRoomDeletedPayload } from '../utils/roomLifecycle';
 import { setDashboardActive, getSwVersion } from '../utils/swBridge';
 import { subscribeToPushNotifications } from '../utils/pushService';
 import { User, ChatConfig, Room, Presence } from '../types';
@@ -50,11 +50,14 @@ type RoomCardProps = {
   unread: number; muted: boolean; archived: boolean; overview?: Overview;
   revealed: boolean; isFavorite: boolean;
   selectMode: boolean; selected: boolean; online?: Presence[];
+  deletedInfo?: { deletedBy?: string };
   onJoin: (r: Room) => void;
   onOpenActions: (r: Room) => void;
   onTogglePin: (e: React.MouseEvent, key: string) => void;
   onToggleFav: (e: React.MouseEvent, key: string) => void;
   onToggleSelect: (key: string) => void;
+  onRecreate: (r: Room) => void;
+  onDismissDeleted: (key: string) => void;
 };
 
 const CARD_CHROME = "room-card group bg-white dark:bg-slate-900 p-5 rounded-2xl shadow-sm border flex flex-col justify-between relative overflow-hidden select-none border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-800 transition-shadow";
@@ -195,7 +198,7 @@ const RoomActionsSheet: React.FC<{
 };
 
 // Presentational card body, shared by the sortable item and the drag overlay.
-const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, overview, revealed, isFavorite, selectMode, selected, online, onJoin, onOpenActions, onTogglePin, onToggleFav }: RoomCardProps) => {
+const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, overview, revealed, isFavorite, selectMode, selected, online, deletedInfo, onJoin, onOpenActions, onTogglePin, onToggleFav, onRecreate, onDismissDeleted }: RoomCardProps) => {
   const isOwner = room.created_by === userUid;
   const name = room.display_name || room.room_name;
   const showUnread = unread > 0 && !muted;
@@ -268,7 +271,22 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
           {overview?.lastAt && <span className="shrink-0 text-slate-400 dark:text-slate-500">· {formatRelative(overview.lastAt)}</span>}
         </div>
       </div>
-      {selectMode ? (
+      {deletedInfo ? (
+        <div className="flex flex-col gap-2 relative z-10">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-red-600 dark:text-red-400">
+            <AlertCircle size={14} className="shrink-0" />
+            <span className="truncate">{deletedInfo.deletedBy ? `Διαγράφηκε από ${deletedInfo.deletedBy}` : 'Το δωμάτιο διαγράφηκε'}</span>
+          </div>
+          <div className="flex gap-2">
+            <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onRecreate(room); }} className="flex-1 py-2 text-xs font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition flex items-center justify-center gap-1.5 active:scale-95">
+              <RefreshCw size={14} /> Ξανα-δημιούργησε
+            </button>
+            <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onDismissDeleted(room.room_key); }} className="flex-1 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition active:scale-95">
+              Απόρριψη
+            </button>
+          </div>
+        </div>
+      ) : selectMode ? (
         <div className="w-full py-2.5 font-semibold rounded-xl flex items-center justify-center gap-2 text-sm border border-dashed border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400">
           {selected ? <><Check size={16} className="text-blue-500" />Selected</> : 'Tap to select'}
         </div>
@@ -348,9 +366,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   // Rooms that were deleted live (room_status broadcast) while on the dashboard —
   // shown as a deleted card with Re-create / Dismiss instead of being navigable.
   const [deletedRooms, setDeletedRooms] = useState<Map<string, { deletedBy?: string }>>(new Map());
-  // deletedRooms is read by the card renderer added in a later task; silence the
-  // noUnusedLocals error until that task lands.
-  void deletedRooms;
   // The room_status channels we subscribe for the top-15 rooms, so a dashboard-
   // initiated delete can broadcast on the channel it already holds.
   const roomStatusChannelsRef = useRef<Map<string, RealtimeChannel>>(new Map());
@@ -838,6 +853,11 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         const { error: roomErr } = await supabase.from('rooms').delete().eq('room_key', key);
         if (roomErr) throw roomErr;
         await supabase.from('subscribers').delete().eq('room_key', key); // own row (RLS-scoped)
+        // Tell other members' dashboards / in-room clients live (same room_status
+        // broadcast ChatScreen emits on an in-room delete). Reuse the channel we
+        // already hold for a top-15 room; a room beyond the window opens a
+        // short-lived one inside the helper. Best-effort.
+        void broadcastRoomDeleted(key, displayName, roomStatusChannelsRef.current.get(key) ?? null);
 
         // Best-effort storage cleanup, paginated (list() is capped per call).
         // Never fail the whole delete on this — room + messages are already gone.
@@ -876,6 +896,42 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     // otherwise keep this device a send-push target forever (and room keys are
     // deterministic name+pin, so a re-created room would resurrect it).
     supabase.from('push_subscriptions').delete().eq('user_id', user.uid).eq('room_key', key).then(undefined, () => {});
+  }, [user.uid, displayName]);
+
+  // Re-create a room deleted live (same name+PIN). The room reappears empty on the
+  // dashboard; the user stays here. joinOrCreateRoom defaults createIfMissing:true.
+  const recreateRoom = useCallback(async (room: Room) => {
+    try {
+      const { data, error } = await joinOrCreateRoom({
+        roomKey: room.room_key, roomName: room.room_name, pin: room.pin,
+        username: displayName, createIfMissing: true,
+      });
+      if (error || !data) { alert('Could not re-create the room. Please try again.'); return; }
+      // Clear the session "joined" flag so a later in-room re-entry creates fresh.
+      sessionStorage.removeItem(`joined_${room.room_key}`);
+      setDeletedRooms(prev => { const next = new Map(prev); next.delete(room.room_key); return next; });
+      // The re-created room is empty — drop any stale overview so the card shows
+      // "No messages yet" instead of the pre-deletion preview.
+      setOverview(prev => { const next = new Map(prev); next.delete(room.room_key); return next; });
+    } catch {
+      alert('Could not re-create the room. Please try again.');
+    }
+  }, [displayName]);
+
+  // Dismiss a live-deleted room from the dashboard. The room (and the user's
+  // subscribers/room_settings/push rows) are already cascade-gone server-side, so
+  // this is local-only cleanup — no DB call.
+  const dismissDeletedRoom = useCallback((key: string) => {
+    setDeletedRooms(prev => { const next = new Map(prev); next.delete(key); return next; });
+    setRooms(prev => prev.filter(r => r.room_key !== key));
+    setFavorites(prev => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev); next.delete(key);
+      try { localStorage.setItem(`roomFav_${user.uid}`, JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+    setSettings(prev => { if (!prev.has(key)) return prev; const next = new Map(prev); next.delete(key); return next; });
+    try { localStorage.removeItem(`lastRead_${key}`); localStorage.removeItem(`joined_${key}`); } catch { /* ignore */ }
   }, [user.uid]);
 
   const handleConfirmDeleteRoom = async () => {
@@ -1063,11 +1119,14 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     selectMode,
     selected: selected.has(room.room_key),
     online: online.get(room.room_key),
+    deletedInfo: deletedRooms.get(room.room_key),
     onJoin: handleJoin,
     onOpenActions: setActionsRoom,
     onTogglePin: togglePinVisibility,
     onToggleFav: toggleFavorite,
     onToggleSelect: toggleSelect,
+    onRecreate: recreateRoom,
+    onDismissDeleted: dismissDeletedRoom,
   });
 
   return (
