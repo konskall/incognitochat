@@ -114,7 +114,25 @@ export const useRoomPresence = (
         // every future sync and stick "X is typing…" until the server-side
         // presence timeout (30-60s+).
         typingRecordsRef.current = updateTypingRecords(typingRecordsRef.current, candidates, Date.now());
-        setTypingUsers(currentTypers(typingRecordsRef.current, Date.now()));
+        const _tu = currentTypers(typingRecordsRef.current, Date.now());
+        // [TYPING-DEBUG] temporary — remove after diagnosis. Shows, on every
+        // presence sync, the freshest payload per peer (t=isTyping, s=status),
+        // who became a typing candidate, and the resulting typingUsers.
+        try {
+          console.log('[typing] sync', {
+            self: (user.uid || '').slice(0, 6),
+            peers: Object.entries(newState).map(([k, arr]) => {
+              const list = arr as unknown as Presence[];
+              const a = list && list.length
+                ? (list.filter((u) => u.status === 'active')[0] || list[0])
+                : null;
+              return a ? `${a.username}:t=${a.isTyping}:s=${a.status}` : k.slice(0, 6);
+            }),
+            candidates: candidates.map((c) => c.username),
+            typingUsers: _tu,
+          });
+        } catch { /* ignore */ }
+        setTypingUsers(_tu);
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
@@ -197,6 +215,7 @@ export const useRoomPresence = (
         if (!isTypingRef.current) {
             isTypingRef.current = true;
             lastTypingTrackRef.current = now;
+            console.log('[typing] send start'); // [TYPING-DEBUG] temporary
             trackPresence({ isTyping: true });
         } else if (now - lastTypingTrackRef.current > TYPING_HEARTBEAT_MS) {
             // Heartbeat while keys keep coming: refreshes onlineAt so receivers'
@@ -204,6 +223,7 @@ export const useRoomPresence = (
             // payload freezes at typing-start and a long message would expire
             // mid-typing — and a lost stop-message would stick forever.
             lastTypingTrackRef.current = now;
+            console.log('[typing] send heartbeat'); // [TYPING-DEBUG] temporary
             trackPresence({ isTyping: true });
         }
 
@@ -211,6 +231,7 @@ export const useRoomPresence = (
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = setTimeout(() => {
             isTypingRef.current = false;
+            console.log('[typing] send stop (timeout)'); // [TYPING-DEBUG] temporary
             trackPresence({ isTyping: false });
         }, 2000);
 
@@ -218,6 +239,7 @@ export const useRoomPresence = (
           // Force stop
           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
           isTypingRef.current = false;
+          console.log('[typing] send stop (explicit)'); // [TYPING-DEBUG] temporary
           trackPresence({ isTyping: false });
       }
   };
