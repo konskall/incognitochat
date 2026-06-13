@@ -927,7 +927,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
            // Kick everyone still in the room (the postgres_changes DELETE event is
            // unreliable here — see the room_status channel comment).
            try {
-               await roomStatusChannelRef.current?.send({ type: 'broadcast', event: 'room_deleted', payload: {} });
+               await roomStatusChannelRef.current?.send({ type: 'broadcast', event: 'room_deleted', payload: { deletedBy: config.username } });
            } catch { /* best-effort; the recipient also falls back to checkRoomStatus on focus */ }
 
            // Clear the session "joined" flag so a later re-entry creates a fresh
