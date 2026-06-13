@@ -1,6 +1,10 @@
 import { supabase } from '../services/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
+// How long to wait for the transient room_status channel to subscribe before
+// sending anyway — bounded so a down realtime never hangs the delete flow.
+const SUBSCRIBE_TIMEOUT_MS = 1500;
+
 export interface RoomDeletedPayload { deletedBy?: string; }
 
 // Defensive parse of an untrusted `room_deleted` broadcast payload (it originates
@@ -38,10 +42,13 @@ export async function broadcastRoomDeleted(
       const finish = () => { if (!done) { done = true; resolve(); } };
       ch.subscribe((status) => { if (status === 'SUBSCRIBED') finish(); });
       // Don't hang the delete flow if realtime is unavailable.
-      setTimeout(finish, 1500);
+      setTimeout(finish, SUBSCRIBE_TIMEOUT_MS);
     });
-    await ch.send(message);
-    supabase.removeChannel(ch);
+    try {
+      await ch.send(message);
+    } finally {
+      supabase.removeChannel(ch);
+    }
   } catch {
     /* best-effort */
   }
