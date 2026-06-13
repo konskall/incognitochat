@@ -62,7 +62,14 @@ const PollMessage: React.FC<PollMessageProps> = ({ poll, currentUid, isMe, canMa
       <div className={`flex items-center justify-between text-[11px] mt-0.5 ${isMe ? 'text-blue-100/80' : 'text-slate-400 dark:text-slate-500'}`}>
         <span>{totalVotes} vote{totalVotes === 1 ? '' : 's'}{poll.closed && ' · final'}</span>
         {poll.closed ? (
-          <span className="flex items-center gap-1 font-semibold"><Lock size={11} /> Closed</span>
+          <span className="flex items-center gap-2">
+            <span className="flex items-center gap-1 font-semibold"><Lock size={11} /> Closed</span>
+            {canManage && (
+              <button onClick={() => onToggleClosed(false)} className={`font-semibold hover:underline ${isMe ? 'text-white' : 'text-blue-600 dark:text-blue-400'}`}>
+                Reopen
+              </button>
+            )}
+          </span>
         ) : (
           canManage && (
             <button onClick={() => onToggleClosed(true)} className={`font-semibold hover:underline ${isMe ? 'text-white' : 'text-blue-600 dark:text-blue-400'}`}>

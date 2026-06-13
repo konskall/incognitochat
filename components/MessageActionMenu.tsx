@@ -31,7 +31,7 @@ interface MessageActionMenuProps {
   onClose: () => void;
   onReact: (emoji: string) => void;
   onReply: () => void;
-  onCopy: () => void;
+  onCopy: () => void | Promise<unknown>;
   onEdit: () => void;
   onPin: () => void;
   onDelete: () => void;
@@ -122,7 +122,7 @@ const MessageActionMenu: React.FC<MessageActionMenuProps> = ({
             <Reply size={18} /> Reply
           </button>
           {canCopy && (
-            <button onClick={() => { onCopy(); flashToast('Copied to clipboard'); onClose(); }} className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left">
+            <button onClick={() => { Promise.resolve(onCopy()).then(() => flashToast('Copied to clipboard')).catch(() => flashToast('Copy failed')); onClose(); }} className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left">
               <Copy size={18} /> Copy message
             </button>
           )}

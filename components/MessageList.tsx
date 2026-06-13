@@ -85,23 +85,50 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
     useEffect(() => {
         const audio = audioRef.current;
         if (!audio) return;
-        const setAudioData = () => { if(audio.duration !== Infinity) setDuration(audio.duration); };
-        const setAudioTime = () => setCurrentTime(audio.currentTime);
+        // MediaRecorder webm/opus blobs (Chrome/Firefox voice notes) report
+        // duration=Infinity at loadedmetadata. Force a seek to a huge time so the
+        // browser computes the real duration, read it on durationchange, reset.
+        let fixingDuration = false;
+        const setAudioData = () => {
+            if (audio.duration === Infinity || isNaN(audio.duration)) {
+                fixingDuration = true;
+                try { audio.currentTime = 1e101; } catch { /* ignore */ }
+            } else {
+                setDuration(audio.duration);
+            }
+        };
+        const onDurationChange = () => {
+            if (audio.duration !== Infinity && !isNaN(audio.duration)) {
+                setDuration(audio.duration);
+                if (fixingDuration) { fixingDuration = false; audio.currentTime = 0; setCurrentTime(0); }
+            }
+        };
+        const setAudioTime = () => { if (!fixingDuration) setCurrentTime(audio.currentTime); };
+        // Drive isPlaying from the element so a rejected play() (deleted/404
+        // attachment, transient iOS error) can't leave the button stuck on Pause.
+        const onPlay = () => setIsPlaying(true);
+        const onPause = () => setIsPlaying(false);
         const handleEnded = () => { setIsPlaying(false); setCurrentTime(0); };
         audio.addEventListener('loadedmetadata', setAudioData);
+        audio.addEventListener('durationchange', onDurationChange);
         audio.addEventListener('timeupdate', setAudioTime);
+        audio.addEventListener('play', onPlay);
+        audio.addEventListener('pause', onPause);
         audio.addEventListener('ended', handleEnded);
         return () => {
             audio.removeEventListener('loadedmetadata', setAudioData);
+            audio.removeEventListener('durationchange', onDurationChange);
             audio.removeEventListener('timeupdate', setAudioTime);
+            audio.removeEventListener('play', onPlay);
+            audio.removeEventListener('pause', onPause);
             audio.removeEventListener('ended', handleEnded);
         };
     }, []);
     const togglePlay = () => {
         const audio = audioRef.current;
         if (!audio) return;
-        if (isPlaying) audio.pause(); else audio.play();
-        setIsPlaying(!isPlaying);
+        if (audio.paused) audio.play().catch(() => setIsPlaying(false));
+        else audio.pause();
     };
     const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
         const audio = audioRef.current;
@@ -355,9 +382,12 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
     const URL_RE = /(https?:\/\/[^\s]+)/g;
     const ytId = getYouTubeId(text);
     const matches = text.match(URL_RE);
+    // Parse the start time from the YOUTUBE url specifically, not the whole
+    // message — an unrelated "...page?t=300" link must not seek the embed.
+    const ytUrl = ytId ? matches?.find((u) => getYouTubeId(u) === ytId) : null;
     return {
       ytId,
-      ytStart: ytId ? parseYouTubeStart(text) : 0,
+      ytStart: ytUrl ? parseYouTubeStart(ytUrl) : 0,
       parts: text.split(URL_RE),
       previewUrl: (matches && !ytId) ? cleanUrl(matches[0]) : null,
     };
@@ -530,7 +560,11 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
         {!isMe && (
           isFirstOfGroup ? (
             <img
-              src={msg.avatarURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=64748b&color=fff&rounded=true`}
+              // Only trust an https avatar URL (it's member-controlled message
+              // data); anything else falls back to ui-avatars, matching the
+              // https-only policy the calls subsystem already enforces — blocks
+              // http:// mixed-content / tracking beacons.
+              src={msg.avatarURL && /^https:\/\//i.test(msg.avatarURL) ? msg.avatarURL : `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=64748b&color=fff&rounded=true`}
               alt={msg.username}
               onClick={() => !isBot && onUserClick?.(msg.uid, msg.username, msg.avatarURL)}
               role={!isBot ? 'button' : undefined}
@@ -632,7 +666,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
             onClose={() => setMenu(null)}
             onReact={(e) => onReact(msg, e)}
             onReply={() => onReply(msg)}
-            onCopy={() => { try { navigator.clipboard?.writeText(msg.text || ''); } catch { /* clipboard unavailable */ } }}
+            onCopy={() => navigator.clipboard?.writeText(msg.text || '')}
             onEdit={() => onEdit(msg)}
             onPin={() => (isPinned ? onUnpin?.() : onPin?.(msg))}
             onDelete={() => onRequestDelete(msg.id)}
@@ -654,13 +688,16 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
     return () => clearInterval(id);
   }, [messageTtlSeconds]);
 
-  // All viewable media in order, for swipe navigation in the lightbox.
-  const mediaItems = useMemo<MediaItem[]>(
-    () => messages
+  // All viewable media in order, for swipe navigation in the lightbox. Excludes
+  // media from messages already past the disappearing-messages TTL, so the
+  // lightbox can't swipe into content the list has hidden as expired.
+  const mediaItems = useMemo<MediaItem[]>(() => {
+    const cutoff = messageTtlSeconds && messageTtlSeconds > 0 ? Date.now() - messageTtlSeconds * 1000 : 0;
+    return messages
+      .filter((m) => !cutoff || new Date(m.createdAt as any).getTime() >= cutoff)
       .filter((m) => m.attachment && (m.attachment.type.startsWith('image/') || m.attachment.type.startsWith('video/')))
-      .map((m) => ({ url: m.attachment!.url, name: m.attachment!.name, type: m.attachment!.type })),
-    [messages]
-  );
+      .map((m) => ({ url: m.attachment!.url, name: m.attachment!.name, type: m.attachment!.type }));
+  }, [messages, messageTtlSeconds]);
   // Read via ref so the preview opener stays referentially stable (memo-friendly).
   const mediaItemsRef = useRef(mediaItems);
   useEffect(() => { mediaItemsRef.current = mediaItems; }, [mediaItems]);

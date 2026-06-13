@@ -44,11 +44,14 @@ const MediaGalleryModal: React.FC<MediaGalleryModalProps> = ({ show, onClose, me
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>('media');
 
-  // On each open, land on the first tab that actually has content.
+  // On each OPEN, land on the first tab that actually has content. Depends on
+  // `show` only — keying on the lengths too yanked the user back to Media when
+  // new content arrived while they were browsing Files/Links.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!show) return;
     setTab(media.length ? 'media' : files.length ? 'files' : links.length ? 'links' : 'media');
-  }, [show, media.length, files.length, links.length]);
+  }, [show]);
 
   if (!show) return null;
 
@@ -107,7 +110,7 @@ const MediaGalleryModal: React.FC<MediaGalleryModalProps> = ({ show, onClose, me
                     >
                       {isVideo ? (
                         <>
-                          <video src={`${item.url}#t=0.001`} className="w-full h-full object-cover" />
+                          <video src={`${item.url}#t=0.001`} muted playsInline preload="metadata" className="w-full h-full object-cover" />
                           <span className="absolute inset-0 flex items-center justify-center bg-black/20">
                             <Play size={22} className="text-white drop-shadow" fill="currentColor" />
                           </span>
