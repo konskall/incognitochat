@@ -25,30 +25,42 @@ therefore not delivered to other members. → We use **Realtime broadcast** inst
 
 ## Architecture
 
-**Mechanism: broadcast on the per-room presence channel `presence:${roomKey}`.**
-The dashboard already subscribes to that channel for its top-15 rooms (the
-"who's online" feature). We piggyback a `room_deleted` broadcast on the same
-channel — no new sockets, no RLS/DB-state dependency, and only clients already
-watching that room receive it (no global room_key leak).
+**Mechanism: broadcast `room_deleted` on the existing `room_status:${roomKey}`
+lifecycle channel.** (Refined during planning — supersedes the initial
+"presence channel" idea.) ChatScreen ALREADY opens `room_status:${roomKey}` and
+ALREADY broadcasts `event: 'room_deleted'` on it the moment the owner deletes a
+room (to kick in-room members — `ChatScreen.tsx:759,930`). We reuse that exact
+event: the dashboard subscribes to `room_status:${roomKey}` for its top-15 rooms
+and listens for `room_deleted`. No RLS/DB-state dependency, no global room_key
+leak (only watchers of that room subscribe), and minimal new send-side code
+(ChatScreen's in-room delete already emits it). This also avoids the
+same-topic-subscription hazard of the presence approach: ChatScreen is already
+subscribed to `presence:${roomKey}` via `useRoomPresence`, so a transient send on
+that topic risks a duplicate-subscription conflict — `room_status` has a
+dedicated owner ref (`roomStatusChannelRef`) ChatScreen sends on directly.
 
-**Coverage limitation (accepted):** only rooms inside the dashboard's top-15
-presence window get the live signal — identical to the existing online-badge cap.
-Rooms beyond #15 fall back to the current behavior (appear/clear on refresh).
-Broadcast send is best-effort; a failed/missed broadcast also falls back to refresh.
+**Coverage limitation (accepted):** the dashboard subscribes `room_status` for
+its top-15 rooms (mirroring the existing online-badge presence cap). Rooms beyond
+#15 fall back to the current behavior (clear on refresh). Broadcast send is
+best-effort; a missed broadcast also falls back to refresh.
 
 ## Data flow
 
-1. **Delete (sender).** After a *successful* room delete:
-   - `ChatScreen.handleDeleteChat` (in-room delete), and
-   - `DashboardScreen.deleteRoomByKey` (owner branch, dashboard delete)
+1. **Delete (sender).**
+   - `ChatScreen.handleDeleteChat` ALREADY broadcasts `room_deleted` on its
+     `roomStatusChannelRef` right after the delete (line ~930). The ONLY change:
+     enrich the payload from `{}` to `{ deletedBy: config.username }` (in-room
+     recipients ignore the payload, so this is backward-compatible).
+   - `DashboardScreen.deleteRoomByKey` (owner branch) currently does NOT signal —
+     add a `broadcastRoomDeleted(key, displayName, existingChannel?)` call after a
+     successful delete so other members learn of a dashboard-initiated deletion.
+   Both fire AFTER the DB delete resolves so we never signal a non-deletion.
 
-   call `broadcastRoomDeleted(roomKey, deletedBy)`. `deletedBy` is the deleter's
-   display name (`config.username` in ChatScreen; the user's display name in the
-   dashboard). The broadcast fires AFTER the DB delete resolves so we never signal
-   a deletion that didn't happen.
-
-2. **Receive (dashboard).** The presence `useEffect` adds, per channel:
-   `ch.on('broadcast', { event: 'room_deleted' }, ({ payload }) => …)`.
+2. **Receive (dashboard).** A NEW `useEffect` (parallel to the presence effect,
+   same top-15 key set) subscribes one `room_status:${roomKey}` channel per room
+   with `ch.on('broadcast', { event: 'room_deleted' }, ({ payload }) => …)`, and
+   stores the channels in `roomStatusChannelsRef: Map<roomKey, RealtimeChannel>`
+   (so the dashboard-delete sender can reuse an existing channel — see below).
    On receipt it records the room in new state
    `deletedRooms: Map<string /*roomKey*/, { deletedBy?: string }>`.
    (Sender does not echo to itself — the deleter already removed the card locally.)
@@ -76,24 +88,29 @@ Broadcast send is best-effort; a failed/missed broadcast also falls back to refr
 
 ## Components / files
 
-- **New `utils/roomLifecycle.ts`** — `broadcastRoomDeleted(roomKey, deletedBy)`.
-  Sends one `room_deleted` broadcast on `presence:${roomKey}` via a short-lived
-  subscribed channel (subscribe → send → `removeChannel`). Best-effort: never
-  throws into the delete flow. Note: `supabase.channel('presence:'+roomKey)`
-  returns a DISTINCT channel instance even if `useRoomPresence` already holds one
-  for that topic (supabase-js v2 does not dedupe by topic), and `removeChannel`
-  tears down only this transient instance — so the sender's broadcast never
-  disturbs the in-room presence subscription. Sender doesn't need `self` echo.
+- **New `utils/roomLifecycle.ts`** — `broadcastRoomDeleted(roomKey, deletedBy,
+  existing?)`. If `existing` (a `RealtimeChannel` already subscribed to
+  `room_status:${roomKey}`) is passed, it sends on it directly. Otherwise it opens
+  a short-lived `room_status:${roomKey}` channel (subscribe → send → `removeChannel`,
+  with a ~1.5s safety timeout so a down realtime never hangs the delete flow).
+  Best-effort: never throws. The `existing` param lets the dashboard reuse the
+  channel it already holds for a top-15 room, sidestepping any same-topic
+  duplicate-subscription concern; a room beyond #15 has no existing channel, so the
+  transient path runs (no conflict — that topic isn't otherwise subscribed).
 - **`components/DashboardScreen.tsx`** —
-  - `deletedRooms` state (`Map<string, { deletedBy?: string }>`);
-  - broadcast listener in the existing presence `useEffect` (added before
-    `.subscribe()`), plus prune `deletedRooms` to the current key set alongside the
-    existing online-map prune;
-  - deleted-card variant in the room-card render;
+  - `deletedRooms` state (`Map<string, { deletedBy?: string }>`) and
+    `roomStatusChannelsRef` (`Map<roomKey, RealtimeChannel>`);
+  - a NEW `room_status` subscription `useEffect` (mirrors the presence effect's
+    top-15 key set) that listens for `room_deleted` and prunes `deletedRooms` to
+    the current key set;
+  - deleted-card variant in `RoomCardInner` (new `deletedInfo` + `onRecreate` +
+    `onDismissDeleted` props, wired in `cardPropsFor`);
   - `recreateRoom` + `dismissDeletedRoom` handlers;
-  - call `broadcastRoomDeleted` after the owner delete in `deleteRoomByKey`.
-- **`components/ChatScreen.tsx`** — call `broadcastRoomDeleted(config.roomKey,
-  config.username)` after the successful delete in `handleDeleteChat`.
+  - call `broadcastRoomDeleted(key, displayName, roomStatusChannelsRef.current.get(key))`
+    after the owner delete in `deleteRoomByKey`.
+- **`components/ChatScreen.tsx`** — single change: in `handleDeleteChat`, enrich the
+  existing `roomStatusChannelRef.current?.send` payload from `{}` to
+  `{ deletedBy: config.username }`.
 
 ## Error handling
 
