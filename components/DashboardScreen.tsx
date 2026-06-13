@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom } from '../services/supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
+import { parseRoomDeletedPayload } from '../utils/roomLifecycle';
 import { setDashboardActive, getSwVersion } from '../utils/swBridge';
 import { subscribeToPushNotifications } from '../utils/pushService';
 import { User, ChatConfig, Room, Presence } from '../types';
@@ -343,6 +345,16 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
+  // Rooms that were deleted live (room_status broadcast) while on the dashboard —
+  // shown as a deleted card with Re-create / Dismiss instead of being navigable.
+  const [deletedRooms, setDeletedRooms] = useState<Map<string, { deletedBy?: string }>>(new Map());
+  // deletedRooms is read by the card renderer added in a later task; silence the
+  // noUnusedLocals error until that task lands.
+  void deletedRooms;
+  // The room_status channels we subscribe for the top-15 rooms, so a dashboard-
+  // initiated delete can broadcast on the channel it already holds.
+  const roomStatusChannelsRef = useRef<Map<string, RealtimeChannel>>(new Map());
+
   // Online members per room (read-only presence; we never track() so the
   // dashboard never appears as a phantom participant).
   const [online, setOnline] = useState<Map<string, Presence[]>>(new Map());
@@ -598,6 +610,36 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     });
     return () => { channels.forEach(ch => supabase.removeChannel(ch)); };
   }, [presenceKeys, user.uid]);
+
+  // Live "room deleted" signal. Subscribe each top-15 room's room_status channel
+  // (the lifecycle channel ChatScreen broadcasts `room_deleted` on the instant a
+  // room is deleted) and mark the card deleted in place — no refresh. Realtime
+  // postgres_changes DELETE can't do this: `rooms` uses the default replica
+  // identity (room_key only) and the member's subscribers row is cascade-gone, so
+  // the RLS SELECT re-check fails — see the design doc.
+  useEffect(() => {
+    const keys = presenceKeys ? presenceKeys.split('|') : [];
+    // Drop deleted-markers for rooms no longer in the window.
+    setDeletedRooms(prev => {
+      const next = new Map<string, { deletedBy?: string }>();
+      for (const [k, v] of prev) if (keys.includes(k)) next.set(k, v);
+      return next;
+    });
+    if (keys.length === 0) return;
+    const map = roomStatusChannelsRef.current;
+    const created = keys.map((key) => {
+      const ch = supabase.channel(`room_status:${key}`);
+      ch.on('broadcast', { event: 'room_deleted' }, ({ payload }) => {
+        const info = parseRoomDeletedPayload(payload);
+        setDeletedRooms(prev => { const next = new Map(prev); next.set(key, info); return next; });
+      }).subscribe();
+      map.set(key, ch);
+      return { key, ch };
+    });
+    return () => {
+      created.forEach(({ key, ch }) => { supabase.removeChannel(ch); map.delete(key); });
+    };
+  }, [presenceKeys]);
 
   const handleSaveProfile = async () => {
       if (!displayName.trim()) { alert("Display name cannot be empty"); return; }
