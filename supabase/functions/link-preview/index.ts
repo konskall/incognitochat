@@ -5,11 +5,14 @@
 // third party. This fetches the Open Graph metadata server-side instead, with a
 // long Cache-Control so the CDN can serve repeats.
 //
-// Safety: verify_jwt is enabled (so this isn't an open proxy), it only fetches
-// public http(s) hosts (basic SSRF guard), times out, and caps how much HTML it
-// reads. SUPABASE_URL / SUPABASE_ANON_KEY are injected by the platform.
+// Safety: verify_jwt is enabled (so this isn't an open proxy), the caller must
+// be a signed-in user and is rate-limited per uid (so a member can't script it
+// into an SSRF probe / anonymizing fetch-relay / cost amplifier), it only
+// fetches public http(s) hosts (SSRF guard), times out, and caps how much HTML
+// it reads. SUPABASE_URL / SUPABASE_ANON_KEY are injected by the platform.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,6 +20,23 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+// Per-caller sliding-window rate limit (in-memory; warm isolates reused across a
+// burst). verify_jwt only proves "a Supabase caller", not "a trusted one" — this
+// bounds a single identity's realistic abuse. Not a hard cross-isolate guarantee.
+const RL_WINDOW_MS = 60_000;
+const RL_MAX = 20;
+const rlHits = new Map<string, number[]>();
+function rateLimited(uid: string): boolean {
+  const now = Date.now();
+  const recent = (rlHits.get(uid) ?? []).filter((t) => now - t < RL_WINDOW_MS);
+  recent.push(now);
+  rlHits.set(uid, recent);
+  if (rlHits.size > 500) {
+    for (const [k, v] of rlHits) { if (v.every((t) => now - t >= RL_WINDOW_MS)) rlHits.delete(k); }
+  }
+  return recent.length > RL_MAX;
+}
 
 function json(payload: unknown, status = 200, extra: Record<string, string> = {}) {
   return new Response(JSON.stringify(payload), {
@@ -42,12 +62,14 @@ function toPublicHttpUrl(raw: string, base?: string | URL): URL | null {
   // and IPv4-mapped (::ffff:a.b.c.d → re-check the embedded IPv4).
   if (host === "::1" || host === "::") return null;
   if (/^f[cd][0-9a-f]{0,2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host)) return null;
-  const mapped = host.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) {
-    const v4 = mapped[1];
-    if (/^127\./.test(v4) || /^10\./.test(v4) || /^192\.168\./.test(v4) ||
-        /^169\.254\./.test(v4) || /^172\.(1[6-9]|2\d|3[01])\./.test(v4) || v4 === "0.0.0.0") return null;
-  }
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d): the WHATWG URL parser normalizes the
+  // embedded IPv4 to compressed HEX (so http://[::ffff:127.0.0.1]/ becomes host
+  // "::ffff:7f00:1" and http://[::ffff:169.254.169.254]/ becomes "::ffff:a9fe:a9fe").
+  // The old dotted-decimal regex therefore NEVER matched — it was dead code that
+  // let loopback and the 169.254.169.254 cloud-metadata endpoint through. There
+  // is no legitimate public-preview reason to fetch any ::ffff: address, so
+  // blanket-reject the whole IPv4-mapped range (covers both hex and dotted forms).
+  if (host.startsWith("::ffff:")) return null;
   return u;
 }
 
@@ -82,6 +104,21 @@ Deno.serve(async (req: Request) => {
     const { url } = await req.json().catch(() => ({}));
     const target = typeof url === "string" ? toPublicHttpUrl(url) : null;
     if (!target) return json({ error: "INVALID_URL" }, 400);
+
+    // Require an authenticated caller and rate-limit per uid. An unthrottled
+    // authenticated fetch-proxy is still an SSRF probe surface, an anonymizing
+    // relay (the target sees the Supabase egress IP, not the user), and a cost
+    // amplifier — so gate it.
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: userData } = await sb.auth.getUser();
+    const callerUid = userData?.user?.id;
+    if (!callerUid) return json({ error: "AUTH_REQUIRED" }, 401);
+    if (rateLimited(callerUid)) return json({ error: "RATE_LIMITED" }, 429);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 6000);

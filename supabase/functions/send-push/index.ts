@@ -151,8 +151,13 @@ Deno.serve(async (req: Request) => {
     if (mutedErr) console.error("room_settings muted read failed", mutedErr);
     const muted = new Set<string>((mutedRows ?? []).map((m) => String(m.user_id).toLowerCase()));
 
+    // Validate excludeUids defensively: a non-array body would throw on spread
+    // and turn the push into a 500.
+    const exList = Array.isArray(excludeUids)
+      ? excludeUids.filter((x: unknown) => typeof x === "string")
+      : [];
     const exclude = new Set<string>(
-      [senderUid, ...(excludeUids as string[])].map((u) => String(u).toLowerCase()),
+      [senderUid, ...exList].map((u) => String(u).toLowerCase()),
     );
     // Exclusion is per DEVICE (endpoint), not per row: one device can carry
     // rows under several identities (Google <-> anonymous switches), and the
@@ -171,7 +176,7 @@ Deno.serve(async (req: Request) => {
     // subscriptions the room has, how many survived member/dedupe filtering,
     // how many devices were excluded (sender/muted), how many remain.
     console.log(
-      `send-push v9 room=${roomKey} subs=${subs?.length ?? 0} members=${memberSubs.length} deduped=${deduped.length} garbage=${garbageIds.length} excludedDevices=${excludedEndpoints.size} targets=${targets.length}${membersTrustworthy ? "" : " MEMBERS_READ_EMPTY"}`,
+      `send-push v10 room=${roomKey} subs=${subs?.length ?? 0} members=${memberSubs.length} deduped=${deduped.length} garbage=${garbageIds.length} excludedDevices=${excludedEndpoints.size} targets=${targets.length}${membersTrustworthy ? "" : " MEMBERS_READ_EMPTY"}`,
     );
     if (targets.length === 0) return json({ sent: 0 }, 200);
 
@@ -189,9 +194,13 @@ Deno.serve(async (req: Request) => {
       }
     } catch { /* keep APP_URL */ }
 
+    // Web Push payloads are capped (~4KB after encryption). A long body would
+    // 413 on send and — since only 404/410 are treated as stale — silently drop
+    // the push for the whole room. Clamp the visible fields well under the limit.
+    const clampPush = (v: unknown, n: number) => String(v ?? "").slice(0, n);
     const payload = JSON.stringify({
-      title: title ?? (roomName ? `New message in ${roomName}` : "New message"),
-      body: body ?? "",
+      title: clampPush(title ?? (roomName ? `New message in ${roomName}` : "New message"), 120),
+      body: clampPush(body, 1000),
       url: safeUrl,
       roomKey,
     });

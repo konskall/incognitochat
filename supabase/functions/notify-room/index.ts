@@ -55,6 +55,9 @@ Deno.serve(async (req: Request) => {
     const EMAILJS_SERVICE_ID = Deno.env.get("EMAILJS_SERVICE_ID") ?? "service_cnerkn6";
     const EMAILJS_TEMPLATE_ID = Deno.env.get("EMAILJS_TEMPLATE_ID") ?? "template_zr9v8bp";
     const EMAILJS_PUBLIC_KEY = Deno.env.get("EMAILJS_PUBLIC_KEY") ?? "cSDU4HLqgylnmX957";
+    // Canonical app origin: the email's clickable link is pinned to this so a
+    // client-supplied `link` can't deliver a phishing URL from our trusted sender.
+    const APP_URL = Deno.env.get("APP_URL") ?? "https://konskall.github.io/incognitochat/";
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -95,24 +98,63 @@ Deno.serve(async (req: Request) => {
       return json({ error: "DB_ERROR" }, 500);
     }
 
-    const exclude = new Set<string>([senderUid, ...(excludeUids as string[])]);
+    // Validate excludeUids defensively: a non-array body would throw on spread
+    // and turn the notification into a 500 (DoS the caller's own request).
+    const exList = Array.isArray(excludeUids)
+      ? excludeUids.filter((x: unknown) => typeof x === "string")
+      : [];
+    const exclude = new Set<string>([senderUid, ...exList]);
     const now = Date.now();
     const cooldownMin = action === "deleted" ? DELETED_FLOOR_MINUTES : COOLDOWN_MINUTES;
-    const recipients = (subs ?? []).filter((s) => {
-      if (!s.email) return false;
-      if (exclude.has(s.uid)) return false;
-      if (s.last_notified_at) {
-        const diffMin = (now - new Date(s.last_notified_at).getTime()) / 60000;
-        if (diffMin < cooldownMin) return false;
-      }
-      return true;
-    });
 
+    // Candidate recipients: have an email and are not excluded.
+    const candidateUids = (subs ?? [])
+      .filter((s) => s.email && !exclude.has(s.uid))
+      .map((s) => s.uid);
+    if (candidateUids.length === 0) return json({ sent: 0 }, 200);
+
+    // ATOMIC cooldown pre-claim. A single conditional UPDATE bumps
+    // last_notified_at ONLY for rows whose cooldown has elapsed (or that were
+    // never notified) and RETURNS the rows it actually changed. Two concurrent
+    // invocations can't both claim the same recipient — the second's WHERE no
+    // longer matches — which closes the read-then-write TOCTOU that let
+    // concurrent sends double-email and exhaust the shared EmailJS quota. We
+    // email only the rows we won. The timestamp is written pre-send (best-effort
+    // digest): a failed individual send simply waits for the next window, which
+    // also avoids re-notifying recipients whose send already succeeded.
+    const cutoffIso = new Date(now - cooldownMin * 60000).toISOString();
+    const { data: claimed, error: claimErr } = await admin
+      .from("subscribers")
+      .update({ last_notified_at: new Date(now).toISOString() })
+      .eq("room_key", roomKey)
+      .in("uid", candidateUids)
+      .or(`last_notified_at.is.null,last_notified_at.lt.${cutoffIso}`)
+      .select("uid, email");
+    if (claimErr) {
+      console.error("cooldown claim failed", claimErr);
+      return json({ error: "DB_ERROR" }, 500);
+    }
+    const recipients = claimed ?? [];
     if (recipients.length === 0) return json({ sent: 0 }, 200);
 
     const actionLabel = action === "deleted" ? "Room Deleted" : "New Message";
 
-    // 3. Send one email per recipient (no cross-recipient address leak).
+    // Pin the email's clickable link to the app's own origin. Never trust the
+    // client `link`: an attacker member could otherwise deliver a phishing URL
+    // from the project's trusted EmailJS sender. Off-origin / garbage -> APP_URL.
+    const appOrigin = new URL(APP_URL).origin;
+    let safeLink = APP_URL;
+    try {
+      if (link) { const u = new URL(String(link), APP_URL); if (u.origin === appOrigin) safeLink = u.href; }
+    } catch { /* keep APP_URL */ }
+    // Bound the spoofable free-text fields.
+    const clamp = (v: unknown, n: number) => String(v ?? "").slice(0, n);
+    const safeRoomName = clamp(roomName, 120);
+    const safeSenderName = clamp(senderName, 80);
+    const safeBody = clamp(body, 500);
+
+    // Send one email per recipient (no cross-recipient address leak). Per-send
+    // timeout so a slow/hung EmailJS endpoint can't stall the whole function.
     let sent = 0;
     for (const r of recipients) {
       const payload = {
@@ -122,30 +164,29 @@ Deno.serve(async (req: Request) => {
         accessToken: EMAILJS_PRIVATE_KEY,
         template_params: {
           to_email: r.email,
-          room_name: roomName ?? "",
+          room_name: safeRoomName,
           action_type: actionLabel,
-          sender_name: senderName ?? "",
-          message_body: body ?? "",
-          link,
+          sender_name: safeSenderName,
+          message_body: safeBody,
+          link: safeLink,
         },
       };
-      const resp = await fetch(EMAILJS_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (resp.ok) sent++;
-      else console.error("EmailJS send failed", resp.status, (await resp.text()).slice(0, 200));
-    }
-
-    // 4. Update cooldown timestamps for everyone we emailed.
-    if (sent > 0) {
-      const uids = recipients.map((r) => r.uid);
-      await admin
-        .from("subscribers")
-        .update({ last_notified_at: new Date().toISOString() })
-        .eq("room_key", roomKey)
-        .in("uid", uids);
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 10000);
+      try {
+        const resp = await fetch(EMAILJS_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: ctl.signal,
+        });
+        if (resp.ok) sent++;
+        else console.error("EmailJS send failed", resp.status, (await resp.text()).slice(0, 200));
+      } catch (e) {
+        console.error("EmailJS send error", e);
+      } finally {
+        clearTimeout(t);
+      }
     }
 
     return json({ sent }, 200);

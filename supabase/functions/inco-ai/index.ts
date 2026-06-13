@@ -128,14 +128,24 @@ STRICT RULES:
       generationConfig: { temperature: 0.7 },
     };
 
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(geminiBody),
-      },
-    );
+    // Per-call timeout so a slow/hung Gemini response can't pin the isolate up
+    // to the platform's hard function timeout.
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 25000);
+    let resp: Response;
+    try {
+      resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(geminiBody),
+          signal: ctl.signal,
+        },
+      );
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (resp.status === 429) return json({ quota: true }, 200);
     if (!resp.ok) {
@@ -146,10 +156,14 @@ STRICT RULES:
 
     const data = await resp.json();
     const cand = data?.candidates?.[0];
-    const text: string = (cand?.content?.parts ?? [])
+    const rawText: string = (cand?.content?.parts ?? [])
       .map((p: { text?: string }) => p?.text ?? "")
       .join("")
       .trim();
+    // Cap the bot reply: a crafted prompt could coax a very long response that
+    // inflates the encrypted message row broadcast to every member. 4000 chars
+    // is generous for a chat reply.
+    const text = rawText.slice(0, 4000);
 
     const chunks = cand?.groundingMetadata?.groundingChunks ?? [];
     const sources = chunks
