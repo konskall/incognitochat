@@ -4,43 +4,37 @@ import { supabase } from '../services/supabase';
 import { Presence, ChatConfig, User } from '../types';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
-// How long a peer may keep showing as "typing" without a FRESH payload from
-// them. The typing tab heartbeats every ~TYPING_HEARTBEAT_MS while keys are
-// pressed, so a live typer refreshes well inside the TTL; a client that died
-// mid-typing (killed PWA, network drop — its last payload says isTyping:true
-// forever) expires here instead of sticking until the presence server times
-// it out (30-60s+).
-export const TYPING_TTL_MS = 6000;
-const TYPING_HEARTBEAT_MS = 2000;
+// Typing is delivered over Realtime BROADCAST, NOT presence meta. Presence
+// reliably propagates membership (join/leave) and the INITIAL meta, but a
+// same-key meta UPDATE (the typing heartbeat / the stop re-track) is NOT
+// re-delivered to other clients — the observed payload froze at the first value
+// (onlineAt stuck), so the old onlineAt-change freshness scheme EXPIRED live
+// typers and the indicator never showed reliably. Broadcast delivers every
+// message: the sender heartbeats `typing:true` while keys come, the receiver
+// keeps a per-uid expiry the heartbeat refreshes, and a stop event (or a dead
+// client that simply stops heartbeating) clears it.
+export const TYPING_TTL_MS = 5000;     // receiver: drop a typer this long after its last 'typing' broadcast
+const TYPING_HEARTBEAT_MS = 2000;      // sender: re-broadcast cadence while typing
 
-// Per-typer freshness record. Skew-immune by design: we never compare the
-// sender's clock (onlineAt) against ours — we only watch whether the VALUE
-// keeps changing, timed with the receiver's own clock.
-export type TyperRecord = { username: string; onlineAt: string; firstSeenLocal: number };
+export type TypingRecord = { username: string; expiresAt: number };
+export type TypingEvent = { uid: string; username: string; typing: boolean };
 
-// Update the freshness records from the latest presence sync. `candidates` are
-// the peers whose payload claims isTyping && active right now; anyone absent
-// from it stopped typing (or left) and is dropped immediately.
-export function updateTypingRecords(
-  prev: Map<string, TyperRecord>,
-  candidates: Array<{ uid: string; username: string; onlineAt: string }>,
-  now: number
-): Map<string, TyperRecord> {
-  const next = new Map<string, TyperRecord>();
-  for (const c of candidates) {
-    const rec = prev.get(c.uid);
-    next.set(c.uid, rec && rec.onlineAt === c.onlineAt
-      ? rec // payload unchanged — keep the original local timestamp ticking
-      : { username: c.username, onlineAt: c.onlineAt, firstSeenLocal: now });
-  }
+// Apply one typing broadcast to the receiver's per-uid records (immutable).
+export function applyTypingEvent(
+  records: Map<string, TypingRecord>,
+  ev: TypingEvent,
+  now: number,
+  ttl: number = TYPING_TTL_MS,
+): Map<string, TypingRecord> {
+  const next = new Map(records);
+  if (ev.typing) next.set(ev.uid, { username: ev.username, expiresAt: now + ttl });
+  else next.delete(ev.uid);
   return next;
 }
 
-// The usernames whose typing claim is still fresh.
-export function currentTypers(records: Map<string, TyperRecord>, now: number): string[] {
-  return [...records.values()]
-    .filter((r) => now - r.firstSeenLocal < TYPING_TTL_MS)
-    .map((r) => r.username);
+// Usernames whose typing claim hasn't expired yet.
+export function liveTypers(records: Map<string, TypingRecord>, now: number): string[] {
+  return [...records.values()].filter((r) => r.expiresAt > now).map((r) => r.username);
 }
 
 export const useRoomPresence = (
@@ -54,16 +48,16 @@ export const useRoomPresence = (
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
   const lastTypingTrackRef = useRef(0);
-  const typingRecordsRef = useRef<Map<string, TyperRecord>>(new Map());
+  // Per-uid typing expiry, fed by 'typing' broadcasts (see top comment).
+  const typingExpiryRef = useRef<Map<string, TypingRecord>>(new Map());
   // Latest message timestamp this user has seen — broadcast via presence so
   // others can show a "seen" receipt. track() replaces the whole payload, so we
   // keep it in a ref and include it on every track call.
   const lastReadRef = useRef<string>('');
   // Mirror config into a ref. The visibilitychange handler and the subscribe-
-  // time track() are bound ONCE inside the [user, roomKey] effect, so they'd
-  // otherwise capture the config from the effect-run render — a mid-session
-  // username/avatar change would keep broadcasting the OLD identity on every
-  // visibility flip / reconnect until the room is re-entered.
+  // time track()/sendTyping are bound ONCE inside the [user, roomKey] effect, so
+  // they'd otherwise capture the config from the effect-run render — a mid-session
+  // username/avatar change would keep broadcasting the OLD identity until re-entry.
   const configRef = useRef(config);
   configRef.current = config;
 
@@ -84,78 +78,64 @@ export const useRoomPresence = (
       .on('presence', { event: 'sync' }, () => {
         const newState = channel.presenceState();
         const members: Presence[] = [];
-        const candidates: Array<{ uid: string; username: string; onlineAt: string }> = [];
 
         for (const key in newState) {
           const userPresences = newState[key] as unknown as Presence[];
           if (!userPresences || userPresences.length === 0) continue;
-          // A user may be connected from several tabs: treat them as active if
-          // ANY tab is active (and use that tab's payload) so a backgrounded
-          // second tab can't mislabel them as idle.
           // Pick this user's FRESHEST presence (latest track wins). Prefer an
           // active tab so a backgrounded second tab can't mislabel them as idle,
           // but among the candidates take the most recent onlineAt: a stale entry
-          // left behind by a reconnect must not pin someone as "typing" forever or
-          // report an outdated status. Keep idle members visible (idle dot).
+          // left behind by a reconnect must not report an outdated status. Keep
+          // idle members visible (idle dot).
           const actives = userPresences.filter((u) => u.status === 'active');
           const pool = actives.length ? actives : userPresences;
           const p = pool.reduce((a, b) => ((b.onlineAt || '') > (a.onlineAt || '') ? b : a), pool[0]);
           members.push(p);
-          if (p.uid !== user.uid && p.isTyping && p.status === 'active') {
-            candidates.push({ uid: p.uid, username: p.username, onlineAt: p.onlineAt || '' });
-          }
         }
         // Active members first, then idle — stable otherwise.
         members.sort((a, b) => (a.status === b.status ? 0 : a.status === 'active' ? -1 : 1));
         setParticipants(members);
-        // Typing goes through freshness records (see TYPING_TTL_MS): the claim
-        // must be RECENT, not merely present — presenceState is a snapshot, so
-        // a dead client's last isTyping:true payload would otherwise sit in
-        // every future sync and stick "X is typing…" until the server-side
-        // presence timeout (30-60s+).
-        typingRecordsRef.current = updateTypingRecords(typingRecordsRef.current, candidates, Date.now());
-        const _tu = currentTypers(typingRecordsRef.current, Date.now());
-        // [TYPING-DEBUG] temporary — remove after diagnosis. Flat string (so the
-        // console can't collapse it): freshest payload per peer (t=isTyping,
-        // s=status), the typing candidates, and the resulting typingUsers.
-        try {
-          const peersStr = Object.entries(newState).map(([k, arr]) => {
-            const list = arr as unknown as Presence[];
-            const a = list && list.length
-              ? (list.filter((u) => u.status === 'active')[0] || list[0])
-              : null;
-            return a ? `${a.username}:t=${a.isTyping}:s=${a.status}` : k.slice(0, 6);
-          }).join(' | ');
-          console.log(`[typing] sync self=${(user.uid || '').slice(0, 6)} peers=[${peersStr}] candidates=[${candidates.map((c) => c.username).join(',')}] typingUsers=[${_tu.join(',')}]`);
-        } catch { /* ignore */ }
-        setTypingUsers(_tu);
+      })
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        const ev = payload as Partial<TypingEvent> | null;
+        console.log('[typing] recv', ev?.username, ev?.typing); // [TYPING-DEBUG] temporary
+        // Ignore malformed payloads and our own echo (self filtered by uid).
+        if (!ev || typeof ev.uid !== 'string' || ev.uid === user.uid) return;
+        typingExpiryRef.current = applyTypingEvent(
+          typingExpiryRef.current,
+          { uid: ev.uid, username: typeof ev.username === 'string' ? ev.username : '', typing: !!ev.typing },
+          Date.now(),
+        );
+        setTypingUsers(liveTypers(typingExpiryRef.current, Date.now()));
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          await trackPresence({ status: 'active', isTyping: false });
+          await trackPresence({ status: 'active' });
         }
       });
 
-    // Expire stale typers even when NO presence event arrives (a dead client
-    // generates none — that's exactly the stuck case).
+    // Expire typers whose heartbeat stopped (dead client / a stop broadcast that
+    // never arrived), even when no further broadcast comes in.
     const typingPrune = setInterval(() => {
-      setTypingUsers((prev) => {
-        const next = currentTypers(typingRecordsRef.current, Date.now());
-        return next.length === prev.length && next.every((u, i) => u === prev[i]) ? prev : next;
-      });
-    }, 2000);
+      const now = Date.now();
+      for (const [uid, rec] of typingExpiryRef.current) {
+        if (rec.expiresAt <= now) typingExpiryRef.current.delete(uid);
+      }
+      const next = liveTypers(typingExpiryRef.current, now);
+      setTypingUsers((prev) =>
+        next.length === prev.length && next.every((u, i) => u === prev[i]) ? prev : next
+      );
+    }, 1500);
 
     // Handle visibility changes for presence
     const handleVisibilityChange = async () => {
         if (document.hidden) {
-            // ALSO kill the local typing state, not just the broadcast:
-            // background-tab timers are throttled, so the pending 2s stop-timer
-            // may fire minutes late — and the next trackPresence (e.g. the
-            // "active again" below) re-broadcasts isTyping from the ref, which
-            // used to resurrect a stale "typing…" for everyone else.
+            // Stop typing locally + tell the room (background-tab timers are
+            // throttled, so the pending 2s stop-timer may fire minutes late).
             if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
             isTypingRef.current = false;
-            await trackPresence({ status: 'inactive', isTyping: false });
+            sendTyping(false);
+            await trackPresence({ status: 'inactive' });
         } else {
             await trackPresence({ status: 'active' });
         }
@@ -183,12 +163,6 @@ export const useRoomPresence = (
       uid: user.uid,
       username: configRef.current.username,
       avatar: configRef.current.avatarURL,
-      // Preserve the live typing state by default. track() replaces the whole
-      // payload, so a non-typing-related re-broadcast (e.g. setLastRead's
-      // read-receipt update) must NOT silently flip isTyping back to false —
-      // that's what was killing the "is typing…" indicator. Callers that mean to
-      // change it (setTyping) pass an explicit override.
-      isTyping: isTypingRef.current,
       onlineAt: new Date().toISOString(),
       status: 'active',
       lastReadAt: lastReadRef.current,
@@ -203,6 +177,18 @@ export const useRoomPresence = (
     trackPresence({});
   };
 
+  // Broadcast a typing state to the room over the channel's broadcast bus (NOT
+  // presence meta — see the top-of-file comment for why).
+  const sendTyping = (typing: boolean) => {
+    if (!channelRef.current || !user) return;
+    console.log('[typing] send', typing); // [TYPING-DEBUG] temporary
+    channelRef.current.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { uid: user.uid, username: configRef.current.username, typing },
+    });
+  };
+
   const setTyping = (isTyping: boolean) => {
       if (!user) return;
 
@@ -211,32 +197,26 @@ export const useRoomPresence = (
         if (!isTypingRef.current) {
             isTypingRef.current = true;
             lastTypingTrackRef.current = now;
-            console.log('[typing] send start'); // [TYPING-DEBUG] temporary
-            trackPresence({ isTyping: true });
+            sendTyping(true);
         } else if (now - lastTypingTrackRef.current > TYPING_HEARTBEAT_MS) {
-            // Heartbeat while keys keep coming: refreshes onlineAt so receivers'
-            // typing TTL (see TYPING_TTL_MS) treats us as live. Without it the
-            // payload freezes at typing-start and a long message would expire
-            // mid-typing — and a lost stop-message would stick forever.
+            // Heartbeat while keys keep coming: refreshes the receiver's expiry
+            // (see TYPING_TTL_MS) so a long message doesn't expire mid-typing.
             lastTypingTrackRef.current = now;
-            console.log('[typing] send heartbeat'); // [TYPING-DEBUG] temporary
-            trackPresence({ isTyping: true });
+            sendTyping(true);
         }
 
         // Reset timeout to stop typing
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = setTimeout(() => {
             isTypingRef.current = false;
-            console.log('[typing] send stop (timeout)'); // [TYPING-DEBUG] temporary
-            trackPresence({ isTyping: false });
+            sendTyping(false);
         }, 2000);
 
       } else {
           // Force stop
           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
           isTypingRef.current = false;
-          console.log('[typing] send stop (explicit)'); // [TYPING-DEBUG] temporary
-          trackPresence({ isTyping: false });
+          sendTyping(false);
       }
   };
 
