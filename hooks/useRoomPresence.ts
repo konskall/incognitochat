@@ -98,7 +98,6 @@ export const useRoomPresence = (
       })
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
         const ev = payload as Partial<TypingEvent> | null;
-        console.log('[typing] recv', ev?.username, ev?.typing); // [TYPING-DEBUG] temporary
         // Ignore malformed payloads and our own echo (self filtered by uid).
         if (!ev || typeof ev.uid !== 'string' || ev.uid === user.uid) return;
         typingExpiryRef.current = applyTypingEvent(
@@ -181,7 +180,6 @@ export const useRoomPresence = (
   // presence meta — see the top-of-file comment for why).
   const sendTyping = (typing: boolean) => {
     if (!channelRef.current || !user) return;
-    console.log('[typing] send', typing); // [TYPING-DEBUG] temporary
     channelRef.current.send({
       type: 'broadcast',
       event: 'typing',
