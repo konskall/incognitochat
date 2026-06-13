@@ -52,6 +52,7 @@ export function useDragResize(initial: Box, opts: Opts = {}) {
     if (activeRef.current) {
       window.removeEventListener('pointermove', activeRef.current.move);
       window.removeEventListener('pointerup', activeRef.current.up);
+      window.removeEventListener('pointercancel', activeRef.current.up);
       activeRef.current = null;
     }
   }, []);
@@ -66,7 +67,7 @@ export function useDragResize(initial: Box, opts: Opts = {}) {
       setBox(clampBox({ ...orig, x: orig.x + (ev.clientX - startX), y: orig.y + (ev.clientY - startY) }, window.innerWidth, window.innerHeight, boundsRef.current));
     };
     const up = () => {
-      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); activeRef.current = null;
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); activeRef.current = null;
       // preventDefault on pointerdown suppresses the compatibility mousedown/up
       // but NOT the synthetic click. After a real drag, swallow that one click so
       // an element under the pointer (e.g. the bubble's full-cover restore
@@ -80,7 +81,10 @@ export function useDragResize(initial: Box, opts: Opts = {}) {
       if (snap) setBox((b) => clampBox(nearestCorner(b, window.innerWidth, window.innerHeight, margin, boundsRef.current), window.innerWidth, window.innerHeight, boundsRef.current));
     };
     activeRef.current = { move, up };
-    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+    // pointercancel (touch interrupted by a system gesture / scroll takeover /
+    // call transition) fires INSTEAD of pointerup; without handling it the
+    // window listeners leak and the bubble keeps following the next touch.
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
   }, [snap, margin]);
 
   const startResize = useCallback((e: React.PointerEvent) => {
@@ -92,9 +96,11 @@ export function useDragResize(initial: Box, opts: Opts = {}) {
       const h = Math.max(minH, orig.h + (ev.clientY - startY));
       setBox(clampBox({ ...orig, w, h }, window.innerWidth, window.innerHeight, boundsRef.current));
     };
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); activeRef.current = null; };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); activeRef.current = null; };
     activeRef.current = { move, up };
-    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+    // See startDrag: pointercancel must end the gesture too, or the resize
+    // listeners leak when a touch is interrupted mid-resize.
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
   }, [minW, minH]);
 
   return { box, setBox, startDrag, startResize };

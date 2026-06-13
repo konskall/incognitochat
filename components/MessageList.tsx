@@ -380,11 +380,13 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
     const text = msg.text || '';
     if (!text) return null;
     const URL_RE = /(https?:\/\/[^\s]+)/g;
-    const ytId = getYouTubeId(text);
     const matches = text.match(URL_RE);
-    // Parse the start time from the YOUTUBE url specifically, not the whole
-    // message — an unrelated "...page?t=300" link must not seek the embed.
-    const ytUrl = ytId ? matches?.find((u) => getYouTubeId(u) === ytId) : null;
+    // getYouTubeId is now host-validated and takes a single URL, so scan the
+    // matched URLs (cleaned of trailing punctuation) rather than the whole
+    // message text. Parse the start time from that YOUTUBE url specifically —
+    // an unrelated "...page?t=300" link must not seek the embed.
+    const ytUrl = matches?.map((u) => cleanUrl(u)).find((u) => getYouTubeId(u) !== null) || null;
+    const ytId = ytUrl ? getYouTubeId(ytUrl) : null;
     return {
       ytId,
       ytStart: ytUrl ? parseYouTubeStart(ytUrl) : 0,

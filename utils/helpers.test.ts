@@ -53,6 +53,21 @@ describe('getYouTubeId', () => {
     expect(getYouTubeId('https://files.example.com/v/abcdefghijk')).toBeNull();
     expect(getYouTubeId('look at this tv/abcdefghijk thing')).toBeNull();
   });
+
+  it('rejects host-spoofing and substring-in-path/fragment attacks', () => {
+    // Host SUFFIX spoof: "notyoutube.com" must not be treated as youtube.com.
+    expect(getYouTubeId('https://notyoutube.com/watch?v=dQw4w9WgXcQ')).toBeNull();
+    // youtube.com/watch?v=… hidden in the #fragment of an attacker domain.
+    expect(getYouTubeId('https://attacker-tracker.com/collect#youtube.com/watch?v=dQw4w9WgXcQ')).toBeNull();
+    // youtube.com/watch?v=… hidden in the PATH of an attacker domain.
+    expect(getYouTubeId('https://evil.com/youtube.com/watch?v=dQw4w9WgXcQ')).toBeNull();
+  });
+
+  it('accepts the embed form and subdomains/nocookie', () => {
+    expect(getYouTubeId('https://www.youtube.com/embed/dQw4w9WgXcQ')).toBe('dQw4w9WgXcQ');
+    expect(getYouTubeId('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ')).toBe('dQw4w9WgXcQ');
+    expect(getYouTubeId('https://m.youtube.com/watch?v=dQw4w9WgXcQ')).toBe('dQw4w9WgXcQ');
+  });
 });
 
 describe('decryptMessage legacy handling', () => {

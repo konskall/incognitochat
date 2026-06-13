@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Trash2, Check, Loader2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -25,6 +25,12 @@ const RoomExpiryModal: React.FC<RoomExpiryModalProps> = ({ show, onClose, roomKe
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
   const [saving, setSaving] = useState<number | null | undefined>(undefined);
+  // Guard async-after-close (see EphemeralModal): no onUpdate/onClose/setState
+  // if the modal was dismissed while the save was in flight.
+  const openRef = useRef(show);
+  useEffect(() => { openRef.current = show; }, [show]);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   if (!show) return null;
 
@@ -34,13 +40,14 @@ const RoomExpiryModal: React.FC<RoomExpiryModalProps> = ({ show, onClose, roomKe
     try {
       const { error } = await supabase.from('rooms').update({ auto_delete_seconds: seconds }).eq('room_key', roomKey);
       if (error) throw error;
+      if (!mountedRef.current || !openRef.current) return;
       onUpdate(seconds);
       onClose();
     } catch (e) {
       console.error(e);
-      alert('Failed to update auto-delete');
+      if (mountedRef.current && openRef.current) alert('Failed to update auto-delete');
     } finally {
-      setSaving(undefined);
+      if (mountedRef.current) setSaving(undefined);
     }
   };
 

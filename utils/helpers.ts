@@ -9,6 +9,11 @@ import CryptoJS from 'crypto-js';
 // (pin, roomKey) so we derive it ONCE and cache it. Without this, every message
 // encrypt/decrypt re-ran PBKDF2 on the main thread (a multi-hundred-ms freeze
 // when decrypting a full history).
+// Bound the cache: DashboardScreen decrypts a preview for EVERY room AND every
+// inbound realtime message, so the Map would otherwise accumulate one resident
+// entry per (room, pin) for the whole PWA session. 50 is plenty for active use;
+// an evicted entry is simply re-derived on next use (deriveKey is pure).
+const KEY_CACHE_MAX = 50;
 const keyCache = new Map<string, CryptoJS.lib.WordArray>();
 
 const deriveKey = (pin: string, roomKey: string) => {
@@ -20,6 +25,11 @@ const deriveKey = (pin: string, roomKey: string) => {
             keySize: 256 / 32,
             iterations: 1000
         });
+        // Evict the oldest entry once over the cap (Map preserves insertion order).
+        if (keyCache.size >= KEY_CACHE_MAX) {
+            const oldest = keyCache.keys().next().value;
+            if (oldest !== undefined) keyCache.delete(oldest);
+        }
         keyCache.set(cacheKey, key);
     }
     return key;
@@ -287,14 +297,34 @@ export function displayMediaErrorMessage(err: unknown): string | null {
   return 'Could not start screen sharing on this device.';
 }
 
-// Extract a YouTube video id. Anchored to the youtube.com / youtu.be HOST and a
-// strict 11-char id charset: the old loose regex matched a bare "v/" or "&v="
-// anywhere, so any URL like https://files.example.com/v/abcdefghijk was treated
-// as YouTube — mounting a broken embed AND making the real link disappear (and a
-// member could spoof which video renders for an arbitrary domain).
+// Extract a YouTube video id. Validates the HOST via the WHATWG URL API and an
+// explicit allowlist, then reads the id ONLY from that URL's search/pathname —
+// so neither a spoofed host (notyoutube.com, evil.com containing the substring
+// "youtube.com/watch?v=") nor a youtube.com substring hidden in the path /
+// #fragment of an arbitrary domain can mount a fake embed. The old un-anchored
+// regex matched any of those, letting a member suppress a real (tracking/
+// phishing) link and replace it with an attacker-chosen YouTube embed. Pass a
+// single URL string (not free text); non-URL input returns null.
 export function getYouTubeId(url: string): string | null {
-  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
-  return m ? m[1] : null;
+  let u: URL;
+  try { u = new URL(url); } catch { return null; }
+  const host = u.hostname.toLowerCase();
+  const isYouTube = /(^|\.)youtube(-nocookie)?\.com$/.test(host);
+  const isShort = /(^|\.)youtu\.be$/.test(host);
+  if (!isYouTube && !isShort) return null;
+  const ID = /^[A-Za-z0-9_-]{11}$/;
+  let id: string | null = null;
+  if (isShort) {
+    id = u.pathname.slice(1).split('/')[0] || null;               // youtu.be/<id>
+  } else {
+    const v = u.searchParams.get('v');
+    if (v) id = v;                                                // /watch?v=<id>
+    else {
+      const m = u.pathname.match(/^\/(?:embed|shorts|v)\/([^/?#]+)/); // /embed|/shorts|/v/<id>
+      if (m) id = m[1];
+    }
+  }
+  return id && ID.test(id) ? id : null;
 }
 
 // Helper to compress images

@@ -86,7 +86,16 @@ export function useModalA11y(
       document.removeEventListener('keydown', handleKeyDown, true);
       const i = modalStack.lastIndexOf(modalId);
       if (i >= 0) modalStack.splice(i, 1);
-      if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+      // Only restore focus if the trigger is STILL in the DOM. With nested /
+      // sequential modals (RoomInfoModal's go() closes one and opens another),
+      // the element captured at open time is often already unmounted by close —
+      // focus() on a detached node is a silent no-op that drops focus to <body>,
+      // which is exactly the a11y return-path regression this hook prevents.
+      if (
+        previouslyFocused &&
+        typeof previouslyFocused.focus === 'function' &&
+        previouslyFocused.isConnected
+      ) {
         previouslyFocused.focus();
       }
     };

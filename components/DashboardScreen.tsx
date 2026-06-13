@@ -564,7 +564,17 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   );
   useEffect(() => {
     const keys = presenceKeys ? presenceKeys.split('|') : [];
-    if (keys.length === 0) { setOnline(new Map()); return; }
+    // Prune ghost counts for rooms no longer in the presence window: a >15-room
+    // user can drag a room out of the top-15, tearing down its channel — but the
+    // stale "N online" badge used to persist (only a full empty room set cleared
+    // it). Evict dropped keys on every re-run, keeping last-known counts for the
+    // retained ones (no flicker). n<=15 so includes() is negligible.
+    setOnline(prev => {
+      const next = new Map<string, Presence[]>();
+      for (const [k, v] of prev) if (keys.includes(k)) next.set(k, v);
+      return next;
+    });
+    if (keys.length === 0) { return; }
     const channels = keys.map((key) => {
       const ch = supabase.channel(`presence:${key}`, { config: { presence: { key: `dash:${user.uid}` } } });
       ch.on('presence', { event: 'sync' }, () => {
@@ -572,7 +582,15 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         const members: Presence[] = [];
         for (const k in state) {
           const arr = state[k] as unknown as Presence[];
-          if (arr && arr.length) members.push(arr[0]);
+          if (!arr || arr.length === 0) continue;
+          // Count only ACTIVE tabs (matching the in-room "online" definition) and
+          // surface the FRESHEST active tab. The old `arr[0]` counted
+          // backgrounded/idle members as "online" and could show a stale tab's
+          // avatar — diverging from useRoomPresence's per-uid resolution.
+          const actives = arr.filter((p) => p.status === 'active');
+          if (actives.length === 0) continue;
+          const p = actives.reduce((a, b) => ((b.onlineAt || '') > (a.onlineAt || '') ? b : a), actives[0]);
+          members.push(p);
         }
         setOnline(prev => { const next = new Map(prev); next.set(key, members); return next; });
       }).subscribe();
@@ -1064,7 +1082,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
             <header className="flex justify-between items-center mb-8 pb-6 border-b border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-3">
-                    <img src="https://konskall.github.io/incognitochat/favicon-96x96.png" alt="Incognito Chat" width={40} height={40} className="w-10 h-10 rounded-xl shadow-lg shadow-blue-500/20"/>
+                    <img src={`${import.meta.env.BASE_URL}favicon-96x96.png`} alt="Incognito Chat" width={40} height={40} className="w-10 h-10 rounded-xl shadow-lg shadow-blue-500/20"/>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
                         <p className="text-xs text-slate-500 dark:text-slate-400">Welcome back to your secure space</p>
@@ -1089,7 +1107,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                             <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-300 relative z-10">
                                 <div className="flex flex-col items-center gap-4">
                                     <div className="relative group/edit-avatar">
-                                        <img src={tempAvatarUrl} alt="Preview" width={96} height={96} loading="lazy" onError={onAvatarError} className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-slate-800 shadow-md ring-1 ring-slate-100 dark:ring-slate-700"/>
+                                        <img src={safeAvatarUrl(tempAvatarUrl)} alt="Preview" width={96} height={96} loading="lazy" onError={onAvatarError} className="w-24 h-24 rounded-full object-cover border-4 border-white dark:border-slate-800 shadow-md ring-1 ring-slate-100 dark:ring-slate-700"/>
                                         <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/edit-avatar:opacity-100 transition-opacity">
                                             <span className="text-white text-xs font-bold">Preview</span>
                                         </div>
@@ -1132,7 +1150,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                             <div className="flex items-center gap-5 animate-in fade-in zoom-in-95 duration-300 relative z-10">
                                 <div className="relative flex-shrink-0 group/avatar">
                                     <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full opacity-0 group-hover/avatar:opacity-100 transition duration-500 blur-sm"></div>
-                                    <img src={avatarUrl} alt="Profile" width={80} height={80} loading="lazy" onError={onAvatarError} className="relative w-20 h-20 rounded-full object-cover border-4 border-white dark:border-slate-900 shadow-lg"/>
+                                    <img src={safeAvatarUrl(avatarUrl)} alt="Profile" width={80} height={80} loading="lazy" onError={onAvatarError} className="relative w-20 h-20 rounded-full object-cover border-4 border-white dark:border-slate-900 shadow-lg"/>
                                     <button onClick={() => { setTempAvatarUrl(avatarUrl); setIsEditingProfile(true); }} className="absolute bottom-0 right-0 p-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-full shadow-md border border-slate-100 dark:border-slate-700 hover:text-blue-600 hover:scale-110 transition-all z-20" title="Edit Profile"><Edit2 size={12} /></button>
                                 </div>
                                 <div className="flex-1 min-w-0 flex flex-col justify-center h-20">

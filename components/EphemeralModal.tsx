@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Timer, Check, Loader2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -31,6 +31,13 @@ const EphemeralModal: React.FC<EphemeralModalProps> = ({ show, onClose, roomKey,
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
   const [saving, setSaving] = useState<number | null | undefined>(undefined);
+  // Guard async-after-close: if the user dismisses the modal mid-save (backdrop /
+  // X / hardware-back), don't fire onUpdate/onClose afterwards (it would mutate
+  // the parent after it moved on) or setState on a gone component.
+  const openRef = useRef(show);
+  useEffect(() => { openRef.current = show; }, [show]);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   if (!show) return null;
 
@@ -40,13 +47,14 @@ const EphemeralModal: React.FC<EphemeralModalProps> = ({ show, onClose, roomKey,
     try {
       const { error } = await supabase.from('rooms').update({ message_ttl_seconds: seconds }).eq('room_key', roomKey);
       if (error) throw error;
+      if (!mountedRef.current || !openRef.current) return;
       onUpdate(seconds);
       onClose();
     } catch (e) {
       console.error(e);
-      alert('Failed to update disappearing messages');
+      if (mountedRef.current && openRef.current) alert('Failed to update disappearing messages');
     } finally {
-      setSaving(undefined);
+      if (mountedRef.current) setSaving(undefined);
     }
   };
 

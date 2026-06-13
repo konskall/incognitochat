@@ -23,23 +23,31 @@ const App: React.FC = () => {
   const [chatConfig, setChatConfig] = useState<ChatConfig | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
+  // The popstate listener runs from a []-deps effect, so it can't read
+  // currentView/currentUser directly without going stale. Mirror them into refs.
+  const viewRef = React.useRef(currentView);
+  useEffect(() => { viewRef.current = currentView; }, [currentView]);
+  const userRef = React.useRef(currentUser);
+  useEffect(() => { userRef.current = currentUser; }, [currentUser]);
+
   useEffect(() => {
     // Check if user has already seen landing page in this session
     const hasSeenLanding = sessionStorage.getItem('hasSeenLanding');
     
     // 1. Check for active session from URL (OAuth redirect) or LocalStorage
     const initSession = async () => {
+      try {
         const { data: { session } } = await supabase.auth.getSession();
         let isGoogleUser = false;
-        
+
         if (session?.user) {
             const isAnon = !!session.user.is_anonymous;
             isGoogleUser = !isAnon;
 
-            setCurrentUser({ 
-                uid: session.user.id, 
+            setCurrentUser({
+                uid: session.user.id,
                 isAnonymous: isAnon,
-                email: session.user.email 
+                email: session.user.email
             });
         }
 
@@ -47,7 +55,7 @@ const App: React.FC = () => {
         const storedRoomName = localStorage.getItem('chatRoomName');
         const storedUsername = localStorage.getItem('chatUsername') || session?.user?.user_metadata?.full_name;
         const storedAvatar = localStorage.getItem('chatAvatarURL') || session?.user?.user_metadata?.avatar_url;
-        
+
         if (storedPin && storedRoomName && storedUsername) {
             const roomKey = generateRoomKey(storedPin, storedRoomName);
             setChatConfig({
@@ -57,6 +65,9 @@ const App: React.FC = () => {
                 pin: storedPin,
                 roomKey: roomKey
             });
+            // Push a chat history entry so Back from a restored room steps to the
+            // dashboard/login (handled in onPopState) instead of exiting the SPA.
+            window.history.pushState({ icView: 'chat' }, '');
             setCurrentView('chat');
         } else if (isGoogleUser) {
             setCurrentView('dashboard');
@@ -67,8 +78,14 @@ const App: React.FC = () => {
             // Default is landing
             setCurrentView('landing');
         }
+      } catch (e) {
+        // getSession can reject (offline, CORS, corrupt stored session). Don't
+        // hang on a blank screen — fall back to a usable entry point.
+        console.error('Session restore failed', e);
+        setCurrentView(hasSeenLanding ? 'login' : 'landing');
+      }
     };
-    
+
     initSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -100,6 +117,9 @@ const App: React.FC = () => {
     localStorage.setItem('chatAvatarURL', config.avatarURL);
 
     setChatConfig(config);
+    // Push a chat history entry so the browser Back button steps back to the
+    // dashboard/login (see onPopState) instead of jumping to the landing page.
+    window.history.pushState({ icView: 'chat' }, '');
     setCurrentView('chat');
   };
 
@@ -123,9 +143,22 @@ const App: React.FC = () => {
     setCurrentView('landing');
   };
 
-  // Browser Back from the login/dashboard reached via the landing returns here.
+  // History-aware Back. From a room, step back to the dashboard (Google) /
+  // login (anon) — NOT all the way out to the marketing landing (the old
+  // handler unconditionally went to landing, dumping the user out of their
+  // place). From any other in-app view, Back returns to the landing. Reads the
+  // live view/user via refs because this effect has []-deps.
   useEffect(() => {
-    const onPopState = () => goToLanding();
+    const onPopState = () => {
+      if (viewRef.current === 'chat') {
+        setChatConfig(null);
+        localStorage.removeItem('chatPin');
+        localStorage.removeItem('chatRoomName');
+        setCurrentView(userRef.current && !userRef.current.isAnonymous ? 'dashboard' : 'login');
+      } else {
+        goToLanding();
+      }
+    };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);

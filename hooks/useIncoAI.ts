@@ -67,6 +67,12 @@ export const useIncoAI = (
 
   const handleBotResponse = async (chatHistory: Message[], triggerMsg: Message) => {
     try {
+      // aiAvatarUrl is room-controlled (any member can set it via "Customize AI
+      // look"), so it can be a javascript:/data:/http: URL. It gets written
+      // verbatim into messages.avatar_url and later rendered as <img src>, so
+      // enforce the same https-only policy safeAvatarUrl applies elsewhere —
+      // falling back to the bot's own default rather than the generic person.
+      const safeAiAvatar = aiAvatarUrl && /^https:\/\//i.test(aiAvatarUrl) ? aiAvatarUrl : DEFAULT_BOT_AVATAR;
       const context = chatHistory
         .slice(-10)
         .filter(m => m.type !== 'system' && m.text)
@@ -104,7 +110,7 @@ export const useIncoAI = (
           room_key: roomKey,
           uid: INCO_BOT_UUID,
           username: 'inco',
-          avatar_url: aiAvatarUrl || DEFAULT_BOT_AVATAR,
+          avatar_url: safeAiAvatar,
           text: errMsg,
           type: 'text',
         });

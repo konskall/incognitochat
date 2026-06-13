@@ -15,8 +15,13 @@ const InstallButton: React.FC = () => {
 
   useEffect(() => {
     const checkState = () => {
-        // 1. Check if iOS
-        const isIosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+        // 1. Check if iOS. iPadOS 13+ Safari reports a DESKTOP ("Macintosh") UA
+        //    by default, so the /iPad/ test alone hid the install affordance on
+        //    every modern iPad (no deferredPrompt on Safari either → button
+        //    never appeared). A touchscreen Mac UA == iPadOS (no desktop Mac
+        //    ships a touchscreen), so treat it as iOS for the A2HS instructions.
+        const isIPadOS = /Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1;
+        const isIosDevice = (/iPad|iPhone|iPod/.test(navigator.userAgent) || isIPadOS) && !(window as any).MSStream;
         setIsIOS(isIosDevice);
 
         // 2. Check if already installed (Running in standalone mode)
@@ -51,7 +56,18 @@ const InstallButton: React.FC = () => {
     };
 
     window.addEventListener('pwa-ready', handlePWAReady);
-    return () => window.removeEventListener('pwa-ready', handlePWAReady);
+
+    // Flip to "installed" when the OS reports the install completed — whether it
+    // happened via our prompt, the browser menu, or the mini-infobar. Without
+    // this the button stayed "Install App" (and a click no-ops once the
+    // deferredPrompt is consumed) until a full reload.
+    const handleInstalled = () => setAppState('installed');
+    window.addEventListener('appinstalled', handleInstalled);
+
+    return () => {
+      window.removeEventListener('pwa-ready', handlePWAReady);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
   }, []);
 
   const handleClick = async () => {

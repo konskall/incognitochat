@@ -1,6 +1,7 @@
 {
   "name": "Incognito Chat",
   "short_name": "Incognito Chat",
+  "id": "/incognitochat/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

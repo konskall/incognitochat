@@ -69,6 +69,16 @@ export function setDashboardActive(active: boolean): void {
   writeStateBeacon();
 }
 
+// The SW fires INCO_PUSHSUBSCRIPTION_CHANGED after the browser rotates the push
+// endpoint (it re-subscribes with the VAPID key, but only the page has the auth
+// + room context to persist the new endpoint to the DB). A mounted screen
+// registers a re-subscribe callback here so the DB row is refreshed WITHOUT
+// waiting for the next room re-open.
+let pushSubscriptionChangedHandler: (() => void) | null = null;
+export function onPushSubscriptionChanged(cb: (() => void) | null): void {
+  pushSubscriptionChangedHandler = cb;
+}
+
 // Ask the service worker which version it runs (shown in the UI so a device
 // can be checked for a stale SW without devtools — iOS especially). Falls back
 // to the registration's active worker when there's no controller yet (first
@@ -112,6 +122,11 @@ if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', (event) => {
     const data = event.data as { type?: string; roomKey?: string | null; tag?: string } | null;
     if (!data) return;
+
+    if (data.type === 'INCO_PUSHSUBSCRIPTION_CHANGED') {
+      try { pushSubscriptionChangedHandler?.(); } catch { /* best-effort */ }
+      return;
+    }
 
     if (data.type === 'INCO_QUERY_ACTIVE_ROOM') {
       const answer = {

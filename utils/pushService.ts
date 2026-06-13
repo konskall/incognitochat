@@ -79,15 +79,36 @@ export async function subscribeToPushNotifications(userId: string, roomKey: stri
   }
 }
 
-export async function unsubscribeFromPushNotifications(userId: string, roomKey: string) {
-     // 1. Remove from DB
-     await supabase.from('push_subscriptions')
+export async function unsubscribeFromPushNotifications(userId: string, roomKey: string): Promise<boolean> {
+     // 1. Remove from DB. The error MUST be checked: a silent failure (network /
+     //    RLS) left this device a live send-push target while the UI claimed
+     //    notifications were OFF — the user kept getting pushes they turned off.
+     const { error } = await supabase.from('push_subscriptions')
         .delete()
         .eq('user_id', userId)
         .eq('room_key', roomKey);
-        
-     // 2. Unsubscribe locally (optional, usually we want to keep SW active for other rooms)
-     // const registration = await navigator.serviceWorker.ready;
-     // const subscription = await registration.pushManager.getSubscription();
-     // if (subscription) await subscription.unsubscribe();
+     if (error) {
+        console.error('Unsubscribe DB delete failed:', error);
+        return false;
+     }
+
+     // 2. If this was the user's LAST subscribed room on this device, drop the
+     //    browser PushManager subscription too so the platform stops delivering
+     //    pushes entirely. (One browser subscription backs all rooms, so we only
+     //    tear it down when no room rows remain — otherwise other rooms break.)
+     try {
+        const { count } = await supabase.from('push_subscriptions')
+           .select('id', { count: 'exact', head: true })
+           .eq('user_id', userId);
+        if (!count) {
+           const registration = await navigator.serviceWorker.ready;
+           const subscription = await registration.pushManager.getSubscription();
+           if (subscription) await subscription.unsubscribe();
+        }
+     } catch (e) {
+        console.error('Local push unsubscribe failed:', e);
+        // DB row is already gone (the authoritative state for send-push), so
+        // this is best-effort — report success.
+     }
+     return true;
 }

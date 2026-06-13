@@ -3,7 +3,7 @@
 // Bumped on every push-logic change; the page can query it (INCO_GET_VERSION)
 // and shows it in the UI, so a device running a stale SW is diagnosable
 // without devtools (iOS especially).
-const SW_VERSION = 'push-v10';
+const SW_VERSION = 'push-v11';
 
 const CACHE = 'incognito-cache-v2';
 // Page-written suppression beacon (see utils/swBridge.ts): MUST survive the
@@ -67,8 +67,14 @@ self.addEventListener('fetch', (event) => {
         .then((res) => {
           // Cache under the SHELL key, not the full per-URL request: every
           // distinct room link (?room=…) would otherwise add its own nav entry.
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(BASE + 'index.html', copy));
+          // ONLY overwrite the shell with a healthy response: a GitHub Pages
+          // 404 / 5xx / opaque or error response must not poison the offline
+          // shell (it would be served to every subsequent offline open until
+          // the next successful navigate). Mirrors the static-asset guard below.
+          if (res && res.ok && res.type === 'basic') {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(BASE + 'index.html', copy));
+          }
           return res;
         })
         .catch(async () =>
@@ -197,6 +203,38 @@ self.addEventListener('push', (event) => {
   );
 });
 
+// --- Subscription rotation recovery ---
+// Browsers (Chrome/FCM routinely, iOS too) rotate the push subscription; the
+// old endpoint then dies and send-push 410s it. Without a handler nothing
+// re-subscribes until the user happens to re-open a room. Re-subscribe here with
+// the same VAPID key so the browser keeps a live subscription, then ping open
+// clients to re-persist it (they hold the auth + room context the SW lacks). If
+// no client is open, the app's self-heal (re-subscribe on room open / dashboard
+// load) refreshes the DB row on next open.
+const VAPID_PUBLIC_KEY_B64 = 'BH7GMEOmJ8h-am1gUZqhMP3jVRV_oUMiKD3vdtlMXhcfI5sggWXmmC9q7irvM44i9PHCvEDZZiupxzXtL4j60cM';
+function vapidKeyBytes() {
+  const pad = '='.repeat((4 - (VAPID_PUBLIC_KEY_B64.length % 4)) % 4);
+  const b64 = (VAPID_PUBLIC_KEY_B64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    self.registration.pushManager
+      .subscribe({ userVisibleOnly: true, applicationServerKey: vapidKeyBytes() })
+      .then(() =>
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+          for (const c of wins) {
+            try { c.postMessage({ type: 'INCO_PUSHSUBSCRIPTION_CHANGED' }); } catch { /* ignore */ }
+          }
+        })
+      )
+      .catch(() => { /* best-effort; app self-heal covers the rest */ })
+  );
+});
+
 // --- "Is anyone looking at this room?" query, WITHOUT MessagePort transfer ---
 // The first version transferred a MessageChannel port with the query, but
 // MessagePort transfer from a service worker to a window has a history of
@@ -249,7 +287,19 @@ async function writeSuppressCount(n) {
   }
 }
 
-const IS_IOS = /iPhone|iPad|iPod/i.test((self.navigator && self.navigator.userAgent) || '');
+const IS_IOS = (() => {
+  const nav = self.navigator;
+  if (!nav) return false;
+  const ua = nav.userAgent || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  // iPadOS 13+ Safari reports a DESKTOP ("Macintosh") UA by default, so the
+  // /iPad/ test misses every modern iPad. Without this the SW takes the
+  // non-iOS path (matchAll visible-client check), which misreports for a live
+  // iOS PWA and shows a banner for the room the user is actively reading.
+  // A touchscreen Mac UA == iPadOS (no desktop Mac ships a touchscreen).
+  if (/Macintosh/.test(ua) && (nav.maxTouchPoints || 0) > 1) return true;
+  return false;
+})();
 
 // Decide whether to keep this push silent. Beacon first (no round-trip), then
 // the live tab query. Both are affirmative-only: any error, staleness or

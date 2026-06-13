@@ -59,6 +59,13 @@ export const useRoomPresence = (
   // others can show a "seen" receipt. track() replaces the whole payload, so we
   // keep it in a ref and include it on every track call.
   const lastReadRef = useRef<string>('');
+  // Mirror config into a ref. The visibilitychange handler and the subscribe-
+  // time track() are bound ONCE inside the [user, roomKey] effect, so they'd
+  // otherwise capture the config from the effect-run render — a mid-session
+  // username/avatar change would keep broadcasting the OLD identity on every
+  // visibility flip / reconnect until the room is re-entered.
+  const configRef = useRef(config);
+  configRef.current = config;
 
   useEffect(() => {
     if (!user || !roomKey) return;
@@ -160,8 +167,8 @@ export const useRoomPresence = (
     if (!channelRef.current || !user) return;
     await channelRef.current.track({
       uid: user.uid,
-      username: config.username,
-      avatar: config.avatarURL,
+      username: configRef.current.username,
+      avatar: configRef.current.avatarURL,
       // Preserve the live typing state by default. track() replaces the whole
       // payload, so a non-typing-related re-broadcast (e.g. setLastRead's
       // read-receipt update) must NOT silently flip isTyping back to false —

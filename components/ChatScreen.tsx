@@ -9,7 +9,7 @@ import MessageList from './MessageList';
 const CallManager = lazy(() => import('./CallManager'));
 import { initAudio, playBeep, decryptMessage, cleanUrl, beginThemeTransition } from '../utils/helpers';
 import { subscribeToPushNotifications, unsubscribeFromPushNotifications } from '../utils/pushService';
-import { setActiveRoom } from '../utils/swBridge';
+import { setActiveRoom, onPushSubscriptionChanged } from '../utils/swBridge';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import { DeleteChatModal, EmailAlertModal } from './ChatModals';
@@ -425,10 +425,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     let cancelled = false;
-    subscribeToPushNotifications(user.uid, config.roomKey)
-      .then((ok) => { if (!cancelled) setNotificationsEnabled(ok); })
-      .catch(() => { if (!cancelled) setNotificationsEnabled(false); });
-    return () => { cancelled = true; };
+    const resubscribe = () => {
+      subscribeToPushNotifications(user.uid, config.roomKey)
+        .then((ok) => { if (!cancelled) setNotificationsEnabled(ok); })
+        .catch(() => { if (!cancelled) setNotificationsEnabled(false); });
+    };
+    resubscribe();
+    // Re-persist when the browser rotates the push endpoint mid-session: the SW
+    // re-subscribes and fires INCO_PUSHSUBSCRIPTION_CHANGED so the new endpoint
+    // reaches the DB without waiting for the next room re-open.
+    onPushSubscriptionChanged(resubscribe);
+    return () => { cancelled = true; onPushSubscriptionChanged(null); };
   }, [user?.uid, config.roomKey]);
 
   // Tell the push service worker which room this tab is showing, so it can keep
@@ -612,7 +619,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         // the last id, so "Load earlier" never triggers this.)
         if (isMine || atBottomRef.current) {
             messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-            setLastRead(last.createdAt);
+            // Only advance the read receipt for a PEER's message when the tab is
+            // actually visible. A backgrounded recipient parked at the bottom
+            // would otherwise auto-broadcast "read up to" a message it never saw
+            // → a false "Seen" on the sender's side. Always advance for your OWN
+            // message (you've necessarily seen what you just sent).
+            if (isMine || document.visibilityState === 'visible') setLastRead(last.createdAt);
         } else {
             setShowScrollDown(true);
             setNewMessageCount((c) => c + 1);
@@ -927,8 +939,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       setShowSettingsMenu(false);
       if (notificationsEnabled) {
           setNotificationsEnabled(false);
-          // Unregister this device's push subscription for the room.
-          if (user) await unsubscribeFromPushNotifications(user.uid, config.roomKey);
+          // Unregister this device's push subscription for the room. If the
+          // delete fails the device stays a live push target, so revert the
+          // toggle and tell the user instead of silently claiming it's off.
+          if (user) {
+              const ok = await unsubscribeFromPushNotifications(user.uid, config.roomKey);
+              if (!ok) {
+                  setNotificationsEnabled(true);
+                  flashToast('Could not turn off notifications. Please try again.');
+              }
+          }
           return;
       }
       // Web Push needs a service worker, the Push API, and the Notification API.

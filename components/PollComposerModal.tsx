@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, BarChart3, Plus, Trash2, Check, Loader2 } from 'lucide-react';
 import { useModalA11y } from '../hooks/useModalA11y';
 
@@ -19,6 +19,12 @@ const PollComposerModal: React.FC<PollComposerModalProps> = ({ show, onClose, on
   const [multi, setMulti] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Guard async-after-close (see EphemeralModal): if the modal is dismissed
+  // while onCreate is in flight, don't close()/setState afterwards.
+  const openRef = useRef(show);
+  useEffect(() => { openRef.current = show; }, [show]);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   if (!show) return null;
 
@@ -46,12 +52,13 @@ const PollComposerModal: React.FC<PollComposerModalProps> = ({ show, onClose, on
     setError(null);
     try {
       await onCreate(question, options, multi);
+      if (!mountedRef.current || !openRef.current) return;
       close();
     } catch (e: any) {
       console.error(e);
-      setError(e?.message || 'Failed to create poll');
+      if (mountedRef.current && openRef.current) setError(e?.message || 'Failed to create poll');
     } finally {
-      setSaving(false);
+      if (mountedRef.current) setSaving(false);
     }
   };
 
