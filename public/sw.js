@@ -3,7 +3,7 @@
 // Bumped on every push-logic change; the page can query it (INCO_GET_VERSION)
 // and shows it in the UI, so a device running a stale SW is diagnosable
 // without devtools (iOS especially).
-const SW_VERSION = 'push-v9';
+const SW_VERSION = 'push-v10';
 
 const CACHE = 'incognito-cache-v2';
 // Page-written suppression beacon (see utils/swBridge.ts): MUST survive the
@@ -65,12 +65,13 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(req)
         .then((res) => {
+          // Cache under the SHELL key, not the full per-URL request: every
+          // distinct room link (?room=…) would otherwise add its own nav entry.
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
+          caches.open(CACHE).then((c) => c.put(BASE + 'index.html', copy));
           return res;
         })
         .catch(async () =>
-          (await caches.match(req)) ||
           (await caches.match(BASE + 'index.html')) ||
           (await caches.match(BASE)) ||
           Response.error()
@@ -86,7 +87,7 @@ self.addEventListener('fetch', (event) => {
         .then((res) => {
           if (res && res.status === 200 && res.type === 'basic') {
             const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
+            caches.open(CACHE).then((c) => c.put(req, copy).then(() => trimAssetCache()));
           }
           return res;
         })
@@ -95,6 +96,23 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// Bound the cache: content-hashed asset filenames change every deploy, so the
+// single-named cache would otherwise accumulate every past build's bundle
+// forever (and a storage-pressure eviction could wipe the whole origin cache,
+// including the offline shell + suppression beacon). Keep the most recent
+// ASSET_CACHE_CAP asset entries (keys() preserves insertion order); the shell
+// entries (index.html / icons / manifest) live outside /assets/ and are spared.
+const ASSET_CACHE_CAP = 60;
+async function trimAssetCache() {
+  try {
+    const c = await caches.open(CACHE);
+    const keys = await c.keys();
+    const assetKeys = keys.filter((k) => k.url.includes('/assets/'));
+    const overflow = assetKeys.length - ASSET_CACHE_CAP;
+    if (overflow > 0) await Promise.all(assetKeys.slice(0, overflow).map((k) => c.delete(k)));
+  } catch { /* best-effort */ }
+}
 
 // --- Web Push (delivered by the `send-push` Edge Function) ---
 self.addEventListener('push', (event) => {
@@ -108,7 +126,10 @@ self.addEventListener('push', (event) => {
   // (iOS revokes the subscription otherwise), so always show one.
   let data = {};
   try {
-    if (event.data) data = event.data.json();
+    // event.data.json() returns null for a literal "null" payload (no throw),
+    // which would make `data.title` below throw before waitUntil registers.
+    const j = event.data && event.data.json();
+    if (j && typeof j === 'object') data = j;
   } catch {
     // Malformed/empty payload — fall back to a generic message below.
   }
@@ -122,9 +143,11 @@ self.addEventListener('push', (event) => {
     vibrate: [100, 50, 100],
     // One stacked notification per room (collapses a burst into one) and a
     // stable handle the page can use to close it. renotify still alerts on each
-    // new message instead of updating silently.
+    // new message instead of updating silently. renotify REQUIRES a non-empty
+    // tag (spec) — set it conditionally or showNotification throws TypeError and
+    // the always-show fallback never appears (and burns the iOS silent budget).
     tag,
-    renotify: true,
+    renotify: !!tag,
     data: {
       url: data.url || BASE,
       roomKey: data.roomKey,
@@ -255,7 +278,9 @@ async function shouldSuppressPush(roomKey) {
         if (IS_IOS) return true;
         try {
           const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-          if (wins.some((c) => c.visibilityState === 'visible')) return true;
+          // Scope to OUR app on the shared GitHub Pages origin: a visible tab of
+          // another project site must not validate this beacon.
+          if (wins.some((c) => c.visibilityState === 'visible' && c.url.startsWith(self.location.origin + BASE))) return true;
           // Beacon claims visible but no visible client exists — stale kill
           // window. Fall through to the live query (which will show).
         } catch {
@@ -322,7 +347,11 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
+      // On GitHub Pages the origin is shared with every other project site of the
+      // account, so only ever focus/navigate OUR app's windows — otherwise a tap
+      // could navigate an unrelated konskall.github.io tab away.
+      const scoped = clientList.filter((c) => c.url.startsWith(self.location.origin + BASE));
+      for (const client of scoped) {
         if ('focus' in client) {
           // Bring the existing window to the specific room when we can.
           if ('navigate' in client && client.url !== targetUrl) {

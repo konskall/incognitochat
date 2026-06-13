@@ -146,9 +146,13 @@ export const useRoomPresence = (
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(typingPrune);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      if (channelRef.current) {
-         channel.unsubscribe();
-      }
+      // removeChannel (not bare unsubscribe) frees the topic immediately, matching
+      // every other channel consumer; a bare unsubscribe leaves the channel in
+      // RealtimeClient.channels until the close ack, so a fast remount (React
+      // StrictMode, quick exit→rejoin) would get the still-leaving channel and
+      // its presence/typing bindings would silently no-op.
+      supabase.removeChannel(channel);
+      channelRef.current = null;
     };
   }, [user, roomKey]);
 
