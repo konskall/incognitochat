@@ -61,11 +61,15 @@ export function decryptMessage(encryptedStr: string, pin: string, roomKey: strin
   try {
     if (!encryptedStr) return '';
 
-    // Check if it follows our "IV:Ciphertext" format
-    if (encryptedStr.includes(':')) {
-        const parts = encryptedStr.split(':');
-        const iv = CryptoJS.enc.Hex.parse(parts[0]);
-        const ciphertext = parts[1];
+    // Only treat the string as "IV:Ciphertext" when it actually starts with a
+    // 32-hex-char IV prefix (matching the strict gate used for reply quotes).
+    // A bare `.includes(':')` misrouted legacy plaintext that merely contains a
+    // colon — e.g. "see you at 10:30" — into the AES path, which then failed and
+    // rendered as the wrong-PIN placeholder.
+    if (/^[0-9a-f]{32}:/i.test(encryptedStr)) {
+        const idx = encryptedStr.indexOf(':');
+        const iv = CryptoJS.enc.Hex.parse(encryptedStr.slice(0, idx));
+        const ciphertext = encryptedStr.slice(idx + 1);
         const key = deriveKey(pin, roomKey);
 
         const decrypted = CryptoJS.AES.decrypt(ciphertext, key, {
@@ -249,7 +253,16 @@ export function safeAvatarUrl(url: string | undefined | null): string {
 // Used for link previews, the rendered anchor, and the room "Links" gallery so a
 // sentence-final URL isn't broken.
 export function cleanUrl(url: string): string {
-  return url.replace(/[.,!?;:'")\]}>]+$/, '');
+  // Strip sentence-final punctuation, but NOT ')' yet — many real URLs end in a
+  // closing paren (e.g. /wiki/Pin_(disambiguation)).
+  let u = url.replace(/[.,!?;:'"\]}>]+$/, '');
+  // Only strip a trailing ')' when it's unbalanced (no matching '(' in the URL),
+  // which is the sentence-wrapping case "(see https://x.com)".
+  while (u.endsWith(')') && (u.match(/\(/g)?.length ?? 0) < (u.match(/\)/g)?.length ?? 0)) {
+    u = u.slice(0, -1);
+    u = u.replace(/[.,!?;:'"\]}>]+$/, '');
+  }
+  return u;
 }
 
 // True only where the page can INITIATE a screen share. iOS Safari / iOS PWA
@@ -274,12 +287,14 @@ export function displayMediaErrorMessage(err: unknown): string | null {
   return 'Could not start screen sharing on this device.';
 }
 
-// Helper to extract YouTube ID
+// Extract a YouTube video id. Anchored to the youtube.com / youtu.be HOST and a
+// strict 11-char id charset: the old loose regex matched a bare "v/" or "&v="
+// anywhere, so any URL like https://files.example.com/v/abcdefghijk was treated
+// as YouTube — mounting a broken embed AND making the real link disappear (and a
+// member could spoof which video renders for an arbitrary domain).
 export function getYouTubeId(url: string): string | null {
-  // Updated regex to include shorts/
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|shorts\/)([^#&?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[2].length === 11) ? match[2] : null;
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
+  return m ? m[1] : null;
 }
 
 // Helper to compress images
@@ -317,6 +332,11 @@ export async function compressImage(file: File): Promise<File> {
                     reject(new Error("Canvas context missing"));
                     return;
                 }
+                // JPEG has no alpha: paint a white background first so transparent
+                // PNG/WebP pixels don't flatten to BLACK (avatars, stickers, logos,
+                // room backgrounds all go through here).
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, width, height);
                 ctx.drawImage(img, 0, 0, width, height);
 
                 // Compress to JPEG with 0.7 quality which usually gives good results for chat

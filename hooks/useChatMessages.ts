@@ -66,6 +66,9 @@ export const useChatMessages = (
   // full row but never changes `text`, so this lets the UPDATE handler skip the
   // AES decrypt and reuse the already-decrypted plaintext.
   const cipherCacheRef = useRef<Map<string, string>>(new Map());
+  // Throttle the refocus resync: visibilitychange and window 'focus' fire
+  // back-to-back on tab return, which used to issue two identical round-trips.
+  const lastResyncRef = useRef(0);
 
   // Poll question + option text are client-encrypted at rest (same AES as
   // message text); decrypt them here. Vote uid lists stay plaintext.
@@ -123,6 +126,7 @@ export const useChatMessages = (
       .select('*')
       .eq('room_key', roomKey)
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(MESSAGES_PAGE_SIZE);
 
     if (error) {
@@ -133,6 +137,28 @@ export const useChatMessages = (
       setMessages(data.map(mapRow).reverse());
       setHasMoreOlder(data.length === MESSAGES_PAGE_SIZE);
     }
+  }, [roomKey, enabled, mapRow]);
+
+  // Reconcile the messages we currently hold against the server. Realtime can
+  // miss UPDATE/DELETE events while the socket sleeps (backgrounded mobile tab),
+  // so fetchNewer (inserts only) is not enough: a message another member deleted
+  // would linger on screen, and edits/reactions/poll votes would stay stale. We
+  // re-read the held ids and drop the gone ones + refresh changed fields.
+  const reconcileHeld = useCallback(async () => {
+    if (!roomKey || !enabled) return;
+    const ids = messagesRef.current.map((m) => m.id);
+    if (ids.length === 0) return;
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .in('id', ids);
+    if (error || !data) return;
+    const byId = new Map((data as MessageRow[]).map((r) => [r.id, r]));
+    setMessages((prev) =>
+      prev
+        .filter((m) => byId.has(m.id))            // drop messages deleted while away
+        .map((m) => (byId.has(m.id) ? mapRow(byId.get(m.id)!) : m)) // refresh edits/reactions/votes
+    );
   }, [roomKey, enabled, mapRow]);
 
   // Pull the previous page of older messages and prepend them (the UI calls this
@@ -148,8 +174,13 @@ export const useChatMessages = (
         .from('messages')
         .select('*')
         .eq('room_key', roomKey)
-        .lt('created_at', oldest)
+        // lte (not lt) + id-dedup below: a strict lt permanently skips the
+        // remaining rows of a group that shares `oldest`'s timestamp when the
+        // page boundary cuts through it. The secondary id order keeps
+        // equal-timestamp rows in a stable, repeatable sequence across pages.
+        .lte('created_at', oldest)
         .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
         .limit(MESSAGES_PAGE_SIZE);
 
       if (error) {
@@ -188,7 +219,8 @@ export const useChatMessages = (
       // same-timestamp row whose INSERT was missed while the socket slept; the
       // id-dedup below removes the boundary row we already hold.
       .gte('created_at', latest)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true });
 
     if (error) {
       console.error("Fetch newer failed", error);
@@ -203,6 +235,17 @@ export const useChatMessages = (
       });
     }
   }, [roomKey, enabled, mapRow, fetchInitial]);
+
+  // Full refocus/reconnect recovery: pull missed inserts AND reconcile the held
+  // window (deletes/edits/reactions/votes). Throttled so the visibilitychange +
+  // focus pair doesn't double-fire.
+  const resync = useCallback(() => {
+    const now = Date.now();
+    if (now - lastResyncRef.current < 1000) return;
+    lastResyncRef.current = now;
+    fetchNewer();
+    reconcileHeld();
+  }, [fetchNewer, reconcileHeld]);
 
   useEffect(() => {
     if (!roomKey || !enabled) return;
@@ -268,6 +311,7 @@ export const useChatMessages = (
           } else if (payload.eventType === 'DELETE') {
             const deletedId = payload.old.id;
             if (deletedId) {
+              cipherCacheRef.current.delete(deletedId);
               setMessages((prev) => prev.filter((m) => m.id !== deletedId));
             }
           }
@@ -275,29 +319,31 @@ export const useChatMessages = (
       )
       .subscribe((status) => {
         if (status !== 'SUBSCRIBED') return;
-        // First connect: load the initial page. On a later reconnect: only pull
-        // what we missed, so already-loaded older history isn't reset.
+        // First connect: load the initial page. On a later reconnect: pull what
+        // we missed AND reconcile the held window (deletes/edits happened while
+        // the socket was down), so already-loaded older history isn't reset.
         if (!didInitialFetch) runInitialFetch();
-        else fetchNewer();
+        else resync();
       });
 
     const fallbackTimer = setTimeout(runInitialFetch, 2500);
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchNewer();
-      }
+      if (document.visibilityState === 'visible') resync();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', fetchNewer);
+    window.addEventListener('focus', resync);
 
     return () => {
       clearTimeout(fallbackTimer);
       supabase.removeChannel(channel);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', fetchNewer);
+      window.removeEventListener('focus', resync);
+      // Per-room ciphertext cache: drop it on room switch so it can't grow
+      // unbounded across rooms over a long-lived PWA session.
+      cipherCacheRef.current.clear();
     };
-  }, [roomKey, pin, enabled, mapRow, mapPoll, fetchInitial, fetchNewer]);
+  }, [roomKey, pin, enabled, mapRow, mapPoll, fetchInitial, fetchNewer, resync]);
 
   const sendMessage = useCallback(
     async (

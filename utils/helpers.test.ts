@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { encryptMessage, decryptMessage, generateRoomKey, getYouTubeId, getDisplayMediaSupported, displayMediaErrorMessage } from './helpers';
+import { encryptMessage, decryptMessage, generateRoomKey, getYouTubeId, getDisplayMediaSupported, displayMediaErrorMessage, cleanUrl } from './helpers';
 
 describe('encrypt/decrypt', () => {
   const pin = '1234';
@@ -47,6 +47,29 @@ describe('getYouTubeId', () => {
 
   it('returns null for non-YouTube URLs', () => {
     expect(getYouTubeId('https://example.com/video')).toBeNull();
+  });
+
+  it('does not false-positive on non-YouTube hosts with v/ or 11-char paths', () => {
+    expect(getYouTubeId('https://files.example.com/v/abcdefghijk')).toBeNull();
+    expect(getYouTubeId('look at this tv/abcdefghijk thing')).toBeNull();
+  });
+});
+
+describe('decryptMessage legacy handling', () => {
+  it('returns legacy plaintext containing a colon as-is (not the wrong-PIN placeholder)', () => {
+    // Not IV:ciphertext (no 32-hex prefix) — must fall through to legacy, not AES.
+    expect(decryptMessage('see you at 10:30', '1234', 'r_1234')).toBe('see you at 10:30');
+  });
+});
+
+describe('cleanUrl', () => {
+  it('strips sentence-final punctuation', () => {
+    expect(cleanUrl('https://example.com.')).toBe('https://example.com');
+    expect(cleanUrl('https://example.com),')).toBe('https://example.com');
+  });
+  it('keeps balanced trailing parens (Wikipedia-style)', () => {
+    expect(cleanUrl('https://en.wikipedia.org/wiki/Pin_(disambiguation)')).toBe('https://en.wikipedia.org/wiki/Pin_(disambiguation)');
+    expect(cleanUrl('https://en.wikipedia.org/wiki/Pin_(disambiguation).')).toBe('https://en.wikipedia.org/wiki/Pin_(disambiguation)');
   });
 });
 

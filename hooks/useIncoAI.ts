@@ -17,14 +17,27 @@ export const useIncoAI = (
 ) => {
   const lastProcessedId = useRef<string | null>(null);
   const isBusy = useRef<boolean>(false);
+  const seeded = useRef<boolean>(false);
   const [isResponding, setIsResponding] = useState(false);
   const [isQuotaExhausted, setIsQuotaExhausted] = useState(false);
 
   useEffect(() => {
-    if (!aiEnabled || messages.length === 0 || isQuotaExhausted) return;
+    if (messages.length === 0) return;
+
+    // Seed on the first non-empty render: never answer pre-existing history (or
+    // a stale unanswered mention left from a previous mount) — only messages
+    // that arrive AFTER we mount. Without this, re-entering a room whose newest
+    // message is your own inco-mention fired a ghost/duplicate reply.
+    if (!seeded.current) {
+      seeded.current = true;
+      lastProcessedId.current = messages[messages.length - 1].id;
+      return;
+    }
+
+    if (!aiEnabled || isQuotaExhausted) return;
 
     const lastMsg = messages[messages.length - 1];
-    
+
     if (!lastMsg || !lastMsg.text || lastMsg.type === 'system') return;
     if (lastMsg.uid === INCO_BOT_UUID) return;
     // Only the author of the triggering message generates the reply. The bot
@@ -37,19 +50,18 @@ export const useIncoAI = (
 
     const lowerText = lastMsg.text.toLowerCase().trim();
     const mentionsInco = lowerText.includes('inco');
-    const isReplyToBot = lastMsg.replyTo && 
+    const isReplyToBot = lastMsg.replyTo &&
       messages.find(m => m.id === lastMsg.replyTo?.id)?.uid === INCO_BOT_UUID;
 
     if (mentionsInco || isReplyToBot) {
+      // Call directly — NO cancellable setTimeout. The trigger is the user's own
+      // already-committed message, so there's nothing to debounce; the old timer
+      // was cancelled by the effect cleanup whenever any realtime event landed
+      // within 500ms, which left isBusy stuck true and wedged the bot forever.
       isBusy.current = true;
       lastProcessedId.current = lastMsg.id;
-      
-      const timer = setTimeout(() => {
-        setIsResponding(true);
-        handleBotResponse(messages, lastMsg);
-      }, 500);
-
-      return () => clearTimeout(timer);
+      setIsResponding(true);
+      handleBotResponse(messages, lastMsg);
     }
   }, [messages, aiEnabled, isQuotaExhausted, userUid]);
 
