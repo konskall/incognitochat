@@ -115,22 +115,18 @@ export const useRoomPresence = (
         // presence timeout (30-60s+).
         typingRecordsRef.current = updateTypingRecords(typingRecordsRef.current, candidates, Date.now());
         const _tu = currentTypers(typingRecordsRef.current, Date.now());
-        // [TYPING-DEBUG] temporary — remove after diagnosis. Shows, on every
-        // presence sync, the freshest payload per peer (t=isTyping, s=status),
-        // who became a typing candidate, and the resulting typingUsers.
+        // [TYPING-DEBUG] temporary — remove after diagnosis. Flat string (so the
+        // console can't collapse it): freshest payload per peer (t=isTyping,
+        // s=status), the typing candidates, and the resulting typingUsers.
         try {
-          console.log('[typing] sync', {
-            self: (user.uid || '').slice(0, 6),
-            peers: Object.entries(newState).map(([k, arr]) => {
-              const list = arr as unknown as Presence[];
-              const a = list && list.length
-                ? (list.filter((u) => u.status === 'active')[0] || list[0])
-                : null;
-              return a ? `${a.username}:t=${a.isTyping}:s=${a.status}` : k.slice(0, 6);
-            }),
-            candidates: candidates.map((c) => c.username),
-            typingUsers: _tu,
-          });
+          const peersStr = Object.entries(newState).map(([k, arr]) => {
+            const list = arr as unknown as Presence[];
+            const a = list && list.length
+              ? (list.filter((u) => u.status === 'active')[0] || list[0])
+              : null;
+            return a ? `${a.username}:t=${a.isTyping}:s=${a.status}` : k.slice(0, 6);
+          }).join(' | ');
+          console.log(`[typing] sync self=${(user.uid || '').slice(0, 6)} peers=[${peersStr}] candidates=[${candidates.map((c) => c.username).join(',')}] typingUsers=[${_tu.join(',')}]`);
         } catch { /* ignore */ }
         setTypingUsers(_tu);
       })
