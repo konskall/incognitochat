@@ -352,7 +352,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                   roomKey: config.roomKey,
                   roomName: config.roomName,
                   senderName: config.username,
-                  body: details,
+                  // Deliberately DO NOT send the message text in the email: it
+                  // would land in EmailJS (a third party) + recipient inboxes in
+                  // plaintext, while it's encrypted at rest. The email shows only
+                  // sender + room ("New message from X"). The Web Push below still
+                  // carries the preview — that goes to the user's OWN device, not
+                  // a third party.
+                  body: '',
                   action,
                   excludeUids,
                   link: window.location.href,
