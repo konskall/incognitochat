@@ -208,7 +208,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     setPollClosed
   } = useChatMessages(config.roomKey, config.pin, user?.uid, handleNewMessageReceived, isRoomReady && !roomDeleted);
 
-  const { participants, typingUsers, setTyping, setLastRead } = useRoomPresence(config.roomKey, user, config);
+  const { participants, typingUsers, readReceipts, setTyping, setLastRead } = useRoomPresence(config.roomKey, user, config);
 
   // Keep the dashboard's per-room "unread" baseline honest. While this room is
   // open we record the newest message's SERVER timestamp as the last-read marker
@@ -428,6 +428,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   // already granted, and reflect the REAL result in the toggle.
   useEffect(() => {
     if (!user?.uid || !config.roomKey) return;
+    // Wait until the room actually exists (join_or_create_room completed). The
+    // push_subscriptions.room_key FK requires the room row, so subscribing before
+    // the join created it threw a 23503 FK violation.
+    if (!isRoomReady || roomDeleted) return;
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     let cancelled = false;
@@ -442,7 +446,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     // reaches the DB without waiting for the next room re-open.
     onPushSubscriptionChanged(resubscribe);
     return () => { cancelled = true; onPushSubscriptionChanged(null); };
-  }, [user?.uid, config.roomKey]);
+  }, [user?.uid, config.roomKey, isRoomReady, roomDeleted]);
 
   // Tell the push service worker which room this tab is showing, so it can keep
   // a push silent ONLY when you're already looking at that room — a push for a
@@ -647,9 +651,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         if (messages[i].uid === user.uid && messages[i].type !== 'system') { myLast = messages[i]; break; }
     }
     if (!myLast) return null;
-    const seen = participants.some((p) => p.uid !== user.uid && p.lastReadAt && new Date(p.lastReadAt) >= new Date(myLast!.createdAt));
+    // Read receipts now arrive via broadcast (readReceipts: uid -> server
+    // lastReadAt) instead of presence meta, which didn't propagate. Both
+    // timestamps are server message times, so the >= comparison is skew-free.
+    let seen = false;
+    for (const [uid, lastReadAt] of readReceipts) {
+      if (uid !== user.uid && new Date(lastReadAt) >= new Date(myLast.createdAt)) { seen = true; break; }
+    }
     return seen ? myLast.id : null;
-  }, [messages, participants, user]);
+  }, [messages, readReceipts, user]);
 
   const isOwner = user?.uid === roomCreatorId;
 

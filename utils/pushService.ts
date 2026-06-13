@@ -67,7 +67,13 @@ export async function subscribeToPushNotifications(userId: string, roomKey: stri
     }, { onConflict: 'user_id, room_key, endpoint' });
 
     if (error) {
-        console.error('Supabase subscription error:', error);
+        // 23503 = FK violation (push_subscriptions_room_key_fkey): the room_key
+        // isn't in `rooms` — the room was deleted, or this ran before join
+        // created it. Benign: push simply isn't enabled for a non-existent room,
+        // so don't surface it as an error.
+        if ((error as { code?: string }).code !== '23503') {
+            console.error('Supabase subscription error:', error);
+        }
         return false;
     }
 

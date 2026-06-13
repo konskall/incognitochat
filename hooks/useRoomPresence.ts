@@ -37,6 +37,23 @@ export function liveTypers(records: Map<string, TypingRecord>, now: number): str
   return [...records.values()].filter((r) => r.expiresAt > now).map((r) => r.username);
 }
 
+// "Seen" read receipts travel over broadcast for the SAME reason as typing (a
+// presence meta UPDATE doesn't reach other clients). Records the highest
+// (monotonic) lastReadAt seen per uid; returns the SAME map ref when the event
+// is stale/equal so the caller can skip a re-render. lastReadAt is a server
+// message timestamp, so the >= comparison is skew-free.
+export function applyReadReceipt(
+  records: Map<string, string>,
+  uid: string,
+  lastReadAt: string,
+): Map<string, string> {
+  const prev = records.get(uid);
+  if (prev !== undefined && prev >= lastReadAt) return records;
+  const next = new Map(records);
+  next.set(uid, lastReadAt);
+  return next;
+}
+
 export const useRoomPresence = (
   roomKey: string,
   user: User | null,
@@ -44,6 +61,12 @@ export const useRoomPresence = (
 ) => {
   const [participants, setParticipants] = useState<Presence[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  // Per-uid highest lastReadAt, fed by 'read' broadcasts (see applyReadReceipt).
+  const [readReceipts, setReadReceipts] = useState<Map<string, string>>(new Map());
+  const readReceiptsRef = useRef<Map<string, string>>(new Map());
+  // Peer uids seen in the last presence sync — so we can re-announce our read
+  // position to someone who JUST joined (they missed our earlier 'read' broadcast).
+  const prevPeerUidsRef = useRef<Set<string>>(new Set());
   const channelRef = useRef<RealtimeChannel | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
@@ -95,6 +118,22 @@ export const useRoomPresence = (
         // Active members first, then idle — stable otherwise.
         members.sort((a, b) => (a.status === b.status ? 0 : a.status === 'active' ? -1 : 1));
         setParticipants(members);
+
+        // Re-announce our read position to anyone who JUST joined — they weren't
+        // subscribed when we last broadcast it, so they'd never show our "Seen".
+        const curPeers = new Set(members.map((m) => m.uid).filter((u) => u !== user.uid));
+        let hasNewPeer = false;
+        for (const u of curPeers) { if (!prevPeerUidsRef.current.has(u)) { hasNewPeer = true; break; } }
+        prevPeerUidsRef.current = curPeers;
+        if (hasNewPeer && lastReadRef.current) sendRead(lastReadRef.current);
+      })
+      .on('broadcast', { event: 'read' }, ({ payload }) => {
+        const p = payload as { uid?: string; lastReadAt?: string } | null;
+        if (!p || typeof p.uid !== 'string' || p.uid === user.uid || typeof p.lastReadAt !== 'string') return;
+        const updated = applyReadReceipt(readReceiptsRef.current, p.uid, p.lastReadAt);
+        if (updated === readReceiptsRef.current) return; // stale/equal — no change
+        readReceiptsRef.current = updated;
+        setReadReceipts(updated);
       })
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
         const ev = payload as Partial<TypingEvent> | null;
@@ -164,16 +203,27 @@ export const useRoomPresence = (
       avatar: configRef.current.avatarURL,
       onlineAt: new Date().toISOString(),
       status: 'active',
-      lastReadAt: lastReadRef.current,
       ...overrides,
     });
   };
 
-  // Mark messages up to `ts` as seen and re-broadcast (only when it advances).
+  // Broadcast our "read up to <server message timestamp>" position. Over the
+  // BROADCAST bus, not presence meta (which doesn't propagate same-key updates —
+  // that's why the "Seen" receipt never updated for peers).
+  const sendRead = (ts: string) => {
+    if (!channelRef.current || !user) return;
+    channelRef.current.send({
+      type: 'broadcast',
+      event: 'read',
+      payload: { uid: user.uid, lastReadAt: ts },
+    });
+  };
+
+  // Mark messages up to `ts` as seen and broadcast it (only when it advances).
   const setLastRead = (ts?: string) => {
     if (!ts || ts <= lastReadRef.current) return;
     lastReadRef.current = ts;
-    trackPresence({});
+    sendRead(ts);
   };
 
   // Broadcast a typing state to the room over the channel's broadcast bus (NOT
@@ -221,6 +271,7 @@ export const useRoomPresence = (
   return {
     participants,
     typingUsers,
+    readReceipts,
     setTyping,
     setLastRead,
     updatePresence: trackPresence
