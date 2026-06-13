@@ -17,6 +17,27 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 
+// Lightweight per-caller rate limit. Each Gemini call has google_search grounding
+// enabled (billed + comparatively expensive), and any room member can invoke this
+// — so a single client loop could exhaust the owner's quota/cost. This is an
+// in-memory sliding window per uid: it bounds the realistic single-client abuse
+// at zero infra cost (warm isolates are reused across a burst). Not a hard
+// distributed guarantee across cold isolates; escalate to a DB counter if needed.
+const RL_WINDOW_MS = 60_000;
+const RL_MAX = 8;
+const rlHits = new Map<string, number[]>();
+function rateLimited(uid: string): boolean {
+  const now = Date.now();
+  const recent = (rlHits.get(uid) ?? []).filter((t) => now - t < RL_WINDOW_MS);
+  recent.push(now);
+  rlHits.set(uid, recent);
+  // Opportunistic cleanup so the Map can't grow unbounded across many uids.
+  if (rlHits.size > 500) {
+    for (const [k, v] of rlHits) { if (v.every((t) => now - t >= RL_WINDOW_MS)) rlHits.delete(k); }
+  }
+  return recent.length > RL_MAX;
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -60,10 +81,17 @@ Deno.serve(async (req: Request) => {
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
+    const { data: userData } = await sb.auth.getUser();
+    const callerUid = userData?.user?.id;
+    if (!callerUid) return json({ error: "AUTH_REQUIRED" }, 401);
+
     const { data: isMember, error: memErr } = await sb.rpc("is_member", {
       p_room_key: roomKey,
     });
     if (memErr || !isMember) return json({ error: "NOT_A_MEMBER" }, 403);
+
+    // Throttle expensive Gemini+Search calls per caller (see rateLimited).
+    if (rateLimited(callerUid)) return json({ error: "RATE_LIMITED" }, 429);
 
     // --- Build the prompt (no geolocation: removed for privacy) ---
     const now = new Date();

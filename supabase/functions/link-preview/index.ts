@@ -26,15 +26,28 @@ function json(payload: unknown, status = 200, extra: Record<string, string> = {}
 }
 
 // Reject obviously-private / local targets (basic SSRF guard).
-function toPublicHttpUrl(raw: string): URL | null {
+function toPublicHttpUrl(raw: string, base?: string | URL): URL | null {
   let u: URL;
-  try { u = new URL(raw); } catch { return null; }
+  try { u = base ? new URL(raw, base) : new URL(raw); } catch { return null; }
   if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-  const host = u.hostname.toLowerCase();
-  if (host === "localhost" || host.endsWith(".localhost") || host === "0.0.0.0" || host === "::1") return null;
+  // WHATWG URL wraps IPv6 hostnames in brackets ("[::1]") — strip them before
+  // matching, or every IPv6 private/loopback check silently never fires.
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host === "0.0.0.0") return null;
+  // IPv4 private / loopback / link-local / CGNAT.
   if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-      /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) return null;
-  if (host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80")) return null;
+      /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+      /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host)) return null;
+  // IPv6 loopback (::1), unspecified (::), ULA (fc00::/7), link-local (fe80::/10),
+  // and IPv4-mapped (::ffff:a.b.c.d → re-check the embedded IPv4).
+  if (host === "::1" || host === "::") return null;
+  if (/^f[cd][0-9a-f]{0,2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host)) return null;
+  const mapped = host.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) {
+    const v4 = mapped[1];
+    if (/^127\./.test(v4) || /^10\./.test(v4) || /^192\.168\./.test(v4) ||
+        /^169\.254\./.test(v4) || /^172\.(1[6-9]|2\d|3[01])\./.test(v4) || v4 === "0.0.0.0") return null;
+  }
   return u;
 }
 
@@ -74,14 +87,30 @@ Deno.serve(async (req: Request) => {
     const timer = setTimeout(() => controller.abort(), 6000);
     let resp: Response;
     try {
-      resp = await fetch(target.href, {
-        signal: controller.signal,
-        redirect: "follow",
-        headers: {
-          "User-Agent": "IncognitoChatBot/1.0 (+link-preview)",
-          "Accept": "text/html,application/xhtml+xml,*/*",
-        },
-      });
+      // Follow redirects MANUALLY so every hop is re-validated against the SSRF
+      // guard — redirect:"follow" would let a public host 302 us to an internal
+      // address (http://[::1]/, 169.254.169.254, …) unchecked.
+      let current = target;
+      let hops = 0;
+      for (;;) {
+        resp = await fetch(current.href, {
+          signal: controller.signal,
+          redirect: "manual",
+          headers: {
+            "User-Agent": "IncognitoChatBot/1.0 (+link-preview)",
+            "Accept": "text/html,application/xhtml+xml,*/*",
+          },
+        });
+        if (resp.status >= 300 && resp.status < 400) {
+          const loc = resp.headers.get("location");
+          const next = loc ? toPublicHttpUrl(loc, current) : null;
+          try { await resp.body?.cancel(); } catch { /* ignore */ }
+          if (!next || ++hops > 4) return json({ data: null }, 200, { "Cache-Control": "public, max-age=3600" });
+          current = next;
+          continue;
+        }
+        break;
+      }
     } finally {
       clearTimeout(timer);
     }

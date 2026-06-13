@@ -23,6 +23,11 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const COOLDOWN_MINUTES = 30;
+// A room is deleted once, so "deleted" emails legitimately bypass the 30-min
+// message cooldown — but a member could otherwise spam action:"deleted" to send
+// unlimited emails (inbox flooding + shared EmailJS quota exhaustion). Keep a
+// short floor so deletions still go out promptly but repeats are throttled.
+const DELETED_FLOOR_MINUTES = 5;
 const EMAILJS_ENDPOINT = "https://api.emailjs.com/api/v1.0/email/send";
 
 const corsHeaders = {
@@ -92,12 +97,13 @@ Deno.serve(async (req: Request) => {
 
     const exclude = new Set<string>([senderUid, ...(excludeUids as string[])]);
     const now = Date.now();
+    const cooldownMin = action === "deleted" ? DELETED_FLOOR_MINUTES : COOLDOWN_MINUTES;
     const recipients = (subs ?? []).filter((s) => {
       if (!s.email) return false;
       if (exclude.has(s.uid)) return false;
-      if (action !== "deleted" && s.last_notified_at) {
+      if (s.last_notified_at) {
         const diffMin = (now - new Date(s.last_notified_at).getTime()) / 60000;
-        if (diffMin < COOLDOWN_MINUTES) return false;
+        if (diffMin < cooldownMin) return false;
       }
       return true;
     });
