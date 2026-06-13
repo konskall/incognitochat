@@ -97,8 +97,38 @@ working — no orphans), + 3 zero-byte `.emptyFolderPlaceholder` markers (harmle
 left as-is — a SQL row-delete would create an inconsistent backend orphan, and the
 proper removal needs the Storage API).
 
+## Follow-up fix (later same session): dashboard phantom "unread"
+
+**Symptom:** every already-read room kept showing a permanent unread badge of 1 on
+the dashboard; reading the room and leaving never cleared it. Many new peer
+messages all showed (correct), but exactly one stuck forever after reading.
+
+**Root cause (proven on live data — 6/6 rooms reproduced):** a timestamp
+**precision mismatch**. `messages.created_at` is a microsecond-precision
+`timestamptz`; the client stores its read marker as `Date.getTime()`
+(`lastRead_<roomKey>` in localStorage) and sent it to the `room_overview` RPC as a
+**millisecond**-precise ISO `since`. The RPC counted `created_at > since`, so the
+newest message's sub-millisecond remainder (e.g. `.54288` vs stored `.542`) was
+always strictly greater than the truncated marker → a phantom unread of (usually)
+1 that never cleared.
+
+### `fix_room_overview_unread_ms_precision` (live, in `supabase_migrations`)
+```sql
+-- room_overview: count unread at MILLISECOND granularity, the only resolution the
+-- client read-marker can express (it's Date.getTime()). Was `m.created_at > i.since`.
+create or replace function public.room_overview(p_items jsonb) ... -- (full body unchanged except:)
+  and date_trunc('milliseconds', m.created_at) > date_trunc('milliseconds', i.since)
+```
+Verified via the real RPC: simulated "read up to latest" → unread_count **0** for
+all 6 rooms (was 1); a genuinely-newer message (since = 2nd-newest) still counts
+**1**. Server-side fix → all clients corrected immediately, no localStorage migration.
+
 ## Key durable lesson
 
 Supabase Realtime **presence** propagates membership (join/leave) + the initial
 meta, but NOT same-key meta UPDATES → use **broadcast** for any live toggling
 signal (typing, "Seen"). Presence is now used only for online/membership.
+
+Unread badges compare a **millisecond** client marker against **microsecond**
+server `created_at` — always compare at ms granularity (`date_trunc('milliseconds',…)`)
+or a sub-ms remainder leaves a permanent phantom unread.
