@@ -641,7 +641,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
         <p>
           Incognito Chat © {new Date().getFullYear()} • Powered by{' '}
           <a 
-            href="http://linkedin.com/in/konstantinos-kalliakoudis-902b90103" 
+            href="https://www.linkedin.com/in/konstantinos-kalliakoudis-902b90103"
             target="_blank" 
             rel="noopener noreferrer"
             className="text-blue-600 hover:text-blue-700 dark:text-blue-500 dark:hover:text-blue-400 font-bold hover:underline transition-colors"

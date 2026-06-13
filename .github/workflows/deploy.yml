@@ -4,10 +4,14 @@ on:
   push:
     branches: [ main ]
 
+# Least privilege by default; the deploy job widens to what Pages needs.
 permissions:
   contents: read
-  pages: write
-  id-token: write
+
+# Don't let overlapping pushes race a deploy.
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -20,13 +24,18 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
 
+      # npm ci (not install): reproducible, lockfile-pinned installs.
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      # Run the unit tests before shipping — CI never gated on them before.
+      - name: Test
+        run: npm test
 
       - name: Build
         env:
-          # Pass the secret from GitHub Repo Settings to the build environment
           API_KEY: ${{ secrets.API_KEY }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
@@ -38,11 +47,15 @@ jobs:
           path: ./dist
 
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only the deploy job needs to write Pages + mint the OIDC token.
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    needs: build
-    runs-on: ubuntu-latest
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

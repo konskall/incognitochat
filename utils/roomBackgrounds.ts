@@ -79,10 +79,15 @@ export interface RoomAppearance {
 
 // Resolves the background style for the chat area from a room's stored appearance.
 export function getRoomBackgroundStyle(appearance: RoomAppearance, isDark: boolean): CSSProperties {
-  if (appearance.type === 'image' && appearance.url) {
+  // Only honor an https image URL (member-controlled room data — block
+  // http:// mixed content / non-image schemes), and quote + escape the value
+  // so a ')' or quote can't break out of the CSS url(). Falls through to the
+  // default preset otherwise.
+  if (appearance.type === 'image' && appearance.url && /^https:\/\//i.test(appearance.url)) {
+    const safe = appearance.url.replace(/["'()\\\s]/g, encodeURIComponent);
     return {
       backgroundColor: isDark ? '#020617' : '#f8fafc',
-      backgroundImage: `url(${appearance.url})`,
+      backgroundImage: `url("${safe}")`,
       backgroundSize: 'cover',
       backgroundPosition: 'center',
       backgroundRepeat: 'no-repeat',
