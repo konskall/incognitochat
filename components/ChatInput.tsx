@@ -111,6 +111,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !e.target.files[0]) return;
     let file = e.target.files[0];
+    // Reset the input NOW so picking the SAME file again still fires a change
+    // event. Without this, re-attaching after a send did nothing, and on iOS —
+    // where every camera/library capture is named "image.jpg" — sending two
+    // photos in a row silently failed on the second.
+    e.target.value = '';
 
     // Always downscale/compress images (not just oversized ones) to save
     // bandwidth and speed up loading. GIFs are skipped so animation survives.

@@ -1,7 +1,13 @@
-import { useEffect, RefObject } from 'react';
+import { useEffect, useRef, RefObject } from 'react';
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+// Stack of currently-active modal ids. Only the topmost (most recently opened)
+// modal handles Escape / Tab, so a nested dialog (lightbox inside gallery,
+// emoji picker inside the action menu) doesn't also close its parent.
+const modalStack: number[] = [];
+let nextModalId = 1;
 
 /**
  * Accessibility helper for dialog-style modals. While `active`:
@@ -19,11 +25,21 @@ export function useModalA11y(
   onClose: () => void,
   containerRef: RefObject<HTMLElement>
 ) {
+  // Hold onClose in a ref so the effect depends ONLY on `active` — callers pass
+  // inline arrows that change identity every render (each presence sync /
+  // incoming message), and re-running this effect re-grabbed focus, which on
+  // mobile dismissed the soft keyboard mid-typing while a picker was open.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!active) return;
 
     const container = containerRef.current;
     const previouslyFocused = document.activeElement as HTMLElement | null;
+    const modalId = nextModalId++;
+    modalStack.push(modalId);
+    const isTopmost = () => modalStack[modalStack.length - 1] === modalId;
 
     // Move focus into the dialog (first focusable, else the container itself).
     const focusables = container
@@ -32,10 +48,13 @@ export function useModalA11y(
     (focusables[0] ?? container)?.focus();
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Only the topmost modal reacts, so a nested dialog's Escape/Tab doesn't
+      // also fire the parent's handler (they share document in capture phase).
+      if (!isTopmost()) return;
       if (e.key === 'Escape') {
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab' || !container) return;
@@ -65,9 +84,14 @@ export function useModalA11y(
     document.addEventListener('keydown', handleKeyDown, true);
     return () => {
       document.removeEventListener('keydown', handleKeyDown, true);
+      const i = modalStack.lastIndexOf(modalId);
+      if (i >= 0) modalStack.splice(i, 1);
       if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
         previouslyFocused.focus();
       }
     };
-  }, [active, onClose, containerRef]);
+    // onClose intentionally omitted (read via ref) so a changing handler
+    // identity can't tear down the focus trap on every parent re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, containerRef]);
 }

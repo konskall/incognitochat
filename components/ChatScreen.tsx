@@ -225,7 +225,20 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       const t = new Date(m.createdAt as unknown as string).getTime();
       if (!Number.isNaN(t) && t > maxTs) maxTs = t;
     }
-    if (maxTs > 0) localStorage.setItem(`lastRead_${config.roomKey}`, String(maxTs));
+    if (maxTs <= 0) return;
+    // Only mark read while the tab is actually VISIBLE. A backgrounded tab keeps
+    // receiving realtime INSERTs; stamping those as read would wrongly clear the
+    // dashboard's unread badge for messages the user never saw. If messages
+    // arrived while hidden, the listener writes the latest once the user returns
+    // (they are now looking at the room).
+    const write = () => {
+      if (document.visibilityState === 'visible') {
+        localStorage.setItem(`lastRead_${config.roomKey}`, String(maxTs));
+      }
+    };
+    write();
+    document.addEventListener('visibilitychange', write);
+    return () => document.removeEventListener('visibilitychange', write);
   }, [messages, config.roomKey]);
 
   // Kept in a ref so handleUserClick can stay referentially stable (presence
@@ -869,12 +882,22 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       if (!config.roomKey) return;
       setIsDeleting(true);
       try {
+           // Fire the "deleted" notification BEFORE the row delete: the delete
+           // cascades our own subscriber row, after which the edge functions'
+           // is_member check would 403 and no one would be told.
            await notifySubscribers('deleted', 'Room was deleted by host');
 
-           const { data: files } = await supabase.storage.from('attachments').list(config.roomKey);
-           if (files && files.length > 0) {
-               const filesToRemove = files.map(x => `${config.roomKey}/${x.name}`);
-               await supabase.storage.from('attachments').remove(filesToRemove);
+           // Paginate storage cleanup — list() defaults to 100 per call, so a
+           // room with >100 attachments used to orphan everything past the first
+           // page (publicly reachable forever, no owning room).
+           const PAGE = 100;
+           let offset = 0;
+           for (;;) {
+               const { data: files } = await supabase.storage.from('attachments').list(config.roomKey, { limit: PAGE, offset });
+               if (!files || files.length === 0) break;
+               await supabase.storage.from('attachments').remove(files.map(x => `${config.roomKey}/${x.name}`));
+               if (files.length < PAGE) break;
+               offset += PAGE;
            }
 
            // Deleting the room cascades to its messages and subscribers (FK ON
@@ -954,10 +977,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const handleEmailToggle = async () => {
       if (!user || !config.roomKey) return;
       if (emailAlertsEnabled) {
-          await supabase.from('subscribers')
+          // .update() never throws — check the error or the UI flips to "off"
+          // while the row keeps the email and the user keeps getting alerts.
+          const { error } = await supabase.from('subscribers')
             .update({ email: '' })
             .eq('room_key', config.roomKey)
             .eq('uid', user.uid);
+          if (error) { flashToast('Could not turn off email alerts. Please try again.'); return; }
 
           setEmailAlertsEnabled(false);
           setEmailAddress('');
@@ -979,7 +1005,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       try {
           // The membership row already exists (created by join_or_create_room),
           // so we UPDATE it. Direct INSERT into subscribers is blocked by RLS.
-          await supabase.from('subscribers')
+          // .update() resolves { error } instead of throwing, so check it — the
+          // old try/catch was dead code and reported fake success on RLS failure.
+          const { error } = await supabase.from('subscribers')
             .update({
               username: config.username,
               email: emailAddress,
@@ -987,6 +1015,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             })
             .eq('room_key', config.roomKey)
             .eq('uid', user.uid);
+          if (error) throw error;
 
           setEmailAlertsEnabled(true);
           setShowEmailModal(false);
@@ -1005,15 +1034,20 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     if (!user || user.isAnonymous || !config.roomKey) return;
     const newState = !aiEnabled;
     try {
-      await supabase
+      // .update() resolves { error }; without checking it the local toggle + the
+      // "Inco AI enabled by X" system message would post even when the rooms
+      // update failed, leaving every member's UI claiming a state the DB lacks.
+      const { error } = await supabase
         .from('rooms')
         .update({ ai_enabled: newState })
         .eq('room_key', config.roomKey);
-      
+      if (error) throw error;
+
       setAiEnabled(newState);
       await sendMessage(`Inco AI ${newState ? 'enabled' : 'disabled'} by ${config.username}`, config, null, null, null, 'system');
     } catch (e) {
       console.error("Failed to toggle AI", e);
+      flashToast('Could not change Inco. Please try again.');
     }
   };
 
