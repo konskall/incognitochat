@@ -64,7 +64,36 @@ Settled decisions excluded by design (NOT findings): hardcoded TURN creds, plain
 
 ---
 
+---
+
+## RESOLUTION (2026-06-13, commits b997f7d → 4641fab)
+
+**FIXED & DEPLOYED** (build + 36 tests green throughout; each batch its own commit):
+
+- **DB migration `audit_2026_06_13_db_hardening` (live):** dropped the dead `notify-new-message` trigger (404-per-insert to deleted push-notify + embedded service_role JWT); revoked anon/authenticated EXECUTE on the 3 maintenance functions (`delete_inactive_rooms`/`expire_*`); added `room_settings → rooms` FK ON DELETE CASCADE (+cleaned 1 orphan); dropped duplicate UNIQUE constraints; wrapped push_subscriptions INSERT/DELETE policies in `(select auth.uid())`.
+- **Edge functions:** link-preview v2 (manual redirect + per-hop SSRF re-validation, IPv6 bracket/CGNAT/mapped fixes); notify-room v6 (deleted-action cooldown floor → no email bombing); inco-ai v9 (per-caller rate limit).
+- **useIncoAI:** bot-wedge (dropped cancellable debounce) + seed lastProcessedId (no ghost re-trigger).
+- **helpers:** decryptMessage colon misroute, getYouTubeId host-anchored, compressImage white-fill (no black PNG), cleanUrl balanced parens.
+- **useChatMessages:** refocus/reconnect reconciles held window (deletes/edits/votes), loadOlderMessages lte boundary + id order, resync throttle, cipherCache hygiene.
+- **useModalA11y:** stacked-modal Escape stack + onClose ref (focus-trap thrash / mobile keyboard).
+- **ChatScreen:** >100-file storage cleanup, lastRead visibility gate, unchecked email/AI update errors. **ChatInput:** file-input reset.
+- **MessageList:** webm duration + isPlaying, https sender avatar, TTL media in lightbox, YouTube start scope. **MessageActionMenu:** copy success/fail. **MediaGalleryModal:** tab-reset on open-only + iOS video attrs. **PollMessage:** reopen button.
+- **calls:** fromName/fromAvatar coercion (crash-DoS), leave-on-unmount (channel-cleanup), group end-on-empty gate, enterCall ring race, no-answer leave, bubble drag→restore (useDragResize click-swallow), bubble/PiP mirror gate, participants avatar https.
+- **SW push-v10:** renotify conditional + null-payload guard, nav/asset cache bounded, GH-Pages-origin-scoped notificationclick + visible-client check. **useRoomPresence:** removeChannel cleanup.
+- **dashboard:** AiAvatarModal overwrite (resync on open) + https link + file reset; RoomAppearanceModal https + file reset; deleteRoomByKey leave-error; ephemeral-TTL failure surfaced; encoded ui-avatars; presence avatars (Dashboard + UserProfileModal) via safeAvatarUrl; InstallButton dismiss + pb-24.
+- **shell/CI:** roomBackgrounds https + CSS-escaped url(); LinkedIn https; logout clears roomFav_; deploy.yml = npm ci + npm test + least-privilege permissions + concurrency.
+
+**DEFERRED (with rationale — NOT shipped):**
+- **CSP meta tag** (low): drafted but needs in-browser verification across realtime(wss)/push/storage/dicebear/TURN before shipping to live — a wrong directive breaks the whole app. Draft: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://qygirixqsuraclbdfnjp.supabase.co wss://qygirixqsuraclbdfnjp.supabase.co https://*.metered.ca; img-src 'self' data: https:; media-src 'self' https: blob:; font-src 'self'`.
+- **Self-view PiP in desktop WINDOWED mode** (medium): clipped because it clamps to window.inner* inside an overflow-hidden DraggableWindow; fix needs offsetParent measurement (regression risk; narrow case: desktop + windowed + 1-on-1 video). Full mode is fine.
+- **Beacon per-tab namespacing** (low): niche desktop multi-tab kill-window; current single last-writer-wins beacon is mostly benign.
+- **Scroll-restore stale offset** (low): the `.finally(clear)` fix races React's layout-effect commit on the success path; risks the common case. Needs a no-growth detector.
+- **Emoji-picker desktop placement** (low): wide-desktop cosmetic; needs trigger-rect positioning.
+- **GitHub Actions SHA-pinning** (low): correct but verbose; deferred.
+- **Dev-dependency advisories** (esbuild/vite/vitest, high/critical per `npm audit`): BUILD-ONLY tooling, not shipped to the browser (esbuild advisory is dev-server-only; app deploys as static files). Fix requires vite 5→8 (major breaking) — not worth the build risk for zero production exposure.
+
 ## UNVERIFIED — area-verdict referenced but verifier failed (CONFIRM MANUALLY)
+Note: **logout privacy** was partially addressed (roomFav_ now cleared). The rest below still need targeted re-investigation (their finder detail was lost when the verify agent hit a session limit):
 These were raised by finders whose verify agent died on a session limit; investigate directly:
 - **dashboard (high):** AiAvatarModal silently overwriting custom AI avatars with the default.
 - **dashboard:** inactive members counted as online; non-compliant new dialogs (a11y); cold-PBKDF2 stall; iPad install detection.
