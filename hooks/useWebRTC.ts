@@ -195,6 +195,9 @@ export function useWebRTC(user: User, config: ChatConfig) {
   // that exact person end my "Waiting…" screen instead of hanging forever.
   const directTargetRef = useRef<string | null>(null);
   const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // True only while enterCall awaits getMedia — suppresses a ringtone/incoming
+  // overlay for a 'join' that arrives during the permission prompt window.
+  const enteringRef = useRef(false);
   const incomingQueueRef = useRef<IncomingCall[]>([]);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -335,15 +338,18 @@ export function useWebRTC(user: User, config: ChatConfig) {
         const next = new Set(prev); next.delete(uid); return next;
       });
       syncPeers();
-      // A participant left and none remain → end my call instead of hanging on
-      // "Waiting…/Reconnecting…". (cleanup() runs async-safe: during teardown the
-      // map is already empty + status idle, so this no-ops.)
-      if (statusRef.current === 'incall' && peersRef.current.size === 0) {
+      // 1-on-1 only: the other side left and none remain → end instead of
+      // hanging on "Waiting…/Reconnecting…". Gated on directTargetRef so a GROUP
+      // call doesn't force-end when its first joiner leaves while other invitees
+      // are still being rung (they'd be stranded in an empty call). A group call
+      // is ended manually (hangup) or by its own no-answer paths.
+      if (statusRef.current === 'incall' && peersRef.current.size === 0 && directTargetRef.current !== null) {
         setNotice({ kind: 'info', text: 'Call ended.' });
+        sendSignal({ type: 'leave' });
         cleanupRef.current();
       }
     }
-  }, [syncPeers]);
+  }, [syncPeers, sendSignal]);
 
   const makeOffer = useCallback(async (entry: PeerEntry) => {
     // Only one offer at a time, only from a stable connection. If we must skip,
@@ -463,6 +469,11 @@ export function useWebRTC(user: User, config: ChatConfig) {
     if (typeof data.fromUid !== 'string' || !data.fromUid) return; // ignore malformed signals
     if (data.fromUid === user.uid) return;
     if (data.toUid && data.toUid !== user.uid) return;
+    // Coerce the display fields: a room member could broadcast a non-string
+    // fromName/fromAvatar, which then renders as a React child — with no
+    // ErrorBoundary in the app that white-screens every recipient (crash-DoS).
+    if (typeof data.fromName !== 'string') data.fromName = 'Unknown';
+    if (typeof data.fromAvatar !== 'string') data.fromAvatar = '';
 
     switch (data.type) {
       case 'join': {
@@ -476,7 +487,9 @@ export function useWebRTC(user: User, config: ChatConfig) {
           const inc: IncomingCall = { fromUid: data.fromUid, fromName: data.fromName, fromAvatar: data.fromAvatar, callType: data.callType || 'audio', direct: !!data.toUid };
           const q = incomingQueueRef.current;
           if (!q.some((c) => c.fromUid === inc.fromUid)) q.push(inc);
-          if (statusRef.current === 'idle') {
+          // Don't ring if we're mid-enterCall (awaiting getMedia): we're about to
+          // be 'incall' and our own 'join' broadcast will mesh us with them.
+          if (statusRef.current === 'idle' && !enteringRef.current) {
             setIncoming(inc);
             setStatus('ringing');
             initAudio();
@@ -594,10 +607,24 @@ export function useWebRTC(user: User, config: ChatConfig) {
     channel.subscribe();
     channelRef.current = channel;
     return () => {
+      // Tell peers we're leaving BEFORE removing the channel. The unmount-cleanup
+      // effect's sendSignal runs AFTER this cleanup (effect order), by which time
+      // channelRef is already null — so that path no-ops and peers only learned
+      // of the departure via the 15s ICE backstop. Send it here, on the live
+      // channel, while it still exists.
+      if (statusRef.current === 'incall') {
+        try {
+          channel.send({
+            type: 'broadcast',
+            event: 'signal',
+            payload: { type: 'leave', fromUid: user.uid, fromName: config.username, fromAvatar: config.avatarURL } as SignalData,
+          });
+        } catch { /* best-effort */ }
+      }
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
-  }, [config.roomKey]);
+  }, [config.roomKey, user.uid, config.username, config.avatarURL]);
 
   // --- Media ---
   // Progressive, never-throwing acquisition: get the best of {mic+cam, mic, cam},
@@ -677,15 +704,23 @@ export function useWebRTC(user: User, config: ChatConfig) {
   const enterCall = useCallback(async (type: CallType, targetUid?: string) => {
     try {
       directTargetRef.current = targetUid ?? null;
+      enteringRef.current = true; // suppress incoming-ring while we await getMedia
       setNotice(null);
       stopRingtone();            // stop the ring BEFORE the (slow) permission prompt
       setIncoming(null);
       incomingQueueRef.current = [];
       await getMedia(type === 'video');
+      // getMedia's permission prompt can take seconds; a 'join' that arrived in
+      // that window must not have started a ringtone/incoming overlay that now
+      // bleeds into the call. Clear anything that slipped through, then go live.
+      stopRingtone();
+      setIncoming(null);
+      incomingQueueRef.current = [];
       setCallType(type);
       callTypeRef.current = type;
       setStatus('incall');
       statusRef.current = 'incall';
+      enteringRef.current = false;
       // Announce; existing members reply with `present` and the smaller uid offers.
       sendSignal({ type: 'join', callType: type, toUid: targetUid });
       // 1-on-1: if the person we rang never connects, stop waiting ("No answer").
@@ -695,11 +730,15 @@ export function useWebRTC(user: User, config: ChatConfig) {
           const anyConnected = Array.from(peersRef.current.values()).some((e) => e.everConnected);
           if (statusRef.current === 'incall' && !anyConnected) {
             setNotice({ kind: 'info', text: 'No answer.' });
+            // Tell the callee to stop ringing — without this their fullscreen
+            // incoming overlay persists forever after we give up.
+            sendSignal({ type: 'leave' });
             cleanupRef.current();
           }
         }, 40000);
       }
     } catch (e) {
+      enteringRef.current = false;
       console.error('Could not start/join call', e);
       setNotice({ kind: 'error', text: mediaErrorMessage(e) });
       cleanup();

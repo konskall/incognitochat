@@ -441,7 +441,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           name={bp ? bp.name : 'You'}
           avatar={bp ? safeAvatarUrl(bp.avatar) : config.avatarURL}
           showVideo={bp ? bp.stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted) : showLocalVideo}
-          mirror={!bp}
+          mirror={!bp && facingMode === 'user'}
           sharing={bp ? sharingUids.has(bp.uid) : isScreenSharing}
           isMuted={isMuted}
           onToggleMute={toggleMute}
@@ -487,7 +487,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                 <div key={u.uid} className="flex items-center justify-between gap-2 p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-xl transition group">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="relative shrink-0">
-                      <img src={u.avatar} className="w-10 h-10 rounded-full bg-slate-200 object-cover border border-slate-100 dark:border-slate-600" alt={u.username} />
+                      <img src={safeAvatarUrl(u.avatar)} className="w-10 h-10 rounded-full bg-slate-200 object-cover border border-slate-100 dark:border-slate-600" alt={u.username} />
                       <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 border-2 border-white dark:border-slate-800 rounded-full ${u.status === 'active' ? 'bg-green-500' : 'bg-orange-400'}`} />
                     </div>
                     <div className="flex flex-col min-w-0">
@@ -536,7 +536,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           stream={peers[0] ? peers[0].stream : localStream}
           avatar={peers[0] ? safeAvatarUrl(peers[0].avatar) : config.avatarURL}
           showVideo={peers[0] ? peers[0].stream.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted) : (!!localStream && localStream.getVideoTracks().length > 0 && callType === 'video' && !isVideoOff && !isScreenSharing)}
-          mirror={!peers[0]}
+          mirror={!peers[0] && facingMode === 'user'}
           sharing={peers[0] ? sharingUids.has(peers[0].uid) : isScreenSharing}
           isMuted={isMuted}
           onToggleMute={toggleMute}

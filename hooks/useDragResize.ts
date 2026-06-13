@@ -60,11 +60,23 @@ export function useDragResize(initial: Box, opts: Opts = {}) {
     e.preventDefault();
     const startX = e.clientX, startY = e.clientY;
     const orig = boxRef.current;
+    let moved = false;
     const move = (ev: PointerEvent) => {
+      if (Math.abs(ev.clientX - startX) > 3 || Math.abs(ev.clientY - startY) > 3) moved = true;
       setBox(clampBox({ ...orig, x: orig.x + (ev.clientX - startX), y: orig.y + (ev.clientY - startY) }, window.innerWidth, window.innerHeight, boundsRef.current));
     };
     const up = () => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); activeRef.current = null;
+      // preventDefault on pointerdown suppresses the compatibility mousedown/up
+      // but NOT the synthetic click. After a real drag, swallow that one click so
+      // an element under the pointer (e.g. the bubble's full-cover restore
+      // button) doesn't treat the drop as a tap — desktop mouse drag otherwise
+      // couldn't move the bubble at all.
+      if (moved) {
+        const swallow = (ce: Event) => { ce.stopPropagation(); ce.preventDefault(); };
+        window.addEventListener('click', swallow, { capture: true, once: true });
+        setTimeout(() => window.removeEventListener('click', swallow, true), 350);
+      }
       if (snap) setBox((b) => clampBox(nearestCorner(b, window.innerWidth, window.innerHeight, margin, boundsRef.current), window.innerWidth, window.innerHeight, boundsRef.current));
     };
     activeRef.current = { move, up };
