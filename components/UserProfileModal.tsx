@@ -3,6 +3,7 @@ import React, { useRef, useMemo } from 'react';
 import { X, Calendar, Clock, ShieldCheck } from 'lucide-react';
 import { Presence, Subscriber } from '../types';
 import { useModalA11y } from '../hooks/useModalA11y';
+import { safeAvatarUrl } from '../utils/helpers';
 
 interface UserProfileModalProps {
   user: Presence | null;
@@ -83,7 +84,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, subscriberInf
           <div className="flex justify-center -mt-12 mb-4">
             <div className="relative inline-block">
               <img
-                src={user.avatar}
+                src={safeAvatarUrl(user.avatar)}
                 alt={user.username}
                 className="w-28 h-28 rounded-3xl object-cover border-4 border-white dark:bg-slate-900 shadow-lg bg-slate-200"
               />

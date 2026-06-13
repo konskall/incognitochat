@@ -113,7 +113,7 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
             <div className="flex gap-2">
               <label className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition text-xs font-semibold text-slate-600 dark:text-slate-300" title="Upload icon">
                 {uploading === 'avatar' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Upload
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0], 'avatar')} />
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) upload(e.target.files[0], 'avatar'); e.target.value = ''; }} />
               </label>
               <button onClick={() => { setShowLink((s) => !s); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-xs font-semibold text-slate-600 dark:text-slate-300"><LinkIcon size={14} /> Link</button>
               {avatarUrl && <button onClick={() => setAvatarUrl('')} aria-label="Reset icon" className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-xs font-semibold text-slate-600 dark:text-slate-300"><RotateCcw size={14} /></button>}
@@ -121,7 +121,14 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
             {showLink && (
               <div className="flex relative mt-2 animate-in slide-in-from-top-1">
                 <input value={linkValue} onChange={(e) => setLinkValue(e.target.value)} placeholder="https://image-url.png" className="w-full pl-3 pr-9 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 outline-none focus:ring-2 focus:ring-blue-500" />
-                <button onClick={() => { if (linkValue.startsWith('http')) setAvatarUrl(linkValue.trim()); setShowLink(false); setLinkValue(''); }} aria-label="Use icon URL" className="absolute right-1 top-1/2 -translate-y-1/2 p-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded"><Check size={14} /></button>
+                <button onClick={() => {
+                  // https only — saved room-wide into rooms.avatar_url for every member.
+                  const v = linkValue.trim();
+                  try {
+                    if (new URL(v).protocol === 'https:') { setAvatarUrl(v); setShowLink(false); setLinkValue(''); }
+                    else alert('Please use an https:// image URL.');
+                  } catch { alert('Please enter a valid image URL.'); }
+                }} aria-label="Use icon URL" className="absolute right-1 top-1/2 -translate-y-1/2 p-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded"><Check size={14} /></button>
               </div>
             )}
           </div>
@@ -155,7 +162,7 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
             {!(bgType === 'image' && bgUrl) && (uploading === 'bg' ? <Loader2 size={18} className="animate-spin text-slate-400" /> : <ImageIcon size={18} className="text-slate-400" />)}
             {!(bgType === 'image' && bgUrl) && <span className="text-[10px] font-bold text-slate-400">Custom</span>}
             {bgType === 'image' && bgUrl && <span className="absolute top-1 right-1 bg-blue-500 text-white rounded-full p-0.5 shadow"><Check size={12} /></span>}
-            <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0], 'bg')} />
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) upload(e.target.files[0], 'bg'); e.target.value = ''; }} />
           </label>
         </div>
 

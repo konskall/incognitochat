@@ -5,7 +5,7 @@ import { supabase, joinOrCreateRoom } from '../services/supabase';
 import { setDashboardActive, getSwVersion } from '../utils/swBridge';
 import { subscribeToPushNotifications } from '../utils/pushService';
 import { User, ChatConfig, Room, Presence } from '../types';
-import { generateRoomKey, compressImage, decryptMessage, beginThemeTransition, ROOM_NAME_RE, ROOM_PIN_RE, ROOM_NAME_RULE, ROOM_PIN_RULE } from '../utils/helpers';
+import { generateRoomKey, compressImage, decryptMessage, beginThemeTransition, ROOM_NAME_RE, ROOM_PIN_RE, ROOM_NAME_RULE, ROOM_PIN_RULE, safeAvatarUrl } from '../utils/helpers';
 import {
   LogOut, Trash2, ArrowRight, Loader2,
   Upload, RotateCcw,
@@ -251,7 +251,7 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
             <span className="flex items-center gap-1.5" title={`${online.length} online now`}>
               <span className="flex -space-x-1.5">
                 {online.slice(0, 3).map((p, i) => (
-                  <img key={(p.uid || '') + i} src={p.avatar} alt="" width={16} height={16} className="w-4 h-4 rounded-full border border-white dark:border-slate-900 object-cover bg-slate-200" />
+                  <img key={(p.uid || '') + i} src={safeAvatarUrl(p.avatar)} alt="" width={16} height={16} className="w-4 h-4 rounded-full border border-white dark:border-slate-900 object-cover bg-slate-200" />
                 ))}
               </span>
               <span className="text-emerald-500 font-medium">{online.length} online</span>
@@ -436,7 +436,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       if (authUser) {
           const meta = authUser.user_metadata || {};
           const finalName = meta.display_name || meta.full_name || meta.name || localStorage.getItem('chatUsername') || user.email?.split('@')[0] || 'User';
-          const original = meta.picture || meta.avatar_url || `https://ui-avatars.com/api/?name=${finalName}&background=random`;
+          const original = meta.picture || meta.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(finalName)}&background=random`;
           setGoogleAvatarUrl(original);
           const finalAvatar = meta.custom_avatar || localStorage.getItem('chatAvatarURL') || original;
           setDisplayName(finalName);
@@ -627,6 +627,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (!e.target.files || !e.target.files[0]) return;
       const file = e.target.files[0];
+      e.target.value = ''; // allow re-selecting the same file after a failed upload
       try {
           const compressed = await compressImage(file);
           const fileExt = compressed.name.split('.').pop();
@@ -761,8 +762,11 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   // server error so the caller can surface it.
   const deleteRoomByKey = useCallback(async (key: string, isOwner: boolean) => {
     if (!isOwner) {
-        // "Leave room": drop only our own membership row.
-        await supabase.from('subscribers').delete().eq('room_key', key).eq('uid', user.uid);
+        // "Leave room": drop only our own membership row. Check the error (the
+        // owner branch already does) — otherwise a failed leave is reported as
+        // success and the room silently reappears on the next dashboard load.
+        const { error: leaveErr } = await supabase.from('subscribers').delete().eq('room_key', key).eq('uid', user.uid);
+        if (leaveErr) throw leaveErr;
     } else {
         // ORDER MATTERS under RLS: delete messages and the room row WHILE we
         // are still a member AND still the owner — both the is_member() check
@@ -886,7 +890,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                // 24h after the last activity.
                if (ephemeral && room.is_new) {
                    const { error: ttlErr } = await supabase.from('rooms').update({ auto_delete_seconds: 86400 }).eq('room_key', room.room_key);
-                   if (ttlErr) console.warn('Could not set ephemeral TTL:', ttlErr);
+                   // Surface the failure: the user expects a self-destructing room
+                   // and would otherwise believe a permanent one is ephemeral.
+                   if (ttlErr) { console.warn('Could not set ephemeral TTL:', ttlErr); alert('Room created, but auto-delete could not be enabled — it will not self-destruct.'); }
                }
                // No client-time lastRead write here: ChatScreen records the newest
                // SERVER message time once in-room, and the dashboard baselines an

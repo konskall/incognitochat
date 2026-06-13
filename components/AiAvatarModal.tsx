@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, RefreshCw, Upload, Link as LinkIcon, Save, Loader2, Wand2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { compressImage } from '../utils/helpers';
@@ -23,6 +23,14 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
 
+  // Resync the preview to the room's CURRENT avatar each time the modal opens.
+  // tempUrl's useState initializer runs once at mount — when the room's
+  // ai_avatar_url often hadn't loaded yet — so opening later showed the default
+  // and "Apply Look" silently overwrote a real custom avatar with it.
+  useEffect(() => {
+    if (show) setTempUrl(currentAvatarUrl || DEFAULT_BOT_AVATAR);
+  }, [show, currentAvatarUrl]);
+
   if (!show) return null;
 
   const handleGenerateRandom = () => {
@@ -34,6 +42,7 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !e.target.files[0]) return;
     const file = e.target.files[0];
+    e.target.value = ''; // allow re-selecting the same file after a failed upload
     try {
       const compressed = await compressImage(file);
       const fileName = `ai_avatar_${Date.now()}.${compressed.name.split('.').pop()}`;
@@ -116,7 +125,14 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
                   className="w-full pl-3 pr-10 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-950 outline-none focus:ring-2 focus:ring-purple-500"
                 />
                 <button
-                  onClick={() => { if(linkValue.startsWith('http')) setTempUrl(linkValue); setShowLinkInput(false); }}
+                  onClick={() => {
+                    // https only — this is saved room-wide into rooms.ai_avatar_url
+                    // for every member (http:// = mixed content / broken).
+                    try {
+                      if (new URL(linkValue).protocol === 'https:') { setTempUrl(linkValue); setShowLinkInput(false); }
+                      else alert('Please use an https:// image URL.');
+                    } catch { alert('Please enter a valid image URL.'); }
+                  }}
                   aria-label="Use this image URL"
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-purple-500 text-white rounded-lg"
                 >
