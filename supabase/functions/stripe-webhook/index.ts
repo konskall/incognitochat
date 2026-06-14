@@ -87,6 +87,12 @@ Deno.serve(async (req: Request) => {
     }
     // Permanent (a retry won't fix it) -> ack 200 + log, keep the idempotency row.
     if (!uid) { console.error("no uid on subscription", subscriptionId); return json({ received: true, skipped: "NO_UID" }, 200); }
+    // Permanent: a non-UUID uid (bad metadata) would 22P02 on the uuid columns and
+    // loop Stripe retries for days — ack as a permanent skip instead.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid)) {
+      console.error("malformed uid in Stripe metadata", uid, subscriptionId);
+      return json({ received: true, skipped: "MALFORMED_UID" }, 200);
+    }
 
     const priceId = sub.items.data[0]?.price?.id;
     const tier = tierForPrice(priceId, PRICE_BASIC, PRICE_ULTRA);
@@ -117,7 +123,14 @@ Deno.serve(async (req: Request) => {
       await admin.from("stripe_events").delete().eq("id", event.id);
       return json({ error: "DB_ERROR" }, 500);
     }
-    await admin.rpc("reconcile_entitlements", { p_uid: uid });
+    const { error: rpcErr } = await admin.rpc("reconcile_entitlements", { p_uid: uid });
+    if (rpcErr) {
+      // Retryable: the subscription row is written but entitlements weren't
+      // reconciled — release the idempotency claim so Stripe retries the sync.
+      console.error("reconcile_entitlements failed (will retry)", rpcErr);
+      await admin.from("stripe_events").delete().eq("id", event.id);
+      return json({ error: "RECONCILE_ERROR" }, 500);
+    }
     return json({ received: true, uid, tier, status: sub.status }, 200);
   } catch (e) {
     // Retryable failure (Stripe retrieve / reconcile / network): release the
