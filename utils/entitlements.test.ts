@@ -1,0 +1,64 @@
+import { describe, it, expect } from 'vitest';
+import {
+  TIER_CONFIG, resolveTier, entitlements, messagesRemaining, type SubscriptionRow,
+} from './entitlements';
+
+const T0 = Date.parse('2026-06-14T12:00:00.000Z');
+const sub = (over: Partial<SubscriptionRow>): SubscriptionRow =>
+  ({ tier: 'basic', status: 'active', current_period_end: null, ...over });
+
+describe('resolveTier (mirror of SQL effective_tier)', () => {
+  it('no subscription row -> free', () => {
+    expect(resolveTier(null, T0)).toBe('free');
+  });
+  it('active -> the subscribed tier', () => {
+    expect(resolveTier(sub({ tier: 'ultra', status: 'active' }), T0)).toBe('ultra');
+    expect(resolveTier(sub({ tier: 'basic', status: 'trialing' }), T0)).toBe('basic');
+  });
+  it('canceled but still within paid period -> tier (grace)', () => {
+    expect(resolveTier(sub({ status: 'canceled', current_period_end: '2026-06-20T00:00:00.000Z' }), T0)).toBe('basic');
+  });
+  it('canceled and period elapsed -> free', () => {
+    expect(resolveTier(sub({ status: 'canceled', current_period_end: '2026-06-10T00:00:00.000Z' }), T0)).toBe('free');
+  });
+  it('past_due within period -> tier; past_due with null period -> free', () => {
+    expect(resolveTier(sub({ status: 'past_due', current_period_end: '2026-06-20T00:00:00.000Z' }), T0)).toBe('basic');
+    expect(resolveTier(sub({ status: 'past_due', current_period_end: null }), T0)).toBe('free');
+  });
+  it('unknown/incomplete status -> free', () => {
+    expect(resolveTier(sub({ status: 'incomplete', current_period_end: null }), T0)).toBe('free');
+  });
+});
+
+describe('entitlements + helpers', () => {
+  it('exposes the spec limits per tier', () => {
+    expect(entitlements('free').msgPerRoomPerDay).toBe(10);
+    expect(entitlements('basic').msgPerRoomPerDay).toBe(100);
+    expect(entitlements('ultra').msgPerRoomPerDay).toBeNull();
+    expect(entitlements('free').maxRooms).toBe(1);
+    expect(entitlements('basic').maxRooms).toBe(10);
+    expect(entitlements('ultra').maxRooms).toBeNull();
+    expect(entitlements('free').roomLifetimeHours).toBe(24);
+    expect(entitlements('basic').roomLifetimeHours).toBeNull();
+    expect(entitlements('ultra').maxFileBytes).toBe(40 * 1024 * 1024);
+    expect(entitlements('free').maxFileBytes).toBe(10 * 1024 * 1024);
+  });
+  it('gates premium features per tier', () => {
+    expect(entitlements('free').canAudioCall).toBe(false);
+    expect(entitlements('basic').canAudioCall).toBe(true);
+    expect(entitlements('basic').canVideoCall).toBe(false);
+    expect(entitlements('basic').canAI).toBe(false);
+    expect(entitlements('ultra').canVideoCall).toBe(true);
+    expect(entitlements('ultra').canScreenShare).toBe(true);
+    expect(entitlements('ultra').canAI).toBe(true);
+    expect(entitlements('basic').canRoomAppearance).toBe(true);
+    expect(entitlements('basic').canDisappearing).toBe(true);
+    expect(entitlements('free').canRoomAppearance).toBe(false);
+  });
+  it('messagesRemaining clamps at 0 and returns null for unlimited', () => {
+    expect(messagesRemaining('free', 0)).toBe(10);
+    expect(messagesRemaining('free', 10)).toBe(0);
+    expect(messagesRemaining('free', 15)).toBe(0);
+    expect(messagesRemaining('ultra', 9999)).toBeNull();
+  });
+});
