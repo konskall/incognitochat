@@ -50,3 +50,24 @@ create index if not exists idx_rooms_expires_at on public.rooms (expires_at)
   where expires_at is not null;
 ```
 Verify: has_expires=1, has_locked=1, rooms_with_expiry=0 (NO backfill), locked_rooms=0, both indexes present. ✅
+
+## monetization_p1_effective_tier
+```sql
+create or replace function public.effective_tier(p_uid uuid)
+returns text language sql stable security definer set search_path to 'public','pg_temp' as $$
+  select coalesce((
+    select s.tier
+    from public.subscriptions s
+    where s.user_id = p_uid
+      and (
+        s.status in ('active','trialing')
+        or (s.status in ('past_due','canceled') and s.current_period_end is not null and s.current_period_end > now())
+      )
+    order by case s.tier when 'ultra' then 2 when 'basic' then 1 else 0 end desc
+    limit 1
+  ), 'free');
+$$;
+revoke execute on function public.effective_tier(uuid) from public;
+grant execute on function public.effective_tier(uuid) to anon, authenticated, service_role;
+```
+Verify: none=free, active=ultra, cancel_future=ultra, cancel_past=free; leaked_subs=0, leaked_users=0. ✅
