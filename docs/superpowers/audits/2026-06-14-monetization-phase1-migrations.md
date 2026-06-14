@@ -267,3 +267,43 @@ end;
 $function$;
 ```
 Error code: QT003=ROOM_LIMIT:<tier>. Verify: free 2nd room blocked (QT003) + first room 24h expiry; ultra 2 rooms ok + expires_at NULL; JSON shape unchanged; no leaks. ✅
+
+## monetization_p1_reconcile_entitlements
+```sql
+create or replace function public.reconcile_entitlements(p_uid uuid)
+returns void language plpgsql security definer set search_path to 'public','pg_temp' as $$
+declare
+  v_tier  text := public.effective_tier(p_uid);
+  v_limit int  := case v_tier when 'ultra' then null when 'basic' then 10 else 1 end;
+begin
+  if v_tier <> 'free' then
+    update public.rooms set expires_at = null
+     where created_by = p_uid and expires_at is not null;
+  end if;
+
+  if v_limit is null then
+    update public.rooms set locked = false where created_by = p_uid and locked;
+    return;
+  end if;
+
+  with ranked as (
+    select r.room_key,
+           row_number() over (
+             order by coalesce(
+               (select max(m.created_at) from public.messages m where m.room_key = r.room_key),
+               r.created_at
+             ) desc
+           ) as rn
+    from public.rooms r
+    where r.created_by = p_uid
+  )
+  update public.rooms r
+     set locked = (ranked.rn > v_limit)
+    from ranked
+   where ranked.room_key = r.room_key
+     and r.locked is distinct from (ranked.rn > v_limit);
+end; $$;
+revoke execute on function public.reconcile_entitlements(uuid) from public, anon, authenticated;
+grant execute on function public.reconcile_entitlements(uuid) to service_role;
+```
+Verify: downgrade locks 2 oldest + keeps newest (__qc__) writable; upgrade-to-ultra unlocks all + clears expiry; no leaks. ✅
