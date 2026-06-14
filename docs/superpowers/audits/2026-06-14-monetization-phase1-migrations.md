@@ -23,3 +23,19 @@ create policy subs_select_own on public.subscriptions
 create index if not exists idx_subscriptions_stripe_customer on public.subscriptions (stripe_customer_id);
 ```
 Verify: tbl=1, policies=1, rls_on=true, write_policies=0. ✅
+
+## monetization_p1_subscriptions_updated_at_trigger
+```sql
+create or replace function public.set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at := now();
+  return new;
+end; $$;
+
+drop trigger if exists trg_subscriptions_updated_at on public.subscriptions;
+create trigger trg_subscriptions_updated_at
+  before update on public.subscriptions
+  for each row execute function public.set_updated_at();
+```
+Verify: updated_at_overridden=t, leaked=0. ✅ (review fix: updated_at would otherwise freeze at insert time)
