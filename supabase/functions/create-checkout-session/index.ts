@@ -28,7 +28,12 @@ Deno.serve(async (req: Request) => {
     if (!STRIPE_SECRET_KEY || !PRICE_BASIC || !PRICE_ULTRA) {
       return json({ error: "STRIPE_NOT_CONFIGURED" }, 503);
     }
-    const APP_URL = Deno.env.get("APP_URL") ?? "https://konskall.github.io/incognitochat/";
+    // Sanitize APP_URL: an empty/whitespace/malformed secret would make the Stripe
+    // success/cancel URLs invalid (StripeInvalidRequestError url_invalid). Trim +
+    // validate; fall back to the prod origin if it isn't a real URL.
+    const DEFAULT_APP_URL = "https://konskall.github.io/incognitochat/";
+    let APP_URL = DEFAULT_APP_URL;
+    try { APP_URL = new URL((Deno.env.get("APP_URL") ?? "").trim() || DEFAULT_APP_URL).toString(); } catch { APP_URL = DEFAULT_APP_URL; }
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
     const authHeader = req.headers.get("Authorization") ?? "";

@@ -23,7 +23,11 @@ Deno.serve(async (req: Request) => {
   try {
     const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
     if (!STRIPE_SECRET_KEY) return json({ error: "STRIPE_NOT_CONFIGURED" }, 503);
-    const APP_URL = Deno.env.get("APP_URL") ?? "https://konskall.github.io/incognitochat/";
+    // Sanitize APP_URL (see create-checkout-session): a malformed secret would make
+    // the portal return_url invalid. Trim + validate; fall back to the prod origin.
+    const DEFAULT_APP_URL = "https://konskall.github.io/incognitochat/";
+    let APP_URL = DEFAULT_APP_URL;
+    try { APP_URL = new URL((Deno.env.get("APP_URL") ?? "").trim() || DEFAULT_APP_URL).toString(); } catch { APP_URL = DEFAULT_APP_URL; }
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
