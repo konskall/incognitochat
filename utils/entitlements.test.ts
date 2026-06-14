@@ -15,6 +15,9 @@ describe('resolveTier (mirror of SQL effective_tier)', () => {
     expect(resolveTier(sub({ tier: 'ultra', status: 'active' }), T0)).toBe('ultra');
     expect(resolveTier(sub({ tier: 'basic', status: 'trialing' }), T0)).toBe('basic');
   });
+  it('active wins regardless of an elapsed period_end', () => {
+    expect(resolveTier(sub({ tier: 'basic', status: 'active', current_period_end: '2020-01-01T00:00:00.000Z' }), T0)).toBe('basic');
+  });
   it('canceled but still within paid period -> tier (grace)', () => {
     expect(resolveTier(sub({ status: 'canceled', current_period_end: '2026-06-20T00:00:00.000Z' }), T0)).toBe('basic');
   });

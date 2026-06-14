@@ -19,7 +19,7 @@ export interface TierEntitlements {
 
 const MB = 1024 * 1024;
 
-export const TIER_CONFIG: Record<Tier, TierEntitlements> = {
+export const TIER_CONFIG: Readonly<Record<Tier, Readonly<TierEntitlements>>> = {
   free: {
     msgPerRoomPerDay: 10, maxRooms: 1, maxFileBytes: 10 * MB, roomLifetimeHours: 24,
     canAudioCall: false, canVideoCall: false, canScreenShare: false,
@@ -38,7 +38,7 @@ export const TIER_CONFIG: Record<Tier, TierEntitlements> = {
 };
 
 export interface SubscriptionRow {
-  tier: 'basic' | 'ultra';
+  tier: 'basic' | 'ultra'; // free users have no subscription row; never 'free' here
   status: string;            // Stripe subscription status, verbatim
   current_period_end: string | null; // ISO timestamp
 }
@@ -55,7 +55,7 @@ export function resolveTier(sub: SubscriptionRow | null, nowMs: number): Tier {
   return entitled ? sub.tier : 'free';
 }
 
-export function entitlements(tier: Tier): TierEntitlements {
+export function entitlements(tier: Tier): Readonly<TierEntitlements> {
   return TIER_CONFIG[tier];
 }
 
