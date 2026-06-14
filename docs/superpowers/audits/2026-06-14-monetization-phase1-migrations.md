@@ -71,3 +71,49 @@ revoke execute on function public.effective_tier(uuid) from public;
 grant execute on function public.effective_tier(uuid) to anon, authenticated, service_role;
 ```
 Verify: none=free, active=ultra, cancel_future=ultra, cancel_past=free; leaked_subs=0, leaked_users=0. ✅
+
+## monetization_p1_message_quota_trigger
+```sql
+create or replace function public.enforce_message_quota()
+returns trigger language plpgsql security definer set search_path to 'public','pg_temp' as $$
+declare
+  v_tier  text;
+  v_limit int;
+  v_count int;
+  v_locked boolean;
+begin
+  if coalesce(NEW.type,'text') = 'system' then
+    return NEW;
+  end if;
+
+  select locked into v_locked from public.rooms where room_key = NEW.room_key;
+  if coalesce(v_locked, false) then
+    raise exception 'ROOM_LOCKED';
+  end if;
+
+  v_tier  := public.effective_tier(NEW.uid::uuid);
+  v_limit := case v_tier when 'ultra' then null when 'basic' then 100 else 10 end;
+  if v_limit is null then
+    return NEW;
+  end if;
+
+  select count(*) into v_count
+  from public.messages m
+  where m.uid = NEW.uid
+    and m.room_key = NEW.room_key
+    and coalesce(m.type,'text') <> 'system'
+    and m.created_at >= (date_trunc('day', now() at time zone 'Europe/Athens') at time zone 'Europe/Athens');
+
+  if v_count >= v_limit then
+    raise exception 'QUOTA_EXCEEDED:%', v_tier;
+  end if;
+
+  return NEW;
+end; $$;
+
+drop trigger if exists trg_enforce_message_quota on public.messages;
+create trigger trg_enforce_message_quota
+  before insert on public.messages
+  for each row execute function public.enforce_message_quota();
+```
+Verify: free_11th_blocked=t, ultra_unlimited=t, system_exempt=t, leaked_rooms/subs/users all 0. ✅
