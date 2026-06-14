@@ -33,3 +33,20 @@ Do this in Stripe **Test mode** first.
    `APP_URL=https://konskall.github.io/incognitochat/`.
 
 Once secrets are set + webhook registered → resume at Task 6 (end-to-end test in Stripe test mode).
+
+## End-to-end test (Stripe test mode) — PASSED ✅
+Real test checkout (card 4242…) by a Google user:
+- `subscriptions`: 1 row — tier=`basic`, status=`active`, current_period_end ≈ +1 month, cancel_at_period_end=false, stripe_customer_id + stripe_subscription_id set. `updated_at` > `created_at` (updated_at trigger fired on the follow-up events).
+- `public.effective_tier(user_id)` = **`basic`** ✅
+- `stripe_events`: 4 events recorded idempotently for the one subscription —
+  `invoice.paid`, `checkout.session.completed`, `customer.subscription.created`,
+  `customer.subscription.updated` — all converged onto the single subscriptions row
+  via onConflict(user_id) (out-of-order tolerant). No duplicates, no errors.
+
+### Bug found + fixed during e2e: `APP_URL` url_invalid
+First checkout returned 500. Diagnostic build pinpointed `step=checkout_create`,
+`StripeInvalidRequestError: "Not a valid URL"` (`url_invalid`). Cause: the
+`success_url`/`cancel_url` were `${APP_URL}?...` and the `?? default` fallback only
+guards null/undefined — a malformed/empty `APP_URL` secret produced an invalid URL.
+Fix (commit `367892c`): both checkout + portal now `trim()` + `new URL()`-validate
+APP_URL and fall back to the prod origin. Redeployed checkout v9 / portal v7.
