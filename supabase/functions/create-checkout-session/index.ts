@@ -74,6 +74,7 @@ Deno.serve(async (req: Request) => {
       cancel_url: `${APP_URL}?checkout=cancel`,
       allow_promotion_codes: true,
     });
+    if (!session.url) return json({ error: "NO_CHECKOUT_URL" }, 500);
     return json({ url: session.url }, 200);
   } catch (e) {
     console.error("create-checkout-session error", e);
