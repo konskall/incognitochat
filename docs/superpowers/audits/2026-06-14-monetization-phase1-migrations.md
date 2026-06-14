@@ -39,3 +39,14 @@ create trigger trg_subscriptions_updated_at
   for each row execute function public.set_updated_at();
 ```
 Verify: updated_at_overridden=t, leaked=0. ✅ (review fix: updated_at would otherwise freeze at insert time)
+
+## monetization_p1_rooms_columns_and_index
+```sql
+alter table public.rooms add column if not exists expires_at timestamptz;
+alter table public.rooms add column if not exists locked boolean not null default false;
+create index if not exists idx_messages_uid_room_created
+  on public.messages (room_key, uid, created_at);
+create index if not exists idx_rooms_expires_at on public.rooms (expires_at)
+  where expires_at is not null;
+```
+Verify: has_expires=1, has_locked=1, rooms_with_expiry=0 (NO backfill), locked_rooms=0, both indexes present. ✅
