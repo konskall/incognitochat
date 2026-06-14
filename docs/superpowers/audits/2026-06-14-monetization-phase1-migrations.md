@@ -345,3 +345,24 @@ begin
 end; $$;
 ```
 Verify: ranking deterministic on created_at ties (secondary sort r.room_key); repeated reconciles lock the same room (__qz_bbb__); no leaks. ✅ (review fix)
+
+## monetization_p1_purge_crons
+```sql
+select cron.schedule(
+  'purge-expired-free-rooms',
+  '*/15 * * * *',
+  $$ delete from public.rooms where expires_at is not null and expires_at < now(); $$
+);
+
+select cron.schedule(
+  'purge-expired-messages',
+  '*/5 * * * *',
+  $$ delete from public.messages m
+     using public.rooms r
+     where m.room_key = r.room_key
+       and r.message_ttl_seconds is not null
+       and coalesce(m.type,'text') <> 'system'
+       and m.created_at < now() - (r.message_ttl_seconds || ' seconds')::interval; $$
+);
+```
+Verify: both jobs scheduled & active; predicates match an expired free room + TTL-expired message (dry-run, rolled back); first-run impact on real data = 0 rooms / 0 messages. ✅
