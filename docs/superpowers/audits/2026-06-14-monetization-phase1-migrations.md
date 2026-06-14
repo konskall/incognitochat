@@ -366,3 +366,10 @@ select cron.schedule(
 );
 ```
 Verify: both jobs scheduled & active; predicates match an expired free room + TTL-expired message (dry-run, rolled back); first-run impact on real data = 0 rooms / 0 messages. ✅
+
+## Verification sweep (Task 10)
+Object inventory: subscriptions_tbl=1, rooms_cols=2, funcs=5, triggers=3, crons=2.
+Leak check: leaked_rooms=0, leaked_subs=0, leaked_users=0, leaked_messages=0.
+Production integrity: total_rooms=11 intact, rooms_with_expiry=0, locked_rooms=0, total_subscriptions=0.
+Error-code contract: QT001=ROOM_LOCKED, QT002=QUOTA_EXCEEDED:<tier>, QT003=ROOM_LIMIT:<tier>, QT004=TIER_REQUIRED:<feature>.
+Phase 1 entitlements core complete & verified. ✅
