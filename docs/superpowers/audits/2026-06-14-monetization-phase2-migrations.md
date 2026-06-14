@@ -50,3 +50,12 @@ First checkout returned 500. Diagnostic build pinpointed `step=checkout_create`,
 guards null/undefined — a malformed/empty `APP_URL` secret produced an invalid URL.
 Fix (commit `367892c`): both checkout + portal now `trim()` + `new URL()`-validate
 APP_URL and fall back to the prod origin. Redeployed checkout v9 / portal v7.
+
+### Cancel path verified ✅
+Cancelled the test subscription via the Customer Portal → webhook received 2
+`customer.subscription.updated` events → subscriptions row synced to
+`cancel_at_period_end=true` (status stays `active`, current_period_end unchanged) →
+`effective_tier` remains `basic` until the period end, then auto-reverts to `free`
+(grace behavior working as designed). Final function state: create-checkout-session
+& create-portal-session verify_jwt=true, stripe-webhook verify_jwt=false — all ACTIVE.
+Phase 2 complete.
