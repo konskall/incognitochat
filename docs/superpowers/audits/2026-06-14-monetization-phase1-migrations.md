@@ -158,3 +158,37 @@ begin
 end; $$;
 ```
 Error-code contract: QT001=ROOM_LOCKED, QT002=QUOTA_EXCEEDED:<tier>. Verify: quota_sqlstate=QT002, locked_sqlstate=QT001, no leaks. ✅ (review fix: stable SQLSTATE instead of message-string parsing)
+
+## monetization_p1_room_tier_guard
+```sql
+create or replace function public.enforce_room_tier()
+returns trigger language plpgsql security definer set search_path to 'public','pg_temp' as $$
+declare
+  v_tier text := public.effective_tier((select auth.uid()));
+begin
+  if ( (NEW.ai_enabled is distinct from OLD.ai_enabled and coalesce(NEW.ai_enabled,false) = true)
+       or NEW.ai_avatar_url is distinct from OLD.ai_avatar_url )
+     and v_tier <> 'ultra' then
+    raise exception 'TIER_REQUIRED:ai' using errcode = 'QT004';
+  end if;
+
+  if ( NEW.message_ttl_seconds is distinct from OLD.message_ttl_seconds
+       or NEW.auto_delete_seconds is distinct from OLD.auto_delete_seconds
+       or NEW.avatar_url        is distinct from OLD.avatar_url
+       or NEW.background_type    is distinct from OLD.background_type
+       or NEW.background_preset  is distinct from OLD.background_preset
+       or NEW.background_url     is distinct from OLD.background_url
+       or NEW.display_name       is distinct from OLD.display_name )
+     and v_tier = 'free' then
+    raise exception 'TIER_REQUIRED:basic' using errcode = 'QT004';
+  end if;
+
+  return NEW;
+end; $$;
+
+drop trigger if exists trg_enforce_room_tier on public.rooms;
+create trigger trg_enforce_room_tier
+  before update on public.rooms
+  for each row execute function public.enforce_room_tier();
+```
+Error code: QT004=TIER_REQUIRED:<feature>. Verify: free_state=QT004 (appearance blocked), basic_ai_state=QT004 (AI blocked below ultra), ultra_ok=t, lock_ok=t (reconcile path ungated), no leaks. ✅
