@@ -1309,9 +1309,15 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                         </span>
                       </div>
                       <ul className="text-sm text-slate-600 dark:text-slate-300 space-y-1 mb-4">
-                        <li>{ent.maxRooms === null ? 'Unlimited rooms' : `${ent.maxRooms} room${ent.maxRooms === 1 ? '' : 's'}`}</li>
-                        <li>{ent.msgPerRoomPerDay === null ? 'Unlimited messages' : `${ent.msgPerRoomPerDay} messages/day per room`}</li>
-                        <li>{`Up to ${Math.round(ent.maxFileBytes / (1024 * 1024))}MB files`}</li>
+                        {entLoading ? (
+                          <li className="text-slate-400 dark:text-slate-500">Loading your plan…</li>
+                        ) : (
+                          <>
+                            <li>{ent.maxRooms === null ? 'Unlimited rooms' : `${ent.maxRooms} room${ent.maxRooms === 1 ? '' : 's'}`}</li>
+                            <li>{ent.msgPerRoomPerDay === null ? 'Unlimited messages' : `${ent.msgPerRoomPerDay} messages/day per room`}</li>
+                            <li>{`Up to ${Math.round(ent.maxFileBytes / (1024 * 1024))}MB files`}</li>
+                          </>
+                        )}
                       </ul>
                       {!entLoading && (tier === 'free' ? (
                         <div className="flex gap-2">
