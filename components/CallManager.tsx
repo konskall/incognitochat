@@ -38,6 +38,7 @@ interface CallManagerProps {
   // Tier plumbing (Phase 3): entitlements + upgrade prompt; gates
   // audio/video/screen-share by tier (see gateCall + canShareScreen).
   ent?: import('../utils/entitlements').TierEntitlements;
+  entLoading?: boolean;
   onUpgrade?: (featureLabel: string, requiredTier: 'basic' | 'ultra', reason?: string) => void;
 }
 

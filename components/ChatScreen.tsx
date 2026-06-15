@@ -90,7 +90,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   // --- Monetization plumbing (Phase 3) ---
   // Resolve this member's effective tier + entitlements (DB-authoritative mirror).
-  const { tier, ent } = useEntitlements(user?.uid);
+  const { tier, ent, loading: entLoading } = useEntitlements(user?.uid);
 
   // A shared upgrade prompt: child components call promptUpgrade(...) when a
   // gated feature is tapped; this opens the UpgradeModal.
@@ -1248,6 +1248,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
               onCloseParticipants={() => setShowParticipantsList(false)}
               roomCreatorId={roomCreatorId}
               ent={ent}
+              entLoading={entLoading}
               onUpgrade={promptUpgrade}
             />
           </Suspense>
@@ -1477,6 +1478,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onOpenEmail={() => setShowEmailModal(true)}
         onDeleteRoom={() => setShowDeleteModal(true)}
         ent={ent}
+        entLoading={entLoading}
         onUpgrade={promptUpgrade}
       />
 

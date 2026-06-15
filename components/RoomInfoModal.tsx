@@ -32,6 +32,7 @@ interface RoomInfoModalProps {
   // Tier plumbing (Phase 3): entitlements + upgrade prompt; gates the
   // appearance / disappearing / auto-delete / AI rows by tier.
   ent?: import('../utils/entitlements').TierEntitlements;
+  entLoading?: boolean;
   onUpgrade?: (featureLabel: string, requiredTier: 'basic' | 'ultra', reason?: string) => void;
 }
 
@@ -63,7 +64,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   aiEnabled, messageTtlLabel, roomExpiryLabel, emailAlertsEnabled,
   onToggleSearch, onOpenGallery, onOpenParticipants, onToggleAI, onOpenAiAvatar,
   onOpenRoomAppearance, onOpenEphemeral, onOpenRoomExpiry, onOpenEmail, onDeleteRoom,
-  ent, onUpgrade,
+  ent, entLoading, onUpgrade,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
@@ -160,7 +161,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
         {showAi && (
           <>
             <SectionLabel>Inco AI</SectionLabel>
-            {ent && !ent.canAI ? (
+            {!entLoading && ent && !ent.canAI ? (
               <Row
                 icon={<Wand2 size={18} />}
                 label="Inco AI assistant"
@@ -181,7 +182,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
                 }
               />
             )}
-            {ent && !ent.canAI ? (
+            {!entLoading && ent && !ent.canAI ? (
               <Row icon={<Sparkles size={18} />} label="Customize AI look" onClick={() => { onClose(); onUpgrade?.('Inco AI', 'ultra'); }} tint="bg-purple-500/10 text-purple-500" trailing={lockedTrailing} />
             ) : (
               <Row icon={<Sparkles size={18} />} label="Customize AI look" onClick={() => go(onOpenAiAvatar)} tint="bg-purple-500/10 text-purple-500" />
@@ -192,14 +193,14 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
         {/* Room settings */}
         <SectionLabel>Room</SectionLabel>
         {canManage && (
-          ent && !ent.canRoomAppearance ? (
+          !entLoading && ent && !ent.canRoomAppearance ? (
             <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => { onClose(); onUpgrade?.('Room appearance', 'basic'); }} tint="bg-blue-500/10 text-blue-500" trailing={lockedTrailing} />
           ) : (
             <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => go(onOpenRoomAppearance)} tint="bg-blue-500/10 text-blue-500" />
           )
         )}
         {canManage && (
-          ent && !ent.canDisappearing ? (
+          !entLoading && ent && !ent.canDisappearing ? (
             <Row
               icon={<Timer size={18} />}
               label="Disappearing messages"
@@ -224,7 +225,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
         )}
         {/* Auto-delete room — logged-in users only (per request). */}
         {isGoogleUser && (
-          ent && !ent.canDisappearing ? (
+          !entLoading && ent && !ent.canDisappearing ? (
             <Row
               icon={<Trash2 size={18} />}
               label="Auto-delete room"
