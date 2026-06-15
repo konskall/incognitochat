@@ -29,6 +29,10 @@ interface RoomInfoModalProps {
   onOpenRoomExpiry: () => void;
   onOpenEmail: () => void;
   onDeleteRoom: () => void;
+  // Tier plumbing (Phase 3): entitlements + upgrade prompt for gating room
+  // settings by tier. Declared for a later task; not consumed yet.
+  ent?: import('../utils/entitlements').TierEntitlements;
+  onUpgrade?: (featureLabel: string, requiredTier: 'basic' | 'ultra', reason?: string) => void;
 }
 
 // A tappable navigation row (icon chip + label + optional trailing badge/chevron).

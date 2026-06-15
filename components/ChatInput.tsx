@@ -38,6 +38,10 @@ interface ChatInputProps {
   typingUsers: string[];
 
   onOpenPoll: () => void;
+
+  // Tier-derived upload cap (bytes). Declared for a later task that gates file
+  // size by tier; not consumed yet.
+  maxFileBytes?: number;
 }
 
 const MAX_FILE_SIZE = 40 * 1024 * 1024; // 40MB

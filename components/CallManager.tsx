@@ -35,6 +35,10 @@ interface CallManagerProps {
   onCloseParticipants: () => void;
   showParticipants: boolean;
   roomCreatorId?: string | null;
+  // Tier plumbing (Phase 3): entitlements + upgrade prompt for gating
+  // audio/video/screen-share by tier. Declared for a later task; not consumed yet.
+  ent?: import('../utils/entitlements').TierEntitlements;
+  onUpgrade?: (featureLabel: string, requiredTier: 'basic' | 'ultra', reason?: string) => void;
 }
 
 // A single video/audio tile (local or remote). Binds the MediaStream to its own

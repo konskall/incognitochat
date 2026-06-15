@@ -31,6 +31,8 @@ import { useChatMessages } from '../hooks/useChatMessages';
 import { useRoomPresence } from '../hooks/useRoomPresence';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useIncoAI } from '../hooks/useIncoAI';
+import { useEntitlements } from '../hooks/useEntitlements';
+import UpgradeModal from './UpgradeModal';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -84,6 +86,23 @@ const RoomDeletedToast: React.FC<{ onExit: () => void, onRecreate: () => void }>
 const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
   const [inputText, setInputText] = useState('');
+
+  // --- Monetization plumbing (Phase 3) ---
+  // Resolve this member's effective tier + entitlements (DB-authoritative mirror).
+  const { tier, ent } = useEntitlements(user?.uid);
+
+  // A shared upgrade prompt: child components call promptUpgrade(...) when a
+  // gated feature is tapped; this opens the UpgradeModal. Stays null (closed)
+  // until a later task actually wires the gates.
+  const [upgradePrompt, setUpgradePrompt] = useState<
+    { featureLabel: string; requiredTier: 'basic' | 'ultra'; reason?: string } | null
+  >(null);
+
+  const promptUpgrade = useCallback(
+    (featureLabel: string, requiredTier: 'basic' | 'ultra', reason?: string) =>
+      setUpgradePrompt({ featureLabel, requiredTier, reason }),
+    []
+  );
   
   // UI States
   const [isDeleting, setIsDeleting] = useState(false);
@@ -1214,6 +1233,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
               showParticipants={showParticipantsList}
               onCloseParticipants={() => setShowParticipantsList(false)}
               roomCreatorId={roomCreatorId}
+              ent={ent}
+              onUpgrade={promptUpgrade}
             />
           </Suspense>
       )}
@@ -1343,6 +1364,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             isRoomReady={isRoomReady}
             typingUsers={combinedTypingUsers}
             onOpenPoll={() => setShowPollComposer(true)}
+            maxFileBytes={ent.maxFileBytes}
         />
       )}
 
@@ -1436,6 +1458,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onOpenRoomExpiry={() => setShowRoomExpiry(true)}
         onOpenEmail={() => setShowEmailModal(true)}
         onDeleteRoom={() => setShowDeleteModal(true)}
+        ent={ent}
+        onUpgrade={promptUpgrade}
       />
 
       <MediaGalleryModal
@@ -1444,6 +1468,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         media={galleryMedia}
         files={galleryFiles}
         links={galleryLinks}
+      />
+
+      <UpgradeModal
+        open={!!upgradePrompt}
+        onClose={() => setUpgradePrompt(null)}
+        requiredTier={upgradePrompt?.requiredTier ?? 'basic'}
+        currentTier={tier}
+        featureLabel={upgradePrompt?.featureLabel ?? ''}
+        reason={upgradePrompt?.reason}
       />
 
       {selectedUserPresence && (
