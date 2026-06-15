@@ -137,6 +137,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [bgType, setBgType] = useState('preset');
   const [bgPreset, setBgPreset] = useState('dots');
   const [bgUrl, setBgUrl] = useState('');
+  // Preload a room's custom background image so the chat area shows the room's
+  // gradient preset (not a gray blank) until the image is decoded, then swaps to
+  // it. onerror leaves the gradient up rather than a broken/gray image.
+  const [bgReady, setBgReady] = useState(false);
+  useEffect(() => {
+    if (bgType !== 'image' || !bgUrl) { setBgReady(false); return; }
+    setBgReady(false);
+    const img = new Image();
+    img.onload = () => setBgReady(true);
+    img.src = bgUrl;
+    return () => { img.onload = null; };
+  }, [bgType, bgUrl]);
   const [showRoomAppearance, setShowRoomAppearance] = useState(false);
 
   // Disappearing messages: per-room TTL in seconds (null = off).
@@ -1354,7 +1366,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         ref={mainRef}
         onScroll={handleMainScroll}
         className="relative flex-1 overflow-y-auto overflow-x-clip overscroll-contain p-4 pb-20 transition-colors"
-        style={getRoomBackgroundStyle({ type: bgType, preset: bgPreset, url: bgUrl }, isDarkMode)}
+        style={getRoomBackgroundStyle({ type: bgType === 'image' && !bgReady ? 'preset' : bgType, preset: bgPreset, url: bgUrl }, isDarkMode)}
       >
         <MessageList
             messages={messages}

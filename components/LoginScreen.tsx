@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatConfig } from '../types';
 import { generateRoomKey, initAudio, beginThemeTransition, ROOM_NAME_RE, ROOM_PIN_RE, ROOM_NAME_RULE, ROOM_PIN_RULE } from '../utils/helpers';
-import { Info, ChevronDown, ChevronUp, Eye, EyeOff, Moon, Sun, History, X, Trash2, AlertCircle, CheckCircle, AlertTriangle, User, KeyRound, DoorOpen } from 'lucide-react';
+import { Info, ChevronDown, ChevronUp, Eye, EyeOff, Moon, Sun, History, X, Trash2, AlertCircle, CheckCircle, AlertTriangle, User, KeyRound, DoorOpen, Shuffle } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import InstallButton from './InstallButton';
 
@@ -471,9 +471,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
                         <button
                             type="button"
                             onClick={regenerateAvatar}
-                            className={`text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 py-2 px-3 rounded-lg font-bold hover:bg-blue-200 dark:hover:bg-blue-900/60 transition ${focusRing}`}
+                            className={`inline-flex items-center justify-center gap-1.5 text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 py-2 px-3 rounded-lg font-bold hover:bg-blue-200 dark:hover:bg-blue-900/60 transition ${focusRing}`}
                         >
-                            🔀 Shuffle Look
+                            <Shuffle size={13} /> Shuffle Look
                         </button>
                     </div>
                 </div>

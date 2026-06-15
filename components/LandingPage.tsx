@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown, Sun, Moon, ArrowUp, Sparkles, Timer, Bell } from 'lucide-react';
+import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown, Sun, Moon, ArrowUp, Sparkles, Gem, Timer, Bell } from 'lucide-react';
 import InstallButton from './InstallButton';
 import PricingSection from './PricingSection';
 import { beginThemeTransition } from '../utils/helpers';
@@ -265,7 +265,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
               >
                 <span aria-hidden="true" className="absolute -inset-0.5 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-500 opacity-40 blur-md group-hover:opacity-80 transition-opacity"></span>
                 <span className="relative flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 -mx-8 -my-4 px-8 py-4 rounded-2xl shadow-xl shadow-purple-500/30">
-                  <Sparkles size={20} className="group-hover:rotate-12 transition-transform" />
+                  <Gem size={20} className="group-hover:rotate-12 transition-transform" />
                   View Plans
                 </span>
               </button>

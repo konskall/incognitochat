@@ -1381,16 +1381,16 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         role="switch"
                                         aria-checked={ephemeral}
                                         onClick={() => setEphemeral((v) => !v)}
-                                        className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all ${ephemeral ? 'border-amber-400/70 bg-amber-50 dark:bg-amber-500/10 ring-1 ring-amber-400/30' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 hover:border-slate-300 dark:hover:border-slate-600'}`}
+                                        className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all ${ephemeral ? 'border-red-400/70 bg-red-50 dark:bg-red-500/10 ring-1 ring-red-400/30' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 hover:border-slate-300 dark:hover:border-slate-600'}`}
                                     >
-                                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${ephemeral ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/30' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+                                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${ephemeral ? 'bg-red-500 text-white shadow-sm shadow-red-500/30' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
                                             <Clock size={18} />
                                         </span>
                                         <span className="min-w-0 flex-1">
                                             <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">Ephemeral room</span>
                                             <span className="block text-xs text-slate-500 dark:text-slate-400">Auto-deletes 24h after the last message · new rooms only</span>
                                         </span>
-                                        <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${ephemeral ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                                        <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${ephemeral ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
                                             <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${ephemeral ? 'translate-x-5' : 'translate-x-0'}`} />
                                         </span>
                                     </button>
@@ -1459,7 +1459,27 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                             )}
                         </div>
                         {loadingRooms ? (
-                            <div className="flex justify-center py-12"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
+                            <div role="status" aria-label="Loading your rooms">
+                                <span className="sr-only">Loading your rooms…</span>
+                                <div aria-hidden="true" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
+                                    {[0, 1, 2, 3].map((i) => (
+                                        <div key={i} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                            <div className="animate-pulse">
+                                                <div className="flex items-center justify-between gap-2 mb-3">
+                                                    <div className="h-4 w-2/5 rounded bg-slate-200 dark:bg-slate-800" />
+                                                    <div className="h-4 w-10 rounded bg-slate-100 dark:bg-slate-800/70" />
+                                                </div>
+                                                <div className="flex items-center gap-2 mb-4">
+                                                    <div className="h-6 w-20 rounded-md bg-slate-100 dark:bg-slate-800" />
+                                                    <div className="h-4 w-14 rounded bg-slate-100 dark:bg-slate-800/70" />
+                                                </div>
+                                                <div className="h-3 w-3/4 rounded bg-slate-100 dark:bg-slate-800/70 mb-5" />
+                                                <div className="h-10 w-full rounded-xl bg-slate-100 dark:bg-slate-800" />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
                         ) : rooms.length === 0 ? (
                             <div className="bg-gradient-to-br from-blue-50 to-slate-50 dark:from-slate-900 dark:to-slate-950 rounded-2xl p-8 sm:p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800">
                                 <div className="mx-auto w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center mb-4">
@@ -1469,7 +1489,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 <p className="text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto text-sm">Create a private room or join one with its name + PIN. Share the PIN to invite others — only people with it can read along.</p>
                                 <div className="flex flex-col sm:flex-row gap-2 justify-center mt-5 flex-wrap">
                                     <button onClick={handleQuickChat} className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold flex items-center justify-center gap-2 transition"><MessageSquarePlus size={18} className="text-blue-500" />Quick chat</button>
-                                    <button onClick={handleEphemeral} title="Random room that self-deletes 24h after the last message" className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold flex items-center justify-center gap-2 transition"><Clock size={18} className="text-amber-500" />Ephemeral 24h</button>
+                                    <button onClick={handleEphemeral} title="Random room that self-deletes 24h after the last message" className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold flex items-center justify-center gap-2 transition"><Clock size={18} className="text-red-500" />Ephemeral 24h</button>
                                     <button onClick={() => setShowCreate(true)} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition"><LogIn size={18} />Create or Join</button>
                                 </div>
                             </div>
