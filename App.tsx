@@ -183,6 +183,21 @@ const App: React.FC = () => {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  // Handle returns from Stripe Checkout / Customer Portal: toast + clean the URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get('checkout');
+    const portal = params.get('portal');
+    if (!checkout && !portal) return;
+    if (checkout === 'success') flashToast("You're all set — your plan is active.");
+    else if (checkout === 'cancel') flashToast('Checkout canceled.');
+    else if (portal === 'return') flashToast('Billing updated.');
+    // Strip the params so a refresh doesn't re-toast.
+    params.delete('checkout'); params.delete('portal');
+    const qs = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+  }, []);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     // Clear all per-user local data so the next person on a shared device can't
