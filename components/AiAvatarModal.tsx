@@ -4,6 +4,7 @@ import { X, RefreshCw, Upload, Link as LinkIcon, Save, Loader2, Wand2 } from 'lu
 import { supabase } from '../services/supabase';
 import { compressImage } from '../utils/helpers';
 import { useModalA11y } from '../hooks/useModalA11y';
+import { parseTierError } from '../utils/tierGatingErrors';
 
 const DEFAULT_BOT_AVATAR = 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1';
 
@@ -13,9 +14,10 @@ interface AiAvatarModalProps {
   currentAvatarUrl: string;
   roomKey: string;
   onUpdate: (newUrl: string) => void;
+  onUpgrade?: (featureLabel: string, requiredTier: 'basic' | 'ultra', reason?: string) => void;
 }
 
-const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAvatarUrl, roomKey, onUpdate }) => {
+const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAvatarUrl, roomKey, onUpdate, onUpgrade }) => {
   const [tempUrl, setTempUrl] = useState(currentAvatarUrl || DEFAULT_BOT_AVATAR);
   const [isSaving, setIsSaving] = useState(false);
   const [showLinkInput, setShowLinkInput] = useState(false);
@@ -72,7 +74,13 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
       onClose();
     } catch (err) {
       console.error(err);
-      alert("Failed to update AI avatar");
+      const tierErr = parseTierError(err);
+      if (tierErr?.code === 'QT004' && onUpgrade) {
+        onClose();
+        onUpgrade('Inco AI', tierErr.requiredTier);
+      } else {
+        alert("Failed to update AI avatar");
+      }
     } finally {
       setIsSaving(false);
     }

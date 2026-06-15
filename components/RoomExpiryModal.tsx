@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Trash2, Check, Loader2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useModalA11y } from '../hooks/useModalA11y';
+import { parseTierError } from '../utils/tierGatingErrors';
 
 export const ROOM_EXPIRY_OPTIONS: { label: string; seconds: number | null }[] = [
   { label: 'Off', seconds: null },
@@ -17,11 +18,12 @@ interface RoomExpiryModalProps {
   roomKey: string;
   currentSeconds: number | null;
   onUpdate: (seconds: number | null) => void;
+  onUpgrade?: (featureLabel: string, requiredTier: 'basic' | 'ultra', reason?: string) => void;
 }
 
 // "Auto-delete room": the room (and everything in it) is removed for everyone
 // after the chosen period of inactivity. Same style as disappearing messages.
-const RoomExpiryModal: React.FC<RoomExpiryModalProps> = ({ show, onClose, roomKey, currentSeconds, onUpdate }) => {
+const RoomExpiryModal: React.FC<RoomExpiryModalProps> = ({ show, onClose, roomKey, currentSeconds, onUpdate, onUpgrade }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
   const [saving, setSaving] = useState<number | null | undefined>(undefined);
@@ -45,7 +47,13 @@ const RoomExpiryModal: React.FC<RoomExpiryModalProps> = ({ show, onClose, roomKe
       onClose();
     } catch (e) {
       console.error(e);
-      if (mountedRef.current && openRef.current) alert('Failed to update auto-delete');
+      const tierErr = parseTierError(e);
+      if (tierErr?.code === 'QT004' && onUpgrade) {
+        onClose();
+        onUpgrade('Auto-delete', tierErr.requiredTier);
+      } else if (mountedRef.current && openRef.current) {
+        alert('Failed to update auto-delete');
+      }
     } finally {
       if (mountedRef.current) setSaving(undefined);
     }

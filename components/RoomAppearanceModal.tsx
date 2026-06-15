@@ -4,6 +4,7 @@ import { supabase } from '../services/supabase';
 import { compressImage } from '../utils/helpers';
 import { ROOM_BG_PRESETS } from '../utils/roomBackgrounds';
 import { useModalA11y } from '../hooks/useModalA11y';
+import { parseTierError } from '../utils/tierGatingErrors';
 
 interface RoomAppearanceModalProps {
   show: boolean;
@@ -13,9 +14,10 @@ interface RoomAppearanceModalProps {
   isDarkMode: boolean;
   current: { avatarUrl: string; bgType: string; bgPreset: string; bgUrl: string };
   onUpdate: (next: { avatarUrl: string; bgType: string; bgPreset: string; bgUrl: string }) => void;
+  onUpgrade?: (featureLabel: string, requiredTier: 'basic' | 'ultra', reason?: string) => void;
 }
 
-const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose, roomKey, roomName, isDarkMode, current, onUpdate }) => {
+const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose, roomKey, roomName, isDarkMode, current, onUpdate, onUpgrade }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
 
@@ -83,7 +85,13 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
       onClose();
     } catch (e) {
       console.error(e);
-      alert('Failed to save room appearance');
+      const tierErr = parseTierError(e);
+      if (tierErr?.code === 'QT004' && onUpgrade) {
+        onClose();
+        onUpgrade('Room appearance', tierErr.requiredTier);
+      } else {
+        alert('Failed to save room appearance');
+      }
     } finally {
       setIsSaving(false);
     }

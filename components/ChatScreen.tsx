@@ -1112,7 +1112,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       await sendMessage(`Inco AI ${newState ? 'enabled' : 'disabled'} by ${config.username}`, config, null, null, null, 'system');
     } catch (e) {
       console.error("Failed to toggle AI", e);
-      flashToast('Could not change Inco. Please try again.');
+      const tierErr = parseTierError(e, tier);
+      if (tierErr?.code === 'QT004') promptUpgrade('Inco AI', tierErr.requiredTier);
+      else flashToast('Could not change Inco. Please try again.');
     }
   };
 
@@ -1402,6 +1404,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         currentAvatarUrl={aiAvatarUrl}
         roomKey={config.roomKey}
         onUpdate={(newUrl) => setAiAvatarUrl(newUrl)}
+        onUpgrade={promptUpgrade}
       />
 
       <RoomAppearanceModal
@@ -1412,6 +1415,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         isDarkMode={isDarkMode}
         current={{ avatarUrl: roomAvatarUrl, bgType, bgPreset, bgUrl }}
         onUpdate={(next) => { setRoomAvatarUrl(next.avatarUrl); setBgType(next.bgType); setBgPreset(next.bgPreset); setBgUrl(next.bgUrl); }}
+        onUpgrade={promptUpgrade}
       />
 
       <EphemeralModal
@@ -1424,6 +1428,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           const label = formatTtl(ttl);
           sendMessage(label ? `Disappearing messages set to ${label} by ${config.username}` : `Disappearing messages turned off by ${config.username}`, config, null, null, null, 'system');
         }}
+        onUpgrade={promptUpgrade}
       />
 
       <RoomExpiryModal
@@ -1436,6 +1441,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           const label = formatTtl(secs);
           sendMessage(label ? `Auto-delete room set to ${label} of inactivity by ${config.username}` : `Auto-delete room turned off by ${config.username}`, config, null, null, null, 'system');
         }}
+        onUpgrade={promptUpgrade}
       />
 
       <MicErrorModal show={!!micError} message={micError || ''} onClose={dismissMicError} />

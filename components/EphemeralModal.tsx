@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Timer, Check, Loader2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useModalA11y } from '../hooks/useModalA11y';
+import { parseTierError } from '../utils/tierGatingErrors';
 
 export const TTL_OPTIONS: { label: string; seconds: number | null }[] = [
   { label: 'Off', seconds: null },
@@ -25,9 +26,10 @@ interface EphemeralModalProps {
   roomKey: string;
   currentTtl: number | null;
   onUpdate: (ttl: number | null) => void;
+  onUpgrade?: (featureLabel: string, requiredTier: 'basic' | 'ultra', reason?: string) => void;
 }
 
-const EphemeralModal: React.FC<EphemeralModalProps> = ({ show, onClose, roomKey, currentTtl, onUpdate }) => {
+const EphemeralModal: React.FC<EphemeralModalProps> = ({ show, onClose, roomKey, currentTtl, onUpdate, onUpgrade }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
   const [saving, setSaving] = useState<number | null | undefined>(undefined);
@@ -52,7 +54,13 @@ const EphemeralModal: React.FC<EphemeralModalProps> = ({ show, onClose, roomKey,
       onClose();
     } catch (e) {
       console.error(e);
-      if (mountedRef.current && openRef.current) alert('Failed to update disappearing messages');
+      const tierErr = parseTierError(e);
+      if (tierErr?.code === 'QT004' && onUpgrade) {
+        onClose();
+        onUpgrade('Disappearing messages', tierErr.requiredTier);
+      } else if (mountedRef.current && openRef.current) {
+        alert('Failed to update disappearing messages');
+      }
     } finally {
       if (mountedRef.current) setSaving(undefined);
     }

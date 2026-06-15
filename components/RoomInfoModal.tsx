@@ -63,10 +63,14 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   aiEnabled, messageTtlLabel, roomExpiryLabel, emailAlertsEnabled,
   onToggleSearch, onOpenGallery, onOpenParticipants, onToggleAI, onOpenAiAvatar,
   onOpenRoomAppearance, onOpenEphemeral, onOpenRoomExpiry, onOpenEmail, onDeleteRoom,
+  ent, onUpgrade,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
   if (!show) return null;
+
+  // Only treat a feature as locked once entitlements have resolved (ent present).
+  const lockedTrailing = <Lock size={16} className="text-slate-300 dark:text-slate-600" />;
 
   const onlineCount = participants.filter((p) => p.status === 'active').length;
   const total = participants.length;
@@ -156,54 +160,92 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
         {showAi && (
           <>
             <SectionLabel>Inco AI</SectionLabel>
-            <Row
-              icon={<Wand2 size={18} />}
-              label="Inco AI assistant"
-              onClick={onToggleAI}
-              tint="bg-purple-500/10 text-purple-500"
-              trailing={
-                <span role="switch" aria-checked={aiEnabled} className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${aiEnabled ? 'bg-purple-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
-                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${aiEnabled ? 'translate-x-4' : ''}`} />
-                </span>
-              }
-            />
-            <Row icon={<Sparkles size={18} />} label="Customize AI look" onClick={() => go(onOpenAiAvatar)} tint="bg-purple-500/10 text-purple-500" />
+            {ent && !ent.canAI ? (
+              <Row
+                icon={<Wand2 size={18} />}
+                label="Inco AI assistant"
+                onClick={() => { onClose(); onUpgrade?.('Inco AI', 'ultra'); }}
+                tint="bg-purple-500/10 text-purple-500"
+                trailing={lockedTrailing}
+              />
+            ) : (
+              <Row
+                icon={<Wand2 size={18} />}
+                label="Inco AI assistant"
+                onClick={onToggleAI}
+                tint="bg-purple-500/10 text-purple-500"
+                trailing={
+                  <span role="switch" aria-checked={aiEnabled} className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${aiEnabled ? 'bg-purple-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${aiEnabled ? 'translate-x-4' : ''}`} />
+                  </span>
+                }
+              />
+            )}
+            {ent && !ent.canAI ? (
+              <Row icon={<Sparkles size={18} />} label="Customize AI look" onClick={() => { onClose(); onUpgrade?.('Inco AI', 'ultra'); }} tint="bg-purple-500/10 text-purple-500" trailing={lockedTrailing} />
+            ) : (
+              <Row icon={<Sparkles size={18} />} label="Customize AI look" onClick={() => go(onOpenAiAvatar)} tint="bg-purple-500/10 text-purple-500" />
+            )}
           </>
         )}
 
         {/* Room settings */}
         <SectionLabel>Room</SectionLabel>
         {canManage && (
-          <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => go(onOpenRoomAppearance)} tint="bg-blue-500/10 text-blue-500" />
+          ent && !ent.canRoomAppearance ? (
+            <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => { onClose(); onUpgrade?.('Room appearance', 'basic'); }} tint="bg-blue-500/10 text-blue-500" trailing={lockedTrailing} />
+          ) : (
+            <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => go(onOpenRoomAppearance)} tint="bg-blue-500/10 text-blue-500" />
+          )
         )}
         {canManage && (
-          <Row
-            icon={<Timer size={18} />}
-            label="Disappearing messages"
-            onClick={() => go(onOpenEphemeral)}
-            tint="bg-orange-500/10 text-orange-500"
-            trailing={
-              <span className="flex items-center gap-1 text-slate-400">
-                <span className="text-xs font-semibold">{messageTtlLabel || 'Off'}</span>
-                <ChevronRight size={18} className="text-slate-300 dark:text-slate-600" />
-              </span>
-            }
-          />
+          ent && !ent.canDisappearing ? (
+            <Row
+              icon={<Timer size={18} />}
+              label="Disappearing messages"
+              onClick={() => { onClose(); onUpgrade?.('Disappearing messages', 'basic'); }}
+              tint="bg-orange-500/10 text-orange-500"
+              trailing={lockedTrailing}
+            />
+          ) : (
+            <Row
+              icon={<Timer size={18} />}
+              label="Disappearing messages"
+              onClick={() => go(onOpenEphemeral)}
+              tint="bg-orange-500/10 text-orange-500"
+              trailing={
+                <span className="flex items-center gap-1 text-slate-400">
+                  <span className="text-xs font-semibold">{messageTtlLabel || 'Off'}</span>
+                  <ChevronRight size={18} className="text-slate-300 dark:text-slate-600" />
+                </span>
+              }
+            />
+          )
         )}
         {/* Auto-delete room — logged-in users only (per request). */}
         {isGoogleUser && (
-          <Row
-            icon={<Trash2 size={18} />}
-            label="Auto-delete room"
-            onClick={() => go(onOpenRoomExpiry)}
-            tint="bg-red-500/10 text-red-500"
-            trailing={
-              <span className="flex items-center gap-1 text-slate-400">
-                <span className="text-xs font-semibold">{roomExpiryLabel || 'Off'}</span>
-                <ChevronRight size={18} className="text-slate-300 dark:text-slate-600" />
-              </span>
-            }
-          />
+          ent && !ent.canDisappearing ? (
+            <Row
+              icon={<Trash2 size={18} />}
+              label="Auto-delete room"
+              onClick={() => { onClose(); onUpgrade?.('Auto-delete', 'basic'); }}
+              tint="bg-red-500/10 text-red-500"
+              trailing={lockedTrailing}
+            />
+          ) : (
+            <Row
+              icon={<Trash2 size={18} />}
+              label="Auto-delete room"
+              onClick={() => go(onOpenRoomExpiry)}
+              tint="bg-red-500/10 text-red-500"
+              trailing={
+                <span className="flex items-center gap-1 text-slate-400">
+                  <span className="text-xs font-semibold">{roomExpiryLabel || 'Off'}</span>
+                  <ChevronRight size={18} className="text-slate-300 dark:text-slate-600" />
+                </span>
+              }
+            />
+          )
         )}
         <Row
           icon={<Mail size={18} />}
