@@ -101,7 +101,12 @@ const App: React.FC = () => {
             const pending = sessionStorage.getItem('pendingCheckoutTier');
             if (pending === 'basic' || pending === 'ultra') {
                 sessionStorage.removeItem('pendingCheckoutTier');
-                setTimeout(() => { void startCheckout(pending); }, 0);
+                // Defer a tick so the dashboard view flushes before navigating to Stripe.
+                setTimeout(() => {
+                    void startCheckout(pending).then((r) => {
+                        if (!r.ok) flashToast('Could not start checkout. Please try again.');
+                    });
+                }, 0);
             }
             // Only an explicit interactive sign-in (returning from the Google OAuth
             // redirect) routes to the dashboard. INITIAL_SESSION / TOKEN_REFRESHED

@@ -21,7 +21,7 @@ const PLANS: PlanCard[] = [
   {
     key: 'free', name: 'Free', icon: <Shield size={22} />, accent: 'slate',
     blurb: 'For quick, private conversations.',
-    features: ['1 active room', '10 messages/day per room', 'Rooms expire after 24h', 'Up to 10MB files', 'End-to-end private chat'],
+    features: ['1 active room', '10 messages/day per room', 'Rooms expire after 24h', 'Up to 10MB files', 'Private, PIN-locked rooms'],
   },
   {
     key: 'basic', name: 'Basic', icon: <Zap size={22} />, accent: 'blue', highlight: true,
