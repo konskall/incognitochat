@@ -32,7 +32,7 @@ export interface JoinRoomResult {
   is_new: boolean;
 }
 
-export type JoinRoomErrorCode = 'WRONG_PIN' | 'ROOM_DELETED' | 'AUTH_REQUIRED' | 'UNKNOWN';
+export type JoinRoomErrorCode = 'WRONG_PIN' | 'ROOM_DELETED' | 'AUTH_REQUIRED' | 'ROOM_LIMIT' | 'UNKNOWN';
 
 export async function joinOrCreateRoom(params: {
   roomKey: string;
@@ -55,7 +55,44 @@ export async function joinOrCreateRoom(params: {
     if (msg.includes('WRONG_PIN')) code = 'WRONG_PIN';
     else if (msg.includes('ROOM_DELETED')) code = 'ROOM_DELETED';
     else if (msg.includes('AUTH_REQUIRED')) code = 'AUTH_REQUIRED';
+    else if (msg.includes('ROOM_LIMIT')) code = 'ROOM_LIMIT';
     return { data: null, error: { code, message: msg } };
   }
   return { data: data as JoinRoomResult, error: null };
+}
+
+// --- Billing (Phase 2 edge functions) ---
+// CRITICAL: only navigate when the function returned a real URL. supabase-js sets
+// `error` (FunctionsHttpError) on a non-2xx response, but our functions still
+// return a JSON error body (LOGIN_REQUIRED / NO_SUBSCRIPTION / STRIPE_NOT_CONFIGURED).
+// We surface that string so the caller can toast it, and never blind-redirect.
+export interface BillingResult { ok: boolean; error?: string; }
+
+async function readFnError(error: any): Promise<string> {
+  try {
+    const payload = await error?.context?.json?.();
+    if (payload?.error) return payload.error as string;
+  } catch { /* response body was not JSON */ }
+  return error?.message || 'REQUEST_FAILED';
+}
+
+// Start Stripe Checkout (subscription mode) for a paid tier. Redirects on success.
+export async function startCheckout(tier: 'basic' | 'ultra'): Promise<BillingResult> {
+  const { data, error } = await supabase.functions.invoke('create-checkout-session', { body: { tier } });
+  if (error) return { ok: false, error: await readFnError(error) };
+  const url = (data as any)?.url;
+  if (!url) return { ok: false, error: (data as any)?.error || 'NO_CHECKOUT_URL' };
+  window.location.href = url;
+  return { ok: true };
+}
+
+// Open the Stripe Customer Portal. Free users have no subscription -> the function
+// returns 404 NO_SUBSCRIPTION; the caller decides what to show.
+export async function openBillingPortal(): Promise<BillingResult> {
+  const { data, error } = await supabase.functions.invoke('create-portal-session', { body: {} });
+  if (error) return { ok: false, error: await readFnError(error) };
+  const url = (data as any)?.url;
+  if (!url) return { ok: false, error: (data as any)?.error || 'NO_PORTAL_URL' };
+  window.location.href = url;
+  return { ok: true };
 }
