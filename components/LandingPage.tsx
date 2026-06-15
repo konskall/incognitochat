@@ -155,6 +155,21 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
     onScroll();
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Keep this tab's theme in sync when another tab toggles it (localStorage
+  // 'theme' fires a 'storage' event only in OTHER tabs). Mirrors the class +
+  // theme-color so both tabs agree, instead of only self-healing on reload.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== 'theme') return;
+      const next = e.newValue === 'dark';
+      setIsDark(next);
+      document.documentElement.classList.toggle('dark', next);
+      document.querySelector("meta[name='theme-color']")?.setAttribute('content', next ? '#020617' : '#f8fafc');
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
   const scrollToPricing = () => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
@@ -183,7 +198,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
             onClick={toggleTheme}
             title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-            className={`p-2 rounded-full text-slate-500 hover:text-blue-600 hover:bg-slate-200/70 dark:text-slate-400 dark:hover:text-blue-400 dark:hover:bg-slate-800 transition-colors active:scale-90 ${focusRing}`}
+            className={`p-2 rounded-full inline-flex items-center justify-center min-w-[44px] min-h-[44px] text-slate-500 hover:text-blue-600 hover:bg-slate-200/70 dark:text-slate-400 dark:hover:text-blue-400 dark:hover:bg-slate-800 transition-colors active:scale-90 ${focusRing}`}
           >
             {isDark ? <Sun size={20} /> : <Moon size={20} />}
           </button>
@@ -192,7 +207,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
             onClick={onStart}
             title="Log in"
             aria-label="Log in"
-            className={`p-2 rounded-full text-slate-500 hover:text-blue-600 hover:bg-slate-200/70 dark:text-slate-400 dark:hover:text-blue-400 dark:hover:bg-slate-800 transition-colors active:scale-90 ${focusRing}`}
+            className={`p-2 rounded-full inline-flex items-center justify-center min-w-[44px] min-h-[44px] text-slate-500 hover:text-blue-600 hover:bg-slate-200/70 dark:text-slate-400 dark:hover:text-blue-400 dark:hover:bg-slate-800 transition-colors active:scale-90 ${focusRing}`}
           >
             <LogIn size={20} />
           </button>
@@ -213,7 +228,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
           <div className="max-w-7xl mx-auto px-6 relative z-10 text-center">
             <div className="flex justify-center mb-8 animate-in fade-in zoom-in duration-700">
               <div className="relative animate-float">
-                <div aria-hidden="true" className="absolute -inset-4 bg-blue-500/20 rounded-full blur-xl animate-pulse"></div>
+                <div aria-hidden="true" className="absolute -inset-4 bg-blue-500/20 rounded-full blur-xl"></div>
                 <img
                   src={LOGO}
                   alt="Incognito Chat logo"
@@ -248,7 +263,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
                 onClick={scrollToPricing}
                 className={`group relative px-8 py-4 font-bold rounded-2xl text-white transition-all hover:scale-105 active:scale-95 ${focusRing}`}
               >
-                <span aria-hidden="true" className="absolute -inset-0.5 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-500 opacity-50 blur-md group-hover:opacity-80 transition-opacity animate-pulse" style={{ animationDuration: '3s' }}></span>
+                <span aria-hidden="true" className="absolute -inset-0.5 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-500 opacity-40 blur-md group-hover:opacity-80 transition-opacity"></span>
                 <span className="relative flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 -mx-8 -my-4 px-8 py-4 rounded-2xl shadow-xl shadow-purple-500/30">
                   <Sparkles size={20} className="group-hover:rotate-12 transition-transform" />
                   View Plans

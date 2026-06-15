@@ -117,13 +117,14 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartFree, onChoosePl
                 <p className="mt-1 mb-5 min-h-[2.5rem] text-sm text-slate-500 dark:text-slate-400">{plan.blurb}</p>
 
                 <div className="mb-6 flex items-end gap-1.5" aria-busy={plan.key !== 'free' && loading}>
-                  <span
-                    className="text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white"
-                    aria-label={plan.key !== 'free' && loading ? 'Loading price' : undefined}
-                  >
-                    {price.big}
-                  </span>
-                  <span className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">{price.small}</span>
+                  {plan.key !== 'free' && loading ? (
+                    <span className="h-11 w-24 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" aria-label="Loading price" />
+                  ) : (
+                    <>
+                      <span className="text-5xl font-extrabold tracking-tight tabular-nums text-slate-900 dark:text-white">{price.big}</span>
+                      <span className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">{price.small}</span>
+                    </>
+                  )}
                 </div>
 
                 <ul className="mb-8 flex-1 space-y-3">

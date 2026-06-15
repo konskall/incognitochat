@@ -225,7 +225,7 @@ const InstallButton: React.FC = () => {
     <>
         <button
             onClick={handleClick}
-            className={`p-2 rounded-full transition-all duration-300 animate-in fade-in zoom-in 
+            className={`p-2 rounded-full inline-flex items-center justify-center min-w-[44px] min-h-[44px] transition-all duration-300 animate-in fade-in zoom-in
                 ${appState === 'installed' 
                     ? 'text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20' 
                     : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:text-slate-400 dark:hover:text-blue-400 dark:hover:bg-slate-800'
