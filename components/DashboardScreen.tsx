@@ -252,7 +252,7 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
             ? <span className="text-blue-500 font-medium">Owner</span>
             : <span className="text-emerald-500 font-medium">Joined</span>}
           {ttl && (
-            <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium" title="Auto-deletes after this much inactivity">
+            <span className="flex items-center gap-1 text-red-600 dark:text-red-400 font-medium" title="Auto-deletes after this much inactivity">
               <Clock size={11} />{ttl}
             </span>
           )}
