@@ -1154,6 +1154,45 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     onDismissDeleted: dismissDeletedRoom,
   });
 
+  const planCard = (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Your plan</h3>
+        <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${
+          entLoading ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+          : tier === 'ultra' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+          : tier === 'basic' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+          {entLoading ? '…' : tier === 'ultra' ? 'Ultra' : tier === 'basic' ? 'Basic' : 'Free'}
+        </span>
+      </div>
+      <ul className="text-sm text-slate-600 dark:text-slate-300 space-y-1 mb-4">
+        {entLoading ? (
+          <li className="text-slate-400 dark:text-slate-500">Loading your plan…</li>
+        ) : (
+          <>
+            <li>{ent.maxRooms === null ? 'Unlimited rooms' : `${ent.maxRooms} room${ent.maxRooms === 1 ? '' : 's'}`}</li>
+            <li>{ent.msgPerRoomPerDay === null ? 'Unlimited messages' : `${ent.msgPerRoomPerDay} messages/day per room`}</li>
+            <li>{`Up to ${Math.round(ent.maxFileBytes / (1024 * 1024))}MB files`}</li>
+          </>
+        )}
+      </ul>
+      {!entLoading && (tier === 'free' ? (
+        <div className="flex gap-2">
+          <button onClick={() => handleUpgrade('basic')} disabled={billingBusy} className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-60">Upgrade to Basic</button>
+          <button onClick={() => handleUpgrade('ultra')} disabled={billingBusy} className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-purple-600 hover:bg-purple-700 text-white transition disabled:opacity-60">Ultra</button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {tier === 'basic' && (
+            <button onClick={() => handleUpgrade('ultra')} disabled={billingBusy} className="w-full py-2.5 rounded-xl text-sm font-bold bg-purple-600 hover:bg-purple-700 text-white transition disabled:opacity-60 flex items-center justify-center gap-2"><Sparkles size={16} /> Upgrade to Ultra</button>
+          )}
+          <button onClick={handleManageBilling} disabled={billingBusy} className="w-full py-2.5 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition disabled:opacity-60">Manage subscription</button>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <>
     <UpgradeModal
@@ -1278,6 +1317,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                     <button onClick={() => { setIsEditingProfile(false); setShowLinkInput(false); }} className="flex-1 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition">Cancel</button>
                                     <button onClick={handleSaveProfile} disabled={isSavingProfile} className="flex-1 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg shadow-md hover:bg-blue-700 transition flex items-center justify-center gap-2">{isSavingProfile ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}Save Changes</button>
                                 </div>
+                                <div className="lg:hidden pt-4 border-t border-slate-200 dark:border-slate-800">{planCard}</div>
                             </div>
                         ) : (
                             <div className="flex items-center gap-5 animate-in fade-in zoom-in-95 duration-300 relative z-10">
@@ -1297,42 +1337,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                         )}
                     </div>
 
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-5">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Your plan</h3>
-                        <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${
-                          entLoading ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                          : tier === 'ultra' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-                          : tier === 'basic' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
-                          {entLoading ? '…' : tier === 'ultra' ? 'Ultra' : tier === 'basic' ? 'Basic' : 'Free'}
-                        </span>
-                      </div>
-                      <ul className="text-sm text-slate-600 dark:text-slate-300 space-y-1 mb-4">
-                        {entLoading ? (
-                          <li className="text-slate-400 dark:text-slate-500">Loading your plan…</li>
-                        ) : (
-                          <>
-                            <li>{ent.maxRooms === null ? 'Unlimited rooms' : `${ent.maxRooms} room${ent.maxRooms === 1 ? '' : 's'}`}</li>
-                            <li>{ent.msgPerRoomPerDay === null ? 'Unlimited messages' : `${ent.msgPerRoomPerDay} messages/day per room`}</li>
-                            <li>{`Up to ${Math.round(ent.maxFileBytes / (1024 * 1024))}MB files`}</li>
-                          </>
-                        )}
-                      </ul>
-                      {!entLoading && (tier === 'free' ? (
-                        <div className="flex gap-2">
-                          <button onClick={() => handleUpgrade('basic')} disabled={billingBusy} className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-60">Upgrade to Basic</button>
-                          <button onClick={() => handleUpgrade('ultra')} disabled={billingBusy} className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-purple-600 hover:bg-purple-700 text-white transition disabled:opacity-60">Ultra</button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-2">
-                          {tier === 'basic' && (
-                            <button onClick={() => handleUpgrade('ultra')} disabled={billingBusy} className="w-full py-2.5 rounded-xl text-sm font-bold bg-purple-600 hover:bg-purple-700 text-white transition disabled:opacity-60 flex items-center justify-center gap-2"><Sparkles size={16} /> Upgrade to Ultra</button>
-                          )}
-                          <button onClick={handleManageBilling} disabled={billingBusy} className="w-full py-2.5 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition disabled:opacity-60">Manage subscription</button>
-                        </div>
-                      ))}
-                    </div>
+                    <div className="hidden lg:block">{planCard}</div>
                 </div>
 
                 <div className="lg:col-span-8 xl:col-span-9 space-y-6">
