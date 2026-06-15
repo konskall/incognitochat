@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon, MonitorUp, MonitorX, Minus, Maximize2, Minimize2, Maximize, Minimize, PictureInPicture2 } from 'lucide-react';
+import { Phone, Video, Mic, MicOff, PhoneOff, X, User as UserIcon, Crown, AlertCircle, VideoOff, RotateCcw, Signal, Clock, Volume2, VolumeX, Wand2, Users as UsersIcon, MonitorUp, MonitorX, Minus, Maximize2, Minimize2, Maximize, Minimize, PictureInPicture2, Lock } from 'lucide-react';
 import { docPipSupported, openDocPip } from '../utils/documentPip';
 import { getDisplayMediaSupported, safeAvatarUrl } from '../utils/helpers';
 import { User, ChatConfig, Presence } from '../types';
@@ -195,7 +195,7 @@ const DraggableWindow: React.FC<{ children: React.ReactNode }> = ({ children }) 
   );
 };
 
-const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseParticipants, showParticipants, roomCreatorId }) => {
+const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseParticipants, showParticipants, roomCreatorId, ent, onUpgrade }) => {
   const {
     status, callType, incoming, peers, localStream,
     isMuted, isVideoOff, isSpeakerMuted, setIsSpeakerMuted, voiceFilter,
@@ -212,7 +212,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
   React.useEffect(() => { if (!isDesktop && windowMode === 'window') setWindowMode('full'); }, [isDesktop, windowMode]);
 
   const canPip = docPipSupported();
-  const canShareScreen = getDisplayMediaSupported();
+  const canShareScreen = getDisplayMediaSupported() && (!ent || ent.canScreenShare);
   const [pipWindow, setPipWindow] = React.useState<Window | null>(null);
   const pipWindowRef = useRef<Window | null>(null);
   const openPip = async () => {
@@ -235,8 +235,19 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
 
   const formatTime = (secs: number) => `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}`;
 
+  // Calls have NO server backstop -> this is the enforcement. Returns true if
+  // allowed; otherwise opens the upgrade prompt and returns false. When ent is
+  // not yet resolved, allow (the screen's own auth gating still applies).
+  const gateCall = (type: CallType): boolean => {
+    if (!ent) return true;
+    if (type === 'audio' && !ent.canAudioCall) { onUpgrade?.('Audio calls', 'basic'); return false; }
+    if (type === 'video' && !ent.canVideoCall) { onUpgrade?.('Video calls', 'ultra'); return false; }
+    return true;
+  };
+
   // targetUid set ⇒ ring just that person (1-on-1); omitted ⇒ ring the whole room.
   const beginCall = (type: CallType, targetUid?: string) => {
+    if (!gateCall(type)) return;
     onCloseParticipants();
     startCall(type, targetUid);
   };
@@ -474,11 +485,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
           <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700">
             <p className="text-[11px] text-slate-400 dark:text-slate-500 mb-1.5">Start group call</p>
             <div className="flex gap-1.5">
-              <button onClick={() => beginCall('audio')} title="Audio call" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 transition active:scale-95">
-                <Phone size={14} /> Audio
+              <button onClick={() => beginCall('audio')} title={ent && !ent.canAudioCall ? 'Audio calls are a Basic feature' : 'Audio call'} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 transition active:scale-95 ${ent && !ent.canAudioCall ? 'opacity-50' : ''}`}>
+                <Phone size={14} /> Audio {ent && !ent.canAudioCall && <Lock size={12} className="ml-1" />}
               </button>
-              <button onClick={() => beginCall('video')} title="Video call" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition active:scale-95">
-                <Video size={14} /> Video
+              <button onClick={() => beginCall('video')} title={ent && !ent.canVideoCall ? 'Video calls are an Ultra feature' : 'Video call'} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition active:scale-95 ${ent && !ent.canVideoCall ? 'opacity-50' : ''}`}>
+                <Video size={14} /> Video {ent && !ent.canVideoCall && <Lock size={12} className="ml-1" />}
               </button>
             </div>
           </div>
@@ -505,11 +516,11 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
                   {/* 1-on-1 call: ring just this person (audio or video). */}
                   {!isMe && (
                     <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => beginCall('audio', u.uid)} title={`Audio call ${u.username}`} className="p-1.5 rounded-full text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 transition active:scale-95">
-                        <Phone size={17} />
+                      <button onClick={() => beginCall('audio', u.uid)} title={ent && !ent.canAudioCall ? 'Audio calls are a Basic feature' : `Audio call ${u.username}`} className={`flex items-center p-1.5 rounded-full text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 transition active:scale-95 ${ent && !ent.canAudioCall ? 'opacity-50' : ''}`}>
+                        <Phone size={17} /> {ent && !ent.canAudioCall && <Lock size={14} className="ml-0.5" />}
                       </button>
-                      <button onClick={() => beginCall('video', u.uid)} title={`Video call ${u.username}`} className="p-1.5 rounded-full text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition active:scale-95">
-                        <Video size={17} />
+                      <button onClick={() => beginCall('video', u.uid)} title={ent && !ent.canVideoCall ? 'Video calls are an Ultra feature' : `Video call ${u.username}`} className={`flex items-center p-1.5 rounded-full text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition active:scale-95 ${ent && !ent.canVideoCall ? 'opacity-50' : ''}`}>
+                        <Video size={17} /> {ent && !ent.canVideoCall && <Lock size={14} className="ml-0.5" />}
                       </button>
                     </div>
                   )}
