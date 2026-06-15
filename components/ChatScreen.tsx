@@ -24,6 +24,7 @@ import MediaGalleryModal from './MediaGalleryModal';
 import RoomInfoModal from './RoomInfoModal';
 import { flashToast } from './MessageActionMenu';
 import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
+import { parseTierError } from '../utils/tierGatingErrors';
 import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin } from 'lucide-react';
 
 // Hooks
@@ -873,6 +874,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           setSelectedFile(fileToSend);
           setReplyingTo(replyToSend);
           if (editingId) setEditingMessageId(editingId);
+          const tierErr = parseTierError(err, tier);
+          if (tierErr) {
+            if (tierErr.code === 'QT004') {
+              promptUpgrade('Inco AI', tierErr.requiredTier);
+            } else {
+              // QT001 (room read-only) and QT002 (daily quota) are transient/informational.
+              flashToast(tierErr.message);
+            }
+          }
       }
   };
 
