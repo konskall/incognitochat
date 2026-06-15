@@ -24,7 +24,7 @@ const FEATURES = [
   { icon: <Video className="text-green-500" />, title: 'Audio, Video & Screen Share', description: 'Group and 1-on-1 calls connect peer-to-peer with a secure relay fallback. Add video and screen sharing on Ultra.' },
   { icon: <Sparkles className="text-fuchsia-500" />, title: 'Inco AI Assistant', description: 'Summon an in-room AI to answer questions and look things up — with cited sources. Available on Ultra.' },
   { icon: <Timer className="text-orange-500" />, title: 'Disappearing & Self-Destruct Rooms', description: 'Set messages to vanish on a timer, or have the whole room auto-delete after a chosen period of inactivity.' },
-  { icon: <MessagesSquare className="text-emerald-500" />, title: 'Rich Messaging', description: 'Replies, reactions, polls, voice notes, location, a media gallery, link previews and full-text search.' },
+  { icon: <MessagesSquare className="text-emerald-500" />, title: 'Rich Messaging', description: 'Replies, reactions, polls, voice notes, location, a media gallery, link previews and in-room search.' },
   { icon: <Bell className="text-rose-500" />, title: 'Push & Email Alerts', description: 'Get notified of new messages by web push — even when the app is closed — or by email, without exposing your message content.' },
   { icon: <Smartphone className="text-sky-500" />, title: 'Installable PWA + Dark Mode', description: 'Add it to your home screen like a native app, offline-ready, with a polished dark theme.' },
 ];
