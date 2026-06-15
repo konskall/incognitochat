@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Sparkles, Lock, Loader2 } from 'lucide-react';
 import { useModalA11y } from '../hooks/useModalA11y';
+import { usePrices, formatPrice } from '../hooks/usePrices';
 import { Tier } from '../utils/entitlements';
 import { startCheckout } from '../services/supabase';
 import { flashToast } from './MessageActionMenu';
@@ -21,6 +22,9 @@ const UpgradeModal: React.FC<UpgradeModalProps> = ({ open, onClose, requiredTier
   const dialogRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   useModalA11y(open, onClose, dialogRef);
+  const { prices } = usePrices();
+  const plan = requiredTier === 'ultra' ? prices?.ultra ?? null : prices?.basic ?? null;
+  const priceSuffix = plan ? ` — ${formatPrice(plan)}/${plan.interval}` : '';
   if (!open) return null;
 
   const tierName = cap(requiredTier);
@@ -60,7 +64,7 @@ const UpgradeModal: React.FC<UpgradeModalProps> = ({ open, onClose, requiredTier
           </button>
         </div>
         <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400 mb-6">
-          {featureLabel} is available on {tierName}.{reason ? ` ${reason}` : ''}
+          {featureLabel} is available on {tierName}{priceSuffix}.{reason ? ` ${reason}` : ''}
         </p>
         <button
           onClick={handleUpgrade}
