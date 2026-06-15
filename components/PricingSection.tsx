@@ -51,7 +51,7 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartFree, onChoosePl
   };
 
   return (
-    <section aria-labelledby="pricing-title" className="max-w-6xl mx-auto px-6 py-12 lg:py-20">
+    <section id="pricing" aria-labelledby="pricing-title" className="max-w-6xl mx-auto px-6 py-12 lg:py-20">
       <h2 id="pricing-title" className="text-3xl font-bold text-center mb-3">Simple, honest pricing</h2>
       <p className="text-center text-slate-500 dark:text-slate-400 mb-10 lg:mb-14">Start free. Upgrade when you need more. Cancel anytime.</p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown, Sun, Moon, ArrowUp } from 'lucide-react';
+import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown, Sun, Moon, ArrowUp, Sparkles, Timer, Bell } from 'lucide-react';
 import InstallButton from './InstallButton';
 import PricingSection from './PricingSection';
 import { beginThemeTransition } from '../utils/helpers';
@@ -19,27 +19,14 @@ const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-950';
 
 const FEATURES = [
-  {
-    icon: <Lock className="text-blue-500" />,
-    title: 'PIN-Locked Rooms',
-    description:
-      'Every message is scrambled with your room PIN, and only people who join with the correct name and PIN can read along.',
-  },
-  {
-    icon: <Shield className="text-purple-500" />,
-    title: 'No Sign-Up Required',
-    description: 'No phone number or personal data needed — just pick a username and a secret room.',
-  },
-  {
-    icon: <Video className="text-green-500" />,
-    title: 'Audio & Video Calls',
-    description: 'Group and 1-on-1 calls connect peer-to-peer when the network allows, with a secure relay as fallback.',
-  },
-  {
-    icon: <Smartphone className="text-orange-500" />,
-    title: 'Installable PWA',
-    description: 'Add it to your home screen like a native app, with optional push notifications and an offline-ready shell.',
-  },
+  { icon: <Lock className="text-blue-500" />, title: 'PIN-Locked Private Rooms', description: 'Every message is scrambled with your room PIN — only people who join with the right name and PIN can read along.' },
+  { icon: <Shield className="text-purple-500" />, title: 'No Sign-Up, Truly Anonymous', description: 'No phone number or email. Pick a username and a secret room; a Google login is optional, just to save your rooms.' },
+  { icon: <Video className="text-green-500" />, title: 'Audio, Video & Screen Share', description: 'Group and 1-on-1 calls connect peer-to-peer with a secure relay fallback. Add video and screen sharing on Ultra.' },
+  { icon: <Sparkles className="text-fuchsia-500" />, title: 'Inco AI Assistant', description: 'Summon an in-room AI to answer questions and look things up — with cited sources. Available on Ultra.' },
+  { icon: <Timer className="text-orange-500" />, title: 'Disappearing & Self-Destruct Rooms', description: 'Set messages to vanish on a timer, or have the whole room auto-delete after a chosen period of inactivity.' },
+  { icon: <MessagesSquare className="text-emerald-500" />, title: 'Rich Messaging', description: 'Replies, reactions, polls, voice notes, location, a media gallery, link previews and full-text search.' },
+  { icon: <Bell className="text-rose-500" />, title: 'Push & Email Alerts', description: 'Get notified of new messages by web push — even when the app is closed — or by email, without exposing your message content.' },
+  { icon: <Smartphone className="text-sky-500" />, title: 'Installable PWA + Dark Mode', description: 'Add it to your home screen like a native app, offline-ready, with a polished dark theme.' },
 ];
 
 const STEPS = [
@@ -56,7 +43,7 @@ const STEPS = [
   {
     icon: <MessagesSquare size={22} className="text-emerald-500" />,
     title: 'Chat & call privately',
-    description: 'Message, share media, run polls, and start audio/video calls. Delete the room to wipe it for everyone.',
+    description: 'Message, share media, run polls, start audio/video calls, or summon Inco AI. Delete the room to wipe it for everyone.',
   },
 ];
 
@@ -64,15 +51,35 @@ const STEPS = [
 const FAQS = [
   {
     q: 'Do I need an account to use Incognito Chat?',
-    a: 'No. Just pick a username and a room — no phone number, email, or sign-up required. A Google login is optional and only used to save your rooms.',
+    a: 'No. Just pick a username and a room — no phone number, email, or sign-up required. A Google login is optional, used to save your rooms and for paid plans.',
   },
   {
     q: 'Are my messages encrypted?',
     a: "Messages are scrambled with your room's PIN, and only members who join with the correct PIN can read them. This is strong access control rather than end-to-end encryption — treat the PIN like a shared password.",
   },
   {
+    q: 'What plans are available and what do they cost?',
+    a: 'Incognito Chat is free to use. Basic (€5/month) unlocks 10 rooms, 100 messages per day per room, audio calls, room customization and disappearing messages. Ultra (€10/month) adds unlimited rooms and messages, video calls, screen sharing, the Inco AI assistant and 40MB uploads. You can cancel anytime from your dashboard.',
+  },
+  {
     q: 'How do the audio and video calls work?',
-    a: "Calls connect directly between participants (peer-to-peer) when the network allows, and fall back to a secure relay when a direct connection isn't possible. Both group and 1-on-1 calls are supported.",
+    a: "Calls connect directly between participants (peer-to-peer) when the network allows, and fall back to a secure relay otherwise. Audio calls are available on Basic and Ultra; video calls and screen sharing are Ultra (screen sharing isn't available on iPhone or iPad).",
+  },
+  {
+    q: 'What is Inco, the AI assistant?',
+    a: "Inco is an in-room AI helper available on Ultra. Mention “inco” in a message and it replies with answers and cited sources. Any signed-in member can switch it on or off for the room.",
+  },
+  {
+    q: 'Can messages or rooms delete themselves?',
+    a: 'Yes. On Basic and Ultra you can set messages to disappear on a timer, or have the entire room auto-delete after a chosen period of inactivity. Free rooms also expire automatically 24 hours after they are created.',
+  },
+  {
+    q: 'How large can my uploads be?',
+    a: 'Up to 10MB per file on Free and Basic, and 40MB on Ultra. Images are compressed automatically to save data.',
+  },
+  {
+    q: 'Will I be notified of new messages?',
+    a: 'Yes — enable web push notifications (they work even when the app is closed; on iPhone, add the app to your Home Screen first) or per-room email alerts. Your message content is never sent to the email service.',
   },
   {
     q: 'What happens when a room is deleted?',
@@ -149,6 +156,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+  const scrollToPricing = () => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   return (
     <div
@@ -225,16 +233,26 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
             </h1>
 
             <p className="max-w-2xl mx-auto text-lg lg:text-xl text-slate-600 dark:text-slate-400 leading-relaxed mb-10 animate-in slide-in-from-bottom-6 duration-700 delay-100">
-              Incognito Chat is a privacy-first messaging app. Spin up a room, lock it with a PIN, and only the people you invite can read along — no phone number, no sign-up.
+              Incognito Chat is a privacy-first messaging app. Spin up a room, lock it with a PIN, and only the people you invite can read along — no phone number, no sign-up. Add calls, AI, polls and disappearing messages when you want more.
             </p>
 
-            <div className="flex justify-center animate-in slide-in-from-bottom-8 duration-700 delay-200">
+            <div className="flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-4 animate-in slide-in-from-bottom-8 duration-700 delay-200">
               <button
                 onClick={onStart}
                 className={`group relative px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-xl shadow-blue-500/30 transition-all hover:scale-105 active:scale-95 flex items-center gap-2 ${focusRing}`}
               >
                 Start Chatting Now
                 <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+              </button>
+              <button
+                onClick={scrollToPricing}
+                className={`group relative px-8 py-4 font-bold rounded-2xl text-white transition-all hover:scale-105 active:scale-95 ${focusRing}`}
+              >
+                <span aria-hidden="true" className="absolute -inset-0.5 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-500 opacity-50 blur-md group-hover:opacity-80 transition-opacity animate-pulse" style={{ animationDuration: '3s' }}></span>
+                <span className="relative flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 -mx-8 -my-4 px-8 py-4 rounded-2xl shadow-xl shadow-purple-500/30">
+                  <Sparkles size={20} className="group-hover:rotate-12 transition-transform" />
+                  View Plans
+                </span>
               </button>
             </div>
           </div>
@@ -275,6 +293,19 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
 
         <PricingSection onStartFree={onStart} onChoosePlan={onChoosePlan} />
 
+        {/* Trust Section */}
+        <section aria-labelledby="trust-title" className="max-w-4xl mx-auto px-6 py-12 lg:py-20 text-center">
+          <Reveal className="bg-blue-50 dark:bg-blue-900/10 rounded-3xl p-8 lg:p-12 border border-blue-100 dark:border-blue-900/30">
+            <div className="inline-flex p-3 bg-blue-600 text-white rounded-2xl mb-6 shadow-lg shadow-blue-600/20">
+              <Zap size={32} />
+            </div>
+            <h2 id="trust-title" className="text-3xl font-bold mb-4">Fast & Transient</h2>
+            <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-0">
+              Rooms are created instantly — just share the name and PIN to start talking. When a member deletes the room, every message and shared file is wiped for everyone.
+            </p>
+          </Reveal>
+        </section>
+
         {/* FAQ */}
         <section aria-labelledby="faq-title" className="max-w-3xl mx-auto px-6 py-12 lg:py-20">
           <Reveal><h2 id="faq-title" className="text-3xl font-bold text-center mb-10 lg:mb-14">Frequently asked questions</h2></Reveal>
@@ -291,19 +322,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
               </Reveal>
             ))}
           </div>
-        </section>
-
-        {/* Trust Section */}
-        <section aria-labelledby="trust-title" className="max-w-4xl mx-auto px-6 py-12 lg:py-20 text-center">
-          <Reveal className="bg-blue-50 dark:bg-blue-900/10 rounded-3xl p-8 lg:p-12 border border-blue-100 dark:border-blue-900/30">
-            <div className="inline-flex p-3 bg-blue-600 text-white rounded-2xl mb-6 shadow-lg shadow-blue-600/20">
-              <Zap size={32} />
-            </div>
-            <h2 id="trust-title" className="text-3xl font-bold mb-4">Fast & Transient</h2>
-            <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-0">
-              Rooms are created instantly — just share the name and PIN to start talking. When a member deletes the room, every message and shared file is wiped for everyone.
-            </p>
-          </Reveal>
         </section>
       </main>
 
