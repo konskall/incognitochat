@@ -33,6 +33,7 @@ import { useRoomPresence } from '../hooks/useRoomPresence';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useIncoAI } from '../hooks/useIncoAI';
 import { useEntitlements } from '../hooks/useEntitlements';
+import { useMessageQuota } from '../hooks/useMessageQuota';
 import UpgradeModal from './UpgradeModal';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
@@ -103,7 +104,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       setUpgradePrompt({ featureLabel, requiredTier, reason }),
     []
   );
-  
+
+  // Per-room daily message-quota counter (display-only; DB is authoritative).
+  // `quotaBump` is incremented after each successful send to trigger a refetch.
+  const [quotaBump, setQuotaBump] = useState(0);
+  const quotaLeft = useMessageQuota(config.roomKey, tier, quotaBump);
+
   // UI States
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -864,6 +870,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                   attachment = await uploadFile(fileToSend);
               }
               await sendMessage(textToSend, config, attachment, replyToSend, null, 'text');
+              setQuotaBump((n) => n + 1);
               notifySubscribers('message', textToSend || 'Sent a file');
           }
       } catch (err) {
@@ -1380,6 +1387,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             typingUsers={combinedTypingUsers}
             onOpenPoll={() => setShowPollComposer(true)}
             maxFileBytes={ent.maxFileBytes}
+            quotaLeft={quotaLeft}
         />
       )}
 

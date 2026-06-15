@@ -41,6 +41,9 @@ interface ChatInputProps {
 
   // Tier-derived upload cap (bytes); enforced in handleFileSelect.
   maxFileBytes?: number;
+
+  // Remaining sends today in this room (display-only). null = unlimited / unknown.
+  quotaLeft?: number | null;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -68,6 +71,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   typingUsers,
   onOpenPoll,
   maxFileBytes,
+  quotaLeft,
 }) => {
   const [showEmoji, setShowEmoji] = useState(false);
   const [showAttach, setShowAttach] = useState(false);
@@ -205,6 +209,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
                  </span>
                  <span className="font-medium italic">{typingLabel}</span>
              </div>
+         )}
+
+         {!typingLabel && quotaLeft != null && quotaLeft <= 5 && (
+           <div className={`absolute -top-6 right-6 text-xs px-2 py-0.5 rounded-t-lg backdrop-blur bg-white/80 dark:bg-slate-900/80 ${quotaLeft === 0 ? 'text-red-500' : 'text-slate-500 dark:text-slate-400'}`}>
+             {quotaLeft === 0 ? 'Daily limit reached' : `${quotaLeft} message${quotaLeft === 1 ? '' : 's'} left today`}
+           </div>
          )}
 
          {/* Edit Banner */}
