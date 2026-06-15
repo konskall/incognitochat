@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import LandingPage from './components/LandingPage';
 import { ChatConfig, User } from './types';
 import { generateRoomKey } from './utils/helpers';
-import { supabase } from './services/supabase';
+import { supabase, startCheckout } from './services/supabase';
+import { flashToast } from './components/MessageActionMenu';
 
 // Route-level code splitting: each screen is its own chunk so a visitor landing
 // on the marketing/login view doesn't download the (heavy) chat + dashboard
@@ -95,6 +96,13 @@ const App: React.FC = () => {
                 isAnonymous: false,
                 email: session.user.email
             });
+            // Resume a paid-plan intent captured on the landing page before the
+            // Google sign-in redirect. removeItem first so this can never loop.
+            const pending = sessionStorage.getItem('pendingCheckoutTier');
+            if (pending === 'basic' || pending === 'ultra') {
+                sessionStorage.removeItem('pendingCheckoutTier');
+                setTimeout(() => { void startCheckout(pending); }, 0);
+            }
             // Only an explicit interactive sign-in (returning from the Google OAuth
             // redirect) routes to the dashboard. INITIAL_SESSION / TOKEN_REFRESHED
             // also fire on every page refresh, and previously this handler redirected
@@ -135,6 +143,18 @@ const App: React.FC = () => {
       setCurrentView('login');
     }
   };
+
+  const handleChoosePlan = useCallback(async (tier: 'basic' | 'ultra') => {
+    // Logged-in Google user -> straight to Stripe Checkout.
+    if (currentUser && !currentUser.isAnonymous) {
+      const res = await startCheckout(tier);
+      if (!res.ok) flashToast(res.error === 'LOGIN_REQUIRED' ? 'Please sign in with Google to upgrade.' : 'Could not start checkout. Please try again.');
+      return;
+    }
+    // Visitor / anonymous -> remember intent, send to login; resume after sign-in.
+    sessionStorage.setItem('pendingCheckoutTier', tier);
+    handleStartApp();
+  }, [currentUser]);
 
   // Show the marketing landing again, and clear the "seen" flag so a subsequent
   // refresh stays on the landing instead of routing back to login.
@@ -201,7 +221,7 @@ const App: React.FC = () => {
   return (
     <div className="min-h-[100dvh] w-full">
       {currentView === 'landing' ? (
-        <LandingPage onStart={handleStartApp} />
+        <LandingPage onStart={handleStartApp} onChoosePlan={handleChoosePlan} />
       ) : (
         <Suspense fallback={<ScreenLoader />}>
           {currentView === 'chat' && chatConfig ? (

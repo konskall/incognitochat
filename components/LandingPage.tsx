@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown, Sun, Moon, ArrowUp } from 'lucide-react';
 import InstallButton from './InstallButton';
+import PricingSection from './PricingSection';
 import { beginThemeTransition } from '../utils/helpers';
 
 interface LandingPageProps {
   onStart: () => void;
+  onChoosePlan: (tier: 'basic' | 'ultra') => void;
 }
 
 // Public-dir asset, resolved under the Vite base (`/incognitochat/`) so it works
@@ -120,7 +122,7 @@ const Reveal: React.FC<{ children: React.ReactNode; className?: string; delay?: 
   );
 };
 
-const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
+const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
   // Self-contained dark/light toggle. The boot script in index.html already set
   // the initial class from localStorage, so we seed from the live DOM state and
   // keep localStorage + the theme-color meta in sync (the rest of the app reads
@@ -270,6 +272,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart }) => {
             ))}
           </ol>
         </section>
+
+        <PricingSection onStartFree={onStart} onChoosePlan={onChoosePlan} />
 
         {/* FAQ */}
         <section aria-labelledby="faq-title" className="max-w-3xl mx-auto px-6 py-12 lg:py-20">
