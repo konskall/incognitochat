@@ -28,6 +28,9 @@ Deno.serve(async (req: Request) => {
     const DEFAULT_APP_URL = "https://konskall.github.io/incognitochat/";
     let APP_URL = DEFAULT_APP_URL;
     try { APP_URL = new URL((Deno.env.get("APP_URL") ?? "").trim() || DEFAULT_APP_URL).toString(); } catch { APP_URL = DEFAULT_APP_URL; }
+    // Build the return URL via the URL API so an APP_URL with an existing query or
+    // fragment doesn't produce a malformed double-separator URL (SEW-5).
+    const returnUrl = (() => { const u = new URL(APP_URL); u.searchParams.set("portal", "return"); return u.toString(); })();
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -49,7 +52,7 @@ Deno.serve(async (req: Request) => {
     const stripe = new Stripe(STRIPE_SECRET_KEY, { httpClient: Stripe.createFetchHttpClient() });
     const portal = await stripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${APP_URL}?portal=return`,
+      return_url: returnUrl,
     });
     return json({ url: portal.url }, 200);
   } catch (e) {

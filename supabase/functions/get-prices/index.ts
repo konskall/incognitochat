@@ -17,9 +17,18 @@ function json(payload: unknown, status = 200) {
   });
 }
 
+// This is a PUBLIC, unauthenticated function the client calls via POST (so the
+// Cache-Control hint above doesn't apply browser-side). Cache the shaped result
+// in module scope so warm isolates reuse it for ~5 min instead of hitting Stripe
+// on every landing-page / modal mount (SEW-4). Only successes are cached.
+const TTL_MS = 5 * 60 * 1000;
+let cache: { body: { basic: unknown; ultra: unknown }; exp: number } | null = null;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
+    if (cache && cache.exp > Date.now()) return json(cache.body, 200);
+
     const KEY = Deno.env.get("STRIPE_SECRET_KEY");
     const PRICE_BASIC = Deno.env.get("STRIPE_PRICE_BASIC");
     const PRICE_ULTRA = Deno.env.get("STRIPE_PRICE_ULTRA");
@@ -35,7 +44,9 @@ Deno.serve(async (req: Request) => {
       currency: p.currency,                        // e.g. "eur"
       interval: p.recurring?.interval ?? "month",  // "month"
     });
-    return json({ basic: shape(b), ultra: shape(u) }, 200);
+    const body = { basic: shape(b), ultra: shape(u) };
+    cache = { body, exp: Date.now() + TTL_MS };
+    return json(body, 200);
   } catch (e) {
     console.error("get-prices error", e);
     return json({ error: "SERVER_ERROR" }, 500);

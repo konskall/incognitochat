@@ -2,7 +2,7 @@
 // Creates a Stripe Checkout Session (subscription mode) so a signed-in Google
 // user can subscribe to Basic or Ultra. Anonymous users cannot subscribe.
 // Secrets: STRIPE_SECRET_KEY, STRIPE_PRICE_BASIC, STRIPE_PRICE_ULTRA, APP_URL.
-// SUPABASE_URL / SUPABASE_ANON_KEY are auto-injected.
+// SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY are auto-injected.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@17?target=deno";
@@ -34,8 +34,16 @@ Deno.serve(async (req: Request) => {
     const DEFAULT_APP_URL = "https://konskall.github.io/incognitochat/";
     let APP_URL = DEFAULT_APP_URL;
     try { APP_URL = new URL((Deno.env.get("APP_URL") ?? "").trim() || DEFAULT_APP_URL).toString(); } catch { APP_URL = DEFAULT_APP_URL; }
+    // Build return URLs via the URL API so an APP_URL that ever carries a query or
+    // fragment doesn't produce a malformed double-separator URL (SEW-5).
+    const appUrlWith = (key: string, value: string) => {
+      const u = new URL(APP_URL);
+      u.searchParams.set(key, value);
+      return u.toString();
+    };
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const authHeader = req.headers.get("Authorization") ?? "";
 
     const { tier } = await req.json().catch(() => ({}));
@@ -53,14 +61,26 @@ Deno.serve(async (req: Request) => {
     const stripe = new Stripe(STRIPE_SECRET_KEY, { httpClient: Stripe.createFetchHttpClient() });
     const price = tier === "ultra" ? PRICE_ULTRA : PRICE_BASIC;
 
-    // Reuse an existing Stripe customer for this uid (search by metadata), else
-    // create one. (Search is eventually consistent — a rare rapid double-submit
-    // could create two customers; acceptable at this scale.)
+    // Resolve the Stripe customer for this uid. Prefer the AUTHORITATIVE id the
+    // webhook recorded in `subscriptions` (service-role read), then a metadata
+    // search, else create one. This avoids spawning orphaned duplicate customers
+    // on a rapid double-submit, since the eventually-consistent search can miss a
+    // just-created customer (SEW-3).
     let customerId: string | undefined;
-    try {
-      const found = await stripe.customers.search({ query: `metadata['uid']:'${user.id}'`, limit: 1 });
-      if (found.data.length > 0) customerId = found.data[0].id;
-    } catch (_e) { /* search unavailable -> fall through to create */ }
+    if (SERVICE_ROLE_KEY) {
+      try {
+        const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+        const { data: subRow } = await admin
+          .from("subscriptions").select("stripe_customer_id").eq("user_id", user.id).maybeSingle();
+        if (subRow?.stripe_customer_id) customerId = subRow.stripe_customer_id as string;
+      } catch (_e) { /* fall through to search/create */ }
+    }
+    if (!customerId) {
+      try {
+        const found = await stripe.customers.search({ query: `metadata['uid']:'${user.id}'`, limit: 1 });
+        if (found.data.length > 0) customerId = found.data[0].id;
+      } catch (_e) { /* search unavailable -> fall through to create */ }
+    }
     if (!customerId) {
       const c = await stripe.customers.create({
         email: user.email ?? undefined,
@@ -75,8 +95,8 @@ Deno.serve(async (req: Request) => {
       line_items: [{ price, quantity: 1 }],
       client_reference_id: user.id,
       subscription_data: { metadata: { uid: user.id } },
-      success_url: `${APP_URL}?checkout=success`,
-      cancel_url: `${APP_URL}?checkout=cancel`,
+      success_url: appUrlWith("checkout", "success"),
+      cancel_url: appUrlWith("checkout", "cancel"),
       allow_promotion_codes: true,
     });
     if (!session.url) return json({ error: "NO_CHECKOUT_URL" }, 500);
