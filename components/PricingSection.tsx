@@ -116,13 +116,13 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartFree, onChoosePl
                     regardless of whether the blurb wraps to one line or two. */}
                 <p className="mt-1 mb-5 min-h-[2.5rem] text-sm text-slate-500 dark:text-slate-400">{plan.blurb}</p>
 
-                <div className="mb-6 flex items-end gap-1.5" aria-busy={plan.key !== 'free' && loading}>
+                <div className="mb-6 flex flex-wrap items-end gap-x-1.5" aria-busy={plan.key !== 'free' && loading}>
                   {plan.key !== 'free' && loading ? (
-                    <span className="h-11 w-24 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" aria-label="Loading price" />
+                    <span className="h-10 w-24 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800 lg:h-11" aria-label="Loading price" />
                   ) : (
                     <>
-                      <span className="text-5xl font-extrabold tracking-tight tabular-nums text-slate-900 dark:text-white">{price.big}</span>
-                      <span className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">{price.small}</span>
+                      <span className="text-4xl font-extrabold tracking-tight tabular-nums text-slate-900 dark:text-white lg:text-5xl">{price.big}</span>
+                      <span className="mb-1 whitespace-nowrap text-xs font-medium text-slate-500 dark:text-slate-400 lg:mb-1.5">{price.small}</span>
                     </>
                   )}
                 </div>
