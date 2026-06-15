@@ -93,8 +93,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const { tier, ent } = useEntitlements(user?.uid);
 
   // A shared upgrade prompt: child components call promptUpgrade(...) when a
-  // gated feature is tapped; this opens the UpgradeModal. Stays null (closed)
-  // until a later task actually wires the gates.
+  // gated feature is tapped; this opens the UpgradeModal.
   const [upgradePrompt, setUpgradePrompt] = useState<
     { featureLabel: string; requiredTier: 'basic' | 'ultra'; reason?: string } | null
   >(null);
@@ -878,8 +877,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           if (tierErr) {
             if (tierErr.code === 'QT004') {
               promptUpgrade('Inco AI', tierErr.requiredTier);
+            } else if (tierErr.code === 'QT002') {
+              // Daily quota is a hard paywall moment -> offer an actionable upgrade.
+              promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
             } else {
-              // QT001 (room read-only) and QT002 (daily quota) are transient/informational.
+              // QT001 (room read-only) can't be cleared by an instant upgrade -> just inform.
               flashToast(tierErr.message);
             }
           }

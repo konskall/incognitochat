@@ -39,8 +39,7 @@ interface ChatInputProps {
 
   onOpenPoll: () => void;
 
-  // Tier-derived upload cap (bytes). Declared for a later task that gates file
-  // size by tier; not consumed yet.
+  // Tier-derived upload cap (bytes); enforced in handleFileSelect.
   maxFileBytes?: number;
 }
 

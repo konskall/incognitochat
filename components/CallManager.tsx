@@ -35,8 +35,8 @@ interface CallManagerProps {
   onCloseParticipants: () => void;
   showParticipants: boolean;
   roomCreatorId?: string | null;
-  // Tier plumbing (Phase 3): entitlements + upgrade prompt for gating
-  // audio/video/screen-share by tier. Declared for a later task; not consumed yet.
+  // Tier plumbing (Phase 3): entitlements + upgrade prompt; gates
+  // audio/video/screen-share by tier (see gateCall + canShareScreen).
   ent?: import('../utils/entitlements').TierEntitlements;
   onUpgrade?: (featureLabel: string, requiredTier: 'basic' | 'ultra', reason?: string) => void;
 }
