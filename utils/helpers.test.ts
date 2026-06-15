@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { encryptMessage, decryptMessage, generateRoomKey, getYouTubeId, getDisplayMediaSupported, displayMediaErrorMessage, cleanUrl } from './helpers';
+import { generateRoomKey, getYouTubeId, getDisplayMediaSupported, displayMediaErrorMessage, cleanUrl } from './helpers';
+import { encryptMessage, decryptMessage } from './crypto';
 
 describe('encrypt/decrypt', () => {
   const pin = '1234';

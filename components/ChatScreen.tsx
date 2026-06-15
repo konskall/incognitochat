@@ -7,7 +7,8 @@ import MessageList from './MessageList';
 // WebRTC call logic is the heaviest component in the app (~43KB); load it
 // lazily so entering a room paints the message list first.
 const CallManager = lazy(() => import('./CallManager'));
-import { initAudio, playBeep, decryptMessage, cleanUrl, beginThemeTransition } from '../utils/helpers';
+import { initAudio, playBeep, cleanUrl, beginThemeTransition } from '../utils/helpers';
+import { decryptMessage } from '../utils/crypto';
 import { subscribeToPushNotifications, unsubscribeFromPushNotifications } from '../utils/pushService';
 import { setActiveRoom, onPushSubscriptionChanged } from '../utils/swBridge';
 import ChatHeader from './ChatHeader';

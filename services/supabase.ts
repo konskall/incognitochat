@@ -1,10 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseConfig';
 
-// Hardcoded keys for development environment where .env is not available.
-const supabaseUrl = 'https://qygirixqsuraclbdfnjp.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5Z2lyaXhxc3VyYWNsYmRmbmpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUyOTA4NjIsImV4cCI6MjA4MDg2Njg2Mn0.x1KpxEUDQ4EOW58MgsgeKJ5Y9NIqcRIgKmZ-qhkhWZQ';
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -76,12 +73,27 @@ async function readFnError(error: any): Promise<string> {
   return error?.message || 'REQUEST_FAILED';
 }
 
+// Defense-in-depth: only ever navigate to an https Stripe URL. The URL comes from
+// our own create-checkout-session / create-portal-session edge functions, but a
+// server-side mistake (or a compromised upstream) returning a javascript:/data:
+// scheme or a non-Stripe host would otherwise be a blind redirect. Mirrors the
+// same-origin/scheme discipline in sw.js and helpers.ts (safeAvatarUrl).
+function isStripeUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && /(^|\.)stripe\.com$/.test(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
 // Start Stripe Checkout (subscription mode) for a paid tier. Redirects on success.
 export async function startCheckout(tier: 'basic' | 'ultra'): Promise<BillingResult> {
   const { data, error } = await supabase.functions.invoke('create-checkout-session', { body: { tier } });
   if (error) return { ok: false, error: await readFnError(error) };
   const url = (data as any)?.url;
   if (!url) return { ok: false, error: (data as any)?.error || 'NO_CHECKOUT_URL' };
+  if (!isStripeUrl(url)) return { ok: false, error: 'BAD_CHECKOUT_URL' };
   window.location.href = url;
   return { ok: true };
 }
@@ -93,6 +105,7 @@ export async function openBillingPortal(): Promise<BillingResult> {
   if (error) return { ok: false, error: await readFnError(error) };
   const url = (data as any)?.url;
   if (!url) return { ok: false, error: (data as any)?.error || 'NO_PORTAL_URL' };
+  if (!isStripeUrl(url)) return { ok: false, error: 'BAD_PORTAL_URL' };
   window.location.href = url;
   return { ok: true };
 }

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { Message, Attachment, Poll, ReplyInfo, GroundingSource } from '../types';
-import { decryptMessage, encryptMessage } from '../utils/helpers';
+import { decryptMessage, encryptMessage } from '../utils/crypto';
 
 // Shape of a raw `messages` row as it comes back from Postgres / realtime
 // (snake_case, encrypted text, jsonb columns) before `mapRow` decrypts + maps it.

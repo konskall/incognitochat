@@ -10,7 +10,8 @@ import UpgradeModal from './UpgradeModal';
 import { setDashboardActive, getSwVersion } from '../utils/swBridge';
 import { subscribeToPushNotifications } from '../utils/pushService';
 import { User, ChatConfig, Room, Presence } from '../types';
-import { generateRoomKey, compressImage, decryptMessage, beginThemeTransition, ROOM_NAME_RE, ROOM_PIN_RE, ROOM_NAME_RULE, ROOM_PIN_RULE, safeAvatarUrl } from '../utils/helpers';
+import { generateRoomKey, compressImage, beginThemeTransition, ROOM_NAME_RE, ROOM_PIN_RE, ROOM_NAME_RULE, ROOM_PIN_RULE, safeAvatarUrl } from '../utils/helpers';
+import { decryptMessage } from '../utils/crypto';
 import {
   LogOut, Trash2, ArrowRight, Loader2,
   Upload, RotateCcw,

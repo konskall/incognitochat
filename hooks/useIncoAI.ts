@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../services/supabase';
 import { Message, ChatConfig, GroundingSource } from '../types';
-import { encryptMessage } from '../utils/helpers';
+import { encryptMessage } from '../utils/crypto';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 const DEFAULT_BOT_AVATAR = 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1';

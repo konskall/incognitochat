@@ -3,7 +3,6 @@ import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import LandingPage from './components/LandingPage';
 import { ChatConfig, User } from './types';
 import { generateRoomKey } from './utils/helpers';
-import { supabase, startCheckout } from './services/supabase';
 import { flashToast } from './components/MessageActionMenu';
 
 // Route-level code splitting: each screen is its own chunk so a visitor landing
@@ -31,20 +30,32 @@ const App: React.FC = () => {
   const userRef = React.useRef(currentUser);
   useEffect(() => { userRef.current = currentUser; }, [currentUser]);
 
+  // Prevents a double-click on a paid CTA from firing two create-checkout-session
+  // calls (each would open an orphaned Stripe session).
+  const checkoutBusy = React.useRef(false);
+
   useEffect(() => {
     // Check if user has already seen landing page in this session
     const hasSeenLanding = sessionStorage.getItem('hasSeenLanding');
-    
-    // 1. Check for active session from URL (OAuth redirect) or LocalStorage
-    const initSession = async () => {
+    let cancelled = false;
+    let subscription: { unsubscribe: () => void } | null = null;
+
+    // Supabase is dynamic-imported (NOT a top-level import) so @supabase/supabase-js
+    // (~210KB) stays OFF the marketing landing's first-paint critical path; it loads
+    // right after mount when we check the session.
+    (async () => {
+      const { supabase, startCheckout } = await import('./services/supabase');
+      if (cancelled) return;
+
+      // 1. Restore session (OAuth redirect or stored session) and route.
       try {
         const { data: { session } } = await supabase.auth.getSession();
+        if (cancelled) return;
         let isGoogleUser = false;
 
         if (session?.user) {
             const isAnon = !!session.user.is_anonymous;
             isGoogleUser = !isAnon;
-
             setCurrentUser({
                 uid: session.user.id,
                 isAnonymous: isAnon,
@@ -83,13 +94,13 @@ const App: React.FC = () => {
         // getSession can reject (offline, CORS, corrupt stored session). Don't
         // hang on a blank screen — fall back to a usable entry point.
         console.error('Session restore failed', e);
-        setCurrentView(hasSeenLanding ? 'login' : 'landing');
+        if (!cancelled) setCurrentView(hasSeenLanding ? 'login' : 'landing');
       }
-    };
 
-    initSession();
+      if (cancelled) return;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // 2. Auth state listener (sign-in redirect handling + paid-plan resume).
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
         if (session?.user && !session.user.is_anonymous) {
             setCurrentUser({
                 uid: session.user.id,
@@ -118,9 +129,11 @@ const App: React.FC = () => {
                 setCurrentView(prev => (prev === 'chat' ? prev : 'dashboard'));
             }
         }
-    });
+      });
+      subscription = data.subscription;
+    })();
 
-    return () => subscription.unsubscribe();
+    return () => { cancelled = true; if (subscription) subscription.unsubscribe(); };
   }, []);
 
   const handleJoin = (config: ChatConfig) => {
@@ -152,8 +165,15 @@ const App: React.FC = () => {
   const handleChoosePlan = useCallback(async (tier: 'basic' | 'ultra') => {
     // Logged-in Google user -> straight to Stripe Checkout.
     if (currentUser && !currentUser.isAnonymous) {
-      const res = await startCheckout(tier);
-      if (!res.ok) flashToast(res.error === 'LOGIN_REQUIRED' ? 'Please sign in with Google to upgrade.' : 'Could not start checkout. Please try again.');
+      if (checkoutBusy.current) return;            // ignore rapid double-clicks
+      checkoutBusy.current = true;
+      try {
+        const { startCheckout } = await import('./services/supabase');
+        const res = await startCheckout(tier);
+        if (!res.ok) flashToast(res.error === 'LOGIN_REQUIRED' ? 'Please sign in with Google to upgrade.' : 'Could not start checkout. Please try again.');
+      } finally {
+        checkoutBusy.current = false;
+      }
       return;
     }
     // Visitor / anonymous -> remember intent, send to login; resume after sign-in.
@@ -204,6 +224,7 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogout = async () => {
+    const { supabase } = await import('./services/supabase');
     await supabase.auth.signOut();
     // Clear all per-user local data so the next person on a shared device can't
     // see the previous user's identity, room list or read state. (Custom room
