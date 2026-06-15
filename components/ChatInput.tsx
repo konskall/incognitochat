@@ -44,8 +44,6 @@ interface ChatInputProps {
   maxFileBytes?: number;
 }
 
-const MAX_FILE_SIZE = 40 * 1024 * 1024; // 40MB
-
 const ChatInput: React.FC<ChatInputProps> = ({
   inputText,
   setInputText,
@@ -69,7 +67,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   isOffline,
   isRoomReady,
   typingUsers,
-  onOpenPoll
+  onOpenPoll,
+  maxFileBytes,
 }) => {
   const [showEmoji, setShowEmoji] = useState(false);
   const [showAttach, setShowAttach] = useState(false);
@@ -131,8 +130,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
         }
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-        alert(`File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is 40MB.`);
+    const limitBytes = maxFileBytes ?? 40 * 1024 * 1024;
+    if (file.size > limitBytes) {
+        const limitMb = Math.round(limitBytes / (1024 * 1024));
+        alert(
+            `File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Your plan allows up to ${limitMb}MB.` +
+            (limitBytes < 40 * 1024 * 1024 ? ' Upgrade to Ultra for 40MB uploads.' : '')
+        );
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
     }
