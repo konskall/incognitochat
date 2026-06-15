@@ -4,6 +4,8 @@ import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom } from '../services/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { broadcastRoomDeleted, parseRoomDeletedPayload } from '../utils/roomLifecycle';
+import { useEntitlements } from '../hooks/useEntitlements';
+import UpgradeModal from './UpgradeModal';
 import { setDashboardActive, getSwVersion } from '../utils/swBridge';
 import { subscribeToPushNotifications } from '../utils/pushService';
 import { User, ChatConfig, Room, Presence } from '../types';
@@ -337,6 +339,8 @@ const StaticRoomCard = React.memo((props: RoomCardProps) => (
 ));
 
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onLogout }) => {
+  const { tier } = useEntitlements(user?.uid);
+  const [upgradePrompt, setUpgradePrompt] = useState<{ featureLabel: string; requiredTier: 'basic' | 'ultra' } | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -906,6 +910,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         roomKey: room.room_key, roomName: room.room_name, pin: room.pin,
         username: displayName, createIfMissing: true,
       });
+      if (error?.code === 'ROOM_LIMIT') {
+        setUpgradePrompt({ featureLabel: 'More rooms', requiredTier: tier === 'free' ? 'basic' : 'ultra' });
+        return;
+      }
       if (error || !data) { alert('Could not re-create the room. Please try again.'); return; }
       // Clear the session "joined" flag so a later in-room re-entry creates fresh.
       sessionStorage.removeItem(`joined_${room.room_key}`);
@@ -916,7 +924,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     } catch {
       alert('Could not re-create the room. Please try again.');
     }
-  }, [displayName]);
+  }, [displayName, tier]);
 
   // Dismiss a live-deleted room from the dashboard. The room (and the user's
   // subscribers/room_settings/push rows) are already cascade-gone server-side, so
@@ -996,7 +1004,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       try {
            const { data: room, error } = await joinOrCreateRoom({ roomKey, roomName, pin, username: displayName });
            if (error) {
-               if (error.code === 'WRONG_PIN') alert('Wrong PIN for this room.');
+               if (error.code === 'ROOM_LIMIT') setUpgradePrompt({ featureLabel: 'More rooms', requiredTier: tier === 'free' ? 'basic' : 'ultra' });
+               else if (error.code === 'WRONG_PIN') alert('Wrong PIN for this room.');
                else alert('Failed to enter room. Please try again.');
                return;
            }
@@ -1131,6 +1140,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
   return (
     <>
+    <UpgradeModal
+        open={!!upgradePrompt}
+        onClose={() => setUpgradePrompt(null)}
+        requiredTier={upgradePrompt?.requiredTier ?? 'basic'}
+        currentTier={tier}
+        featureLabel={upgradePrompt?.featureLabel ?? ''}
+    />
     {roomToDelete && (
         <RoomDeleteToast
             roomName={roomToDelete.name}
