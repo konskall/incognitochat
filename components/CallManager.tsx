@@ -254,6 +254,15 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
     startCall(type, targetUid);
   };
 
+  // Gate the ACCEPT side too. Calls have no server backstop, so without this a
+  // free/Basic user rung by a paid initiator could join an audio/video call they
+  // aren't entitled to and never see the paywall. On a blocked accept we open the
+  // upgrade prompt (via gateCall) and decline the ringing call (CALL-ACCEPT-GATE).
+  const handleAcceptCall = () => {
+    if (incoming && !gateCall(incoming.callType)) { declineCall(); return; }
+    acceptCall();
+  };
+
   const renderContent = (): React.ReactNode => {
   // --- Incoming (ringing) ---
   if (status === 'ringing' && incoming) {
@@ -277,7 +286,7 @@ const CallManager: React.FC<CallManagerProps> = ({ user, config, users, onCloseP
               </div>
               <span className="text-sm text-slate-400 font-medium">Decline</span>
             </button>
-            <button onClick={acceptCall} className="flex flex-col items-center gap-2 group">
+            <button onClick={handleAcceptCall} className="flex flex-col items-center gap-2 group">
               <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center text-white shadow-lg shadow-green-500/40 group-hover:scale-110 transition-transform duration-300 animate-bounce">
                 {incoming.callType === 'video' ? <Video size={32} fill="currentColor" /> : <Phone size={32} fill="currentColor" />}
               </div>

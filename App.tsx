@@ -107,25 +107,27 @@ const App: React.FC = () => {
                 isAnonymous: false,
                 email: session.user.email
             });
-            // Resume a paid-plan intent captured on the landing page before the
-            // Google sign-in redirect. removeItem first so this can never loop.
-            const pending = sessionStorage.getItem('pendingCheckoutTier');
-            if (pending === 'basic' || pending === 'ultra') {
-                sessionStorage.removeItem('pendingCheckoutTier');
-                // Defer a tick so the dashboard view flushes before navigating to Stripe.
-                setTimeout(() => {
-                    void startCheckout(pending).then((r) => {
-                        if (!r.ok) flashToast('Could not start checkout. Please try again.');
-                    });
-                }, 0);
-            }
             // Only an explicit interactive sign-in (returning from the Google OAuth
-            // redirect) routes to the dashboard. INITIAL_SESSION / TOKEN_REFRESHED
-            // also fire on every page refresh, and previously this handler redirected
-            // here on those too — racing with (and beating) initSession's room
-            // restore, which bounced a logged-in user out of their room on refresh.
-            // Gating on SIGNED_IN + not clobbering an already-restored chat fixes it.
+            // redirect) routes to the dashboard AND resumes a pending checkout.
+            // INITIAL_SESSION / TOKEN_REFRESHED also fire on every page refresh;
+            // gating BOTH on SIGNED_IN stops (a) a logged-in user being bounced out
+            // of a restored room on refresh, and (b) a STALE pendingCheckoutTier
+            // silently re-launching Stripe on a later refresh/token-refresh.
             if (event === 'SIGNED_IN') {
+                // Resume a paid-plan intent captured before the sign-in redirect.
+                // removeItem first so this can never loop; share the checkoutBusy
+                // guard so the resume can't race a manual Upgrade click into two sessions.
+                const pending = sessionStorage.getItem('pendingCheckoutTier');
+                if ((pending === 'basic' || pending === 'ultra') && !checkoutBusy.current) {
+                    sessionStorage.removeItem('pendingCheckoutTier');
+                    checkoutBusy.current = true;
+                    // Defer a tick so the dashboard view flushes before navigating to Stripe.
+                    setTimeout(() => {
+                        void startCheckout(pending)
+                            .then((r) => { if (!r.ok) flashToast('Could not start checkout. Please try again.'); })
+                            .finally(() => { checkoutBusy.current = false; });
+                    }, 0);
+                }
                 setCurrentView(prev => (prev === 'chat' ? prev : 'dashboard'));
             }
         }
@@ -137,6 +139,9 @@ const App: React.FC = () => {
   }, []);
 
   const handleJoin = (config: ChatConfig) => {
+    // Entering a room means the user chose to chat, not pay — drop any stale paid
+    // intent so it can't resume a Stripe redirect on a later sign-in (see BF-1).
+    sessionStorage.removeItem('pendingCheckoutTier');
     localStorage.setItem('chatPin', config.pin);
     localStorage.setItem('chatRoomName', config.roomName);
     localStorage.setItem('chatUsername', config.username);
@@ -185,6 +190,7 @@ const App: React.FC = () => {
   // refresh stays on the landing instead of routing back to login.
   const goToLanding = () => {
     sessionStorage.removeItem('hasSeenLanding');
+    sessionStorage.removeItem('pendingCheckoutTier'); // abandon any pending paid intent
     setCurrentView('landing');
   };
 
@@ -214,7 +220,13 @@ const App: React.FC = () => {
     const checkout = params.get('checkout');
     const portal = params.get('portal');
     if (!checkout && !portal) return;
-    if (checkout === 'success') flashToast("You're all set — your plan is active.");
+    if (checkout === 'success') {
+      // The entitlement webhook is asynchronous — the plan may not be committed the
+      // instant Stripe redirects back. Don't assert "active"; mark a short poll
+      // (useEntitlements reads this) so features unlock as soon as the webhook lands.
+      sessionStorage.setItem('postCheckoutPoll', '1');
+      flashToast('Payment received — activating your plan…');
+    }
     else if (checkout === 'cancel') flashToast('Checkout canceled.');
     else if (portal === 'return') flashToast('Billing updated.');
     // Strip the params so a refresh doesn't re-toast.

@@ -283,9 +283,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
            }
       } catch (e) {
           console.error("Failed to upload voice", e);
-          // Don't let the recording vanish silently — tell the user it failed
-          // (offline, storage error, or over the 40MB cap).
-          flashToast('Voice message could not be sent. Please try again.');
+          // A voice note is a message insert too — map quota/lock errors to the
+          // upgrade funnel instead of a misleading "try again" toast (CG-2).
+          const tierErr = parseTierError(e, tier);
+          if (tierErr?.code === 'QT002') {
+              promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
+          } else if (tierErr) {
+              flashToast(tierErr.message);
+          } else {
+              flashToast('Voice message could not be sent. Please try again.');
+          }
       }
   };
 
@@ -748,9 +755,26 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   // --- Polls ---
   const handleCreatePoll = useCallback(async (question: string, options: string[], multi: boolean) => {
-    await createPoll(question, options, multi, config);
-    notifySubscribers('message', 'Created a poll');
-  }, [createPoll, config]);
+    try {
+      await createPoll(question, options, multi, config);
+      setQuotaBump((n) => n + 1);
+      notifySubscribers('message', 'Created a poll');
+    } catch (err) {
+      // A poll is a message insert, so it hits the same quota/lock triggers as a
+      // text send — route QT001/QT002 through the upgrade funnel instead of letting
+      // PollComposerModal surface a raw "QUOTA_EXCEEDED:free" string (CG-1).
+      const tierErr = parseTierError(err, tier);
+      if (tierErr) {
+        if (tierErr.code === 'QT002') {
+          promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
+        } else {
+          flashToast(tierErr.message); // QT001 read-only room
+        }
+        return; // handled — let the poll modal close cleanly
+      }
+      throw err; // non-tier failure -> PollComposerModal shows it
+    }
+  }, [createPoll, config, tier, promptUpgrade]);
 
   const handleToggleClosedPoll = useCallback((msg: Message, closed: boolean) => {
     setPollClosed(msg.id, closed).catch(() => {});
@@ -904,7 +928,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                try {
                    await sendMessage("📍 Shared a location", config, null, null, { lat: pos.coords.latitude, lng: pos.coords.longitude }, 'text');
                    notifySubscribers('message', 'Shared a location');
-               } catch(e) { console.error(e); }
+               } catch(e) {
+                   console.error(e);
+                   // Location is a message insert — surface quota/lock instead of failing silently (CG-2).
+                   const tierErr = parseTierError(e, tier);
+                   if (tierErr?.code === 'QT002') promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
+                   else if (tierErr) flashToast(tierErr.message);
+                   else flashToast('Could not share your location. Please try again.');
+               }
                finally { setIsGettingLocation(false); }
            },
            // Without an error callback the success path never fires on

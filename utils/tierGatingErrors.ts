@@ -29,9 +29,13 @@ function nextTierUp(current: Tier): 'basic' | 'ultra' {
 function extractCode(err: any): TierErrorCode | null {
   const raw = (err?.code ?? '').toString().toUpperCase();
   if ((QT_CODES as string[]).includes(raw)) return raw as TierErrorCode;
+  // A present-but-different SQLSTATE means a NON-tier error — don't message-match
+  // (avoids a false upsell when an unrelated error's text happens to contain a
+  // gating keyword). Only fall back to the message when there's no usable code
+  // (some transports strip err.code).
+  if (raw) return null;
   const msg = (err?.message ?? '').toString().toUpperCase();
   for (const c of QT_CODES) if (msg.includes(c)) return c;
-  // message-only fallbacks (in case the SQLSTATE is stripped upstream)
   if (msg.includes('ROOM_LOCKED')) return 'QT001';
   if (msg.includes('QUOTA_EXCEEDED')) return 'QT002';
   if (msg.includes('ROOM_LIMIT')) return 'QT003';
@@ -47,7 +51,10 @@ export function parseTierError(err: any, currentTier: Tier = 'free'): TierError 
   const msg = (err?.message ?? '').toString();
 
   if (code === 'QT001') {
-    return { code, requiredTier: nextTierUp(currentTier), message: 'This room is read-only. Upgrade to send messages again.' };
+    // The lock is OWNER-scoped (reconcile_entitlements locks the owner's excess
+    // rooms by their plan limit), so a non-owner viewer upgrading won't clear it —
+    // don't promise that. ChatScreen surfaces this as an info toast, not an upsell.
+    return { code, requiredTier: nextTierUp(currentTier), message: "This room is read-only — the owner's plan limit was reached." };
   }
   if (code === 'QT002') {
     return { code, requiredTier: nextTierUp(currentTier), message: "You've reached today's message limit in this room. Upgrade to send more." };

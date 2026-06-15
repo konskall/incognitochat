@@ -7,6 +7,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { broadcastRoomDeleted, parseRoomDeletedPayload } from '../utils/roomLifecycle';
 import { useEntitlements } from '../hooks/useEntitlements';
 import UpgradeModal from './UpgradeModal';
+import { parseTierError } from '../utils/tierGatingErrors';
 import { setDashboardActive, getSwVersion } from '../utils/swBridge';
 import { subscribeToPushNotifications } from '../utils/pushService';
 import { User, ChatConfig, Room, Presence } from '../types';
@@ -798,10 +799,14 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           setRooms(prev => prev.map(r => r.room_key === key ? { ...r, display_name: (data as string) } : r));
       } catch (e: any) {
           const msg = e?.message || '';
-          if (msg.includes('NOT_OWNER')) alert('Only the room owner can rename it.');
-          else alert('Rename failed: ' + (msg || 'Unknown error'));
+          if (msg.includes('NOT_OWNER')) { alert('Only the room owner can rename it.'); return; }
+          // Custom room names are a Basic+ feature (enforce_room_tier raises QT004
+          // for a free owner) — route to the upgrade prompt instead of a raw alert (CLC-1).
+          const tierErr = parseTierError(e, tier);
+          if (tierErr) { setUpgradePrompt({ featureLabel: 'Custom room names', requiredTier: tierErr.requiredTier }); return; }
+          alert('Rename failed: ' + (msg || 'Unknown error'));
       }
-  }, []);
+  }, [tier]);
 
   const toggleTheme = useCallback(() => {
       const next = !document.documentElement.classList.contains('dark');

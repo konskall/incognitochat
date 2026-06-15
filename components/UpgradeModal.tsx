@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Sparkles, Lock, Loader2 } from 'lucide-react';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -22,9 +22,20 @@ const UpgradeModal: React.FC<UpgradeModalProps> = ({ open, onClose, requiredTier
   const dialogRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   useModalA11y(open, onClose, dialogRef);
+  // Lock background scroll while the modal is open (prevents iOS rubber-band
+  // scroll-through behind the overlay). Scoped to this modal.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
   const { prices } = usePrices();
   const plan = requiredTier === 'ultra' ? prices?.ultra ?? null : prices?.basic ?? null;
-  const priceSuffix = plan ? ` — ${formatPrice(plan)}/${plan.interval}` : '';
+  // " for €X/month" reads correctly for both singular and plural feature labels
+  // ("Video calls — available on Ultra for €10/month."), and degrades gracefully
+  // to just "available on Ultra." while prices are still loading.
+  const priceSuffix = plan ? ` for ${formatPrice(plan)}/${plan.interval}` : '';
   if (!open) return null;
 
   const tierName = cap(requiredTier);
@@ -64,7 +75,7 @@ const UpgradeModal: React.FC<UpgradeModalProps> = ({ open, onClose, requiredTier
           </button>
         </div>
         <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400 mb-6">
-          {featureLabel} is available on {tierName}{priceSuffix}.{reason ? ` ${reason}` : ''}
+          {featureLabel} — available on {tierName}{priceSuffix}.{reason ? ` ${reason}` : ''}
         </p>
         <button
           onClick={handleUpgrade}

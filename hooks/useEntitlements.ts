@@ -18,10 +18,15 @@ export function useEntitlements(uid: string | undefined): Entitlements {
   const [loading, setLoading] = useState<boolean>(!!uid);
   const uidRef = useRef(uid);
   uidRef.current = uid;
+  // Dedupe concurrent refetches — visibilitychange + focus both fire on a tab
+  // return, and the post-checkout poll ticks; one in-flight read is enough.
+  const inFlightRef = useRef(false);
 
   const refresh = useCallback(async () => {
     const u = uidRef.current;
     if (!u) { setTier('free'); setLoading(false); return; }
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     try {
       const { data, error } = await supabase
         .from('subscriptions')
@@ -35,6 +40,7 @@ export function useEntitlements(uid: string | undefined): Entitlements {
       setTier('free');
     } finally {
       setLoading(false);
+      inFlightRef.current = false;
     }
   }, []);
 
@@ -53,6 +59,23 @@ export function useEntitlements(uid: string | undefined): Entitlements {
       window.removeEventListener('focus', onVisible);
     };
   }, [refresh]);
+
+  // After returning from Stripe Checkout the entitlement webhook may not have
+  // committed yet (effective_tier still 'free'). App.tsx sets 'postCheckoutPoll'
+  // on ?checkout=success; poll briefly until the tier upgrades, then clear it.
+  // Bounded + self-clearing + fail-safe (only ever resolves a HIGHER tier).
+  useEffect(() => {
+    if (!uid) return;
+    if (sessionStorage.getItem('postCheckoutPoll') !== '1') return;
+    if (tier !== 'free') { sessionStorage.removeItem('postCheckoutPoll'); return; }
+    let attempts = 0;
+    const id = window.setInterval(() => {
+      attempts += 1;
+      if (attempts >= 5) { sessionStorage.removeItem('postCheckoutPoll'); window.clearInterval(id); return; }
+      void refresh();
+    }, 1500);
+    return () => window.clearInterval(id);
+  }, [uid, tier, refresh]);
 
   return { tier, ent: entitlements(tier), loading, refresh: () => { void refresh(); } };
 }
