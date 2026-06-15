@@ -911,7 +911,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         username: displayName, createIfMissing: true,
       });
       if (error?.code === 'ROOM_LIMIT') {
-        setUpgradePrompt({ featureLabel: 'More rooms', requiredTier: tier === 'free' ? 'basic' : 'ultra' });
+        setUpgradePrompt({ featureLabel: 'Another room', requiredTier: tier === 'free' ? 'basic' : 'ultra' });
         return;
       }
       if (error || !data) { alert('Could not re-create the room. Please try again.'); return; }
@@ -1004,7 +1004,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       try {
            const { data: room, error } = await joinOrCreateRoom({ roomKey, roomName, pin, username: displayName });
            if (error) {
-               if (error.code === 'ROOM_LIMIT') setUpgradePrompt({ featureLabel: 'More rooms', requiredTier: tier === 'free' ? 'basic' : 'ultra' });
+               if (error.code === 'ROOM_LIMIT') setUpgradePrompt({ featureLabel: 'Another room', requiredTier: tier === 'free' ? 'basic' : 'ultra' });
                else if (error.code === 'WRONG_PIN') alert('Wrong PIN for this room.');
                else alert('Failed to enter room. Please try again.');
                return;
