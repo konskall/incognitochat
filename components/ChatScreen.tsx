@@ -23,6 +23,7 @@ import MicErrorModal from './MicErrorModal';
 import PollComposerModal from './PollComposerModal';
 import MediaGalleryModal from './MediaGalleryModal';
 import RoomInfoModal from './RoomInfoModal';
+import MembersHistoryModal from './MembersHistoryModal';
 import { flashToast } from './MessageActionMenu';
 import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
 import { parseTierError } from '../utils/tierGatingErrors';
@@ -146,15 +147,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   // Soft upgrade nudge: when a free user is halfway through the daily allowance
   // (<=5 left), show a one-per-room-per-day, non-blocking toast.
+  // MUST wait for entitlements to resolve: during the load window `tier` defaults
+  // to 'free', so a PAID user who has sent >=5 msgs would briefly compute
+  // quotaLeft<=5 and get the nudge before their real tier lands. Gate on
+  // !entLoading (same fix as the lock-flash) so only genuinely-free users see it.
   const [showQuotaNudge, setShowQuotaNudge] = useState(false);
   useEffect(() => {
-    if (tier !== 'free' || quotaLeft === null) return;
+    if (entLoading || tier !== 'free' || quotaLeft === null) return;
     if (quotaLeft > 5 || quotaLeft <= 0) return;
     const key = `quotaNudge_${config.roomKey}_${new Date().toISOString().slice(0, 10)}`;
     if (localStorage.getItem(key)) return;
     localStorage.setItem(key, '1');
     setShowQuotaNudge(true);
-  }, [tier, quotaLeft, config.roomKey]);
+  }, [entLoading, tier, quotaLeft, config.roomKey]);
 
   // UI States
   const [isDeleting, setIsDeleting] = useState(false);
@@ -165,6 +170,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showParticipantsList, setShowParticipantsList] = useState(false);
+  const [showMembers, setShowMembers] = useState(false); // join-history list
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   
   // Room Status
@@ -1591,6 +1597,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onToggleSearch={() => { setShowSearch((s) => { const next = !s; if (!next) setSearchQuery(''); return next; }); }}
         onOpenGallery={() => setShowGallery(true)}
         onOpenParticipants={() => setShowParticipantsList(true)}
+        onOpenMembers={() => setShowMembers(true)}
         onToggleAI={handleToggleAI}
         onOpenAiAvatar={() => setShowAiAvatarModal(true)}
         onOpenRoomAppearance={() => setShowRoomAppearance(true)}
@@ -1601,6 +1608,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         ent={ent}
         entLoading={entLoading}
         onUpgrade={promptUpgrade}
+      />
+
+      <MembersHistoryModal
+        show={showMembers}
+        onClose={() => setShowMembers(false)}
+        roomKey={config.roomKey}
+        onlineUids={participants.filter((p) => p.status === 'active').map((p) => p.uid)}
+        selfUid={user?.uid}
       />
 
       <MediaGalleryModal

@@ -23,6 +23,7 @@ interface RoomInfoModalProps {
   onToggleSearch: () => void;
   onOpenGallery: () => void;
   onOpenParticipants: () => void;
+  onOpenMembers?: () => void; // join-history list (distinct from the live call picker)
   onToggleAI: () => void;
   onOpenAiAvatar: () => void;
   onOpenRoomAppearance: () => void;
@@ -76,7 +77,7 @@ function formatExpiryHint(iso?: string | null): string | null {
 const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   show, onClose, config, participants, roomAvatarUrl, isOwner, isGoogleUser,
   aiEnabled, messageTtlLabel, roomExpiryLabel, roomExpiresAt, emailAlertsEnabled,
-  onToggleSearch, onOpenGallery, onOpenParticipants, onToggleAI, onOpenAiAvatar,
+  onToggleSearch, onOpenGallery, onOpenParticipants, onOpenMembers, onToggleAI, onOpenAiAvatar,
   onOpenRoomAppearance, onOpenEphemeral, onOpenRoomExpiry, onOpenEmail, onDeleteRoom,
   ent, entLoading, onUpgrade,
 }) => {
@@ -173,7 +174,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
               <span className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center justify-center group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40 transition group-active:scale-95"><Share2 size={20} /></span>
               <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Share</span>
             </button>
-            <button onClick={() => go(onOpenParticipants)} className="flex flex-col items-center gap-1.5 group">
+            <button onClick={() => go(onOpenMembers ?? onOpenParticipants)} className="flex flex-col items-center gap-1.5 group">
               <span className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition group-active:scale-95"><Users size={20} /></span>
               <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Members</span>
             </button>
