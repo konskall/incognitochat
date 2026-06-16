@@ -91,6 +91,12 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   const total = participants.length;
   const initials = config.roomName.substring(0, 2).toUpperCase();
   const expiryHint = formatExpiryHint(roomExpiresAt);
+  // A room sits on the FREE fixed-lifetime timer (24h `expires_at`) when its
+  // OWNER is free — independent of the viewer's tier. Its deletion is NOT the
+  // configurable inactivity `auto_delete_seconds` and can't be toggled away by a
+  // member, so for that room we surface the countdown (hero hint above) and do
+  // NOT offer the misleading editable inactivity control.
+  const roomOnFreeTimer = !!expiryHint;
   // Collaborative room: any logged-in member (not only the creator) can manage
   // room settings and toggle Inco; the original creator keeps access even when
   // anonymous. Deleting the room is open to every member (see Delete row below).
@@ -244,10 +250,13 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
               }
             />
         ) : null}
-        {/* Auto-delete room — shown to everyone. Free rooms auto-delete in 1 day
-            (locked; tap upsells Basic). Paid managers can set a custom inactivity
-            TTL. Paid non-managers don't see the editable control (like the rows
-            above). */}
+        {/* Auto-delete room. Label always reflects the ROOM's real state:
+            free-owned rooms show their fixed "1 day" lifetime; otherwise the
+            configurable inactivity TTL (or "Off"). Free viewers see it locked
+            (-> Basic). The editable inactivity control is offered ONLY to paid
+            managers AND only when the room is NOT on the free fixed timer — a
+            free owner's 24h expiry can't be toggled away by a member, so we just
+            surface the countdown (hero hint) instead of a misleading "Off". */}
         {!entLoading && ent && !ent.canDisappearing ? (
           <Row
             icon={<Trash2 size={18} />}
@@ -256,10 +265,18 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
             tint="bg-red-500/10 text-red-500"
             trailing={
               <span className="flex items-center gap-1.5 text-slate-400">
-                <span className="text-xs font-semibold">1 day</span>
+                <span className="text-xs font-semibold">{roomOnFreeTimer ? '1 day' : (roomExpiryLabel || 'Off')}</span>
                 {lockedTrailing}
               </span>
             }
+          />
+        ) : roomOnFreeTimer ? (
+          <Row
+            icon={<Trash2 size={18} />}
+            label="Auto-delete room"
+            onClick={() => {}}
+            tint="bg-red-500/10 text-red-500"
+            trailing={<span className="text-xs font-semibold text-slate-400">Free room · 1 day</span>}
           />
         ) : canManage ? (
           <Row
