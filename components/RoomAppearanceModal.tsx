@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Upload, Link as LinkIcon, RotateCcw, Save, Loader2, Image as ImageIcon, Check, Palette } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { compressImage } from '../utils/helpers';
-import { ROOM_BG_PRESETS } from '../utils/roomBackgrounds';
+import { ROOM_BG_PRESETS, ROOM_BG_CATEGORIES, presetCategory, type RoomBgCategory } from '../utils/roomBackgrounds';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { parseTierError } from '../utils/tierGatingErrors';
 
@@ -25,6 +25,9 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
   const [bgType, setBgType] = useState(current.bgType || 'preset');
   const [bgPreset, setBgPreset] = useState(current.bgPreset || 'dots');
   const [bgUrl, setBgUrl] = useState(current.bgUrl);
+  // Active wallpaper tab: a preset category, or 'image' for a custom upload/link.
+  const [bgTab, setBgTab] = useState<RoomBgCategory | 'image'>('gradient');
+  const [bgLink, setBgLink] = useState('');
   const [showLink, setShowLink] = useState(false);
   const [linkValue, setLinkValue] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -41,6 +44,9 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
       setBgType(current.bgType || 'preset');
       setBgPreset(current.bgPreset || 'dots');
       setBgUrl(current.bgUrl);
+      // Open on the tab matching the current wallpaper (image, or its category).
+      setBgTab(current.bgType === 'image' ? 'image' : presetCategory(current.bgPreset || 'dots'));
+      setBgLink('');
       setShowLink(false);
       setLinkValue('');
     }
@@ -142,37 +148,94 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
           </div>
         </div>
 
-        {/* Wallpaper presets */}
+        {/* Wallpaper */}
         <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Wallpaper</p>
-        <div className="grid grid-cols-3 gap-2.5">
-          {ROOM_BG_PRESETS.map((p) => {
-            const selected = bgType === 'preset' && bgPreset === p.key;
-            return (
-              <button
-                key={p.key}
-                onClick={() => { setBgType('preset'); setBgPreset(p.key); }}
-                className={`relative h-20 rounded-xl overflow-hidden border-2 transition-all ${selected ? 'border-blue-500 ring-2 ring-blue-500/30' : 'border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}
-                style={p.style(isDarkMode)}
-                title={p.name}
-              >
-                {selected && <span className="absolute top-1 right-1 bg-blue-500 text-white rounded-full p-0.5 shadow"><Check size={12} /></span>}
-                <span className="absolute bottom-0 inset-x-0 text-[10px] font-bold text-center py-0.5 bg-black/30 text-white backdrop-blur-sm">{p.name}</span>
-              </button>
-            );
-          })}
 
-          {/* Custom image tile */}
-          <label
-            className={`relative h-20 rounded-xl overflow-hidden border-2 cursor-pointer transition-all flex flex-col items-center justify-center gap-1 ${bgType === 'image' ? 'border-blue-500 ring-2 ring-blue-500/30' : 'border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-300'} bg-slate-50 dark:bg-slate-800`}
-            style={bgType === 'image' && bgUrl ? { backgroundImage: `url(${bgUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+        {/* Category tabs (toggle between gradients / patterns / solids / image) */}
+        <div className="flex gap-1 p-1 mb-3 bg-slate-100 dark:bg-slate-800/80 rounded-xl">
+          {ROOM_BG_CATEGORIES.map((c) => (
+            <button
+              key={c.key}
+              onClick={() => setBgTab(c.key)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition ${bgTab === c.key ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+            >
+              {c.label}
+            </button>
+          ))}
+          <button
+            onClick={() => setBgTab('image')}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 ${bgTab === 'image' ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
             title="Custom image"
           >
-            {!(bgType === 'image' && bgUrl) && (uploading === 'bg' ? <Loader2 size={18} className="animate-spin text-slate-400" /> : <ImageIcon size={18} className="text-slate-400" />)}
-            {!(bgType === 'image' && bgUrl) && <span className="text-[10px] font-bold text-slate-400">Custom</span>}
-            {bgType === 'image' && bgUrl && <span className="absolute top-1 right-1 bg-blue-500 text-white rounded-full p-0.5 shadow"><Check size={12} /></span>}
-            <input type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) upload(e.target.files[0], 'bg'); e.target.value = ''; }} />
-          </label>
+            <ImageIcon size={13} /> Image
+          </button>
         </div>
+
+        {bgTab !== 'image' ? (
+          <div className="grid grid-cols-3 gap-2.5">
+            {ROOM_BG_PRESETS.filter((p) => p.category === bgTab).map((p) => {
+              const selected = bgType === 'preset' && bgPreset === p.key;
+              return (
+                <button
+                  key={p.key}
+                  onClick={() => { setBgType('preset'); setBgPreset(p.key); }}
+                  className={`relative h-20 rounded-xl overflow-hidden border-2 transition-all ${selected ? 'border-blue-500 ring-2 ring-blue-500/30' : 'border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}
+                  style={p.style(isDarkMode)}
+                  title={p.name}
+                >
+                  {selected && <span className="absolute top-1 right-1 bg-blue-500 text-white rounded-full p-0.5 shadow"><Check size={12} /></span>}
+                  <span className="absolute bottom-0 inset-x-0 text-[10px] font-bold text-center py-0.5 bg-black/30 text-white backdrop-blur-sm">{p.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {/* Custom image preview / dropzone */}
+            <label
+              className={`relative block h-28 rounded-xl overflow-hidden border-2 cursor-pointer transition-all ${bgType === 'image' && bgUrl ? 'border-blue-500 ring-2 ring-blue-500/30' : 'border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-400'} bg-slate-50 dark:bg-slate-800`}
+              style={bgType === 'image' && bgUrl ? { backgroundImage: `url(${bgUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+            >
+              {!(bgType === 'image' && bgUrl) && (
+                <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-slate-400">
+                  {uploading === 'bg' ? <Loader2 size={22} className="animate-spin" /> : <Upload size={22} />}
+                  <span className="text-xs font-bold">Upload an image</span>
+                  <span className="text-[10px]">JPG / PNG · auto-compressed</span>
+                </span>
+              )}
+              {bgType === 'image' && bgUrl && <span className="absolute top-1.5 right-1.5 bg-blue-500 text-white rounded-full p-0.5 shadow"><Check size={12} /></span>}
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) upload(e.target.files[0], 'bg'); e.target.value = ''; }} />
+            </label>
+
+            {/* Or paste an https image URL */}
+            <div className="flex relative">
+              <input
+                value={bgLink}
+                onChange={(e) => setBgLink(e.target.value)}
+                placeholder="…or paste an https:// image URL"
+                className="w-full pl-3 pr-9 py-2 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-950 outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                onClick={() => {
+                  const v = bgLink.trim();
+                  try {
+                    if (new URL(v).protocol === 'https:') { setBgUrl(v); setBgType('image'); setBgLink(''); }
+                    else alert('Please use an https:// image URL.');
+                  } catch { alert('Please enter a valid image URL.'); }
+                }}
+                aria-label="Use image URL"
+                className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded"
+              ><Check size={14} /></button>
+            </div>
+
+            {bgType === 'image' && bgUrl && (
+              <button
+                onClick={() => { setBgUrl(''); setBgType('preset'); setBgPreset(bgPreset || 'dots'); }}
+                className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-red-500 transition"
+              ><RotateCcw size={13} /> Remove image</button>
+            )}
+          </div>
+        )}
 
         <div className="flex gap-3 mt-6">
           <button onClick={onClose} className="flex-1 py-3 text-slate-500 font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition">Cancel</button>
