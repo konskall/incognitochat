@@ -14,6 +14,7 @@ export interface TierEntitlements {
   canScreenShare: boolean;
   canRoomAppearance: boolean;
   canDisappearing: boolean; // disappearing messages + custom auto-delete
+  canEmailAlerts: boolean;  // email notifications on new messages
   canAI: boolean;
 }
 
@@ -23,17 +24,17 @@ export const TIER_CONFIG: Readonly<Record<Tier, Readonly<TierEntitlements>>> = {
   free: {
     msgPerRoomPerDay: 10, maxRooms: 1, maxFileBytes: 10 * MB, roomLifetimeHours: 24,
     canAudioCall: false, canVideoCall: false, canScreenShare: false,
-    canRoomAppearance: false, canDisappearing: false, canAI: false,
+    canRoomAppearance: false, canDisappearing: false, canEmailAlerts: false, canAI: false,
   },
   basic: {
     msgPerRoomPerDay: 100, maxRooms: 10, maxFileBytes: 10 * MB, roomLifetimeHours: null,
     canAudioCall: true, canVideoCall: false, canScreenShare: false,
-    canRoomAppearance: true, canDisappearing: true, canAI: false,
+    canRoomAppearance: true, canDisappearing: true, canEmailAlerts: true, canAI: false,
   },
   ultra: {
     msgPerRoomPerDay: null, maxRooms: null, maxFileBytes: 40 * MB, roomLifetimeHours: null,
     canAudioCall: true, canVideoCall: true, canScreenShare: true,
-    canRoomAppearance: true, canDisappearing: true, canAI: true,
+    canRoomAppearance: true, canDisappearing: true, canEmailAlerts: true, canAI: true,
   },
 };
 

@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, Search, Image as ImageIcon, Users, Wand2, Sparkles, Palette, Timer, Mail, Share2, Trash2, ChevronRight, Lock, ChevronLeft,
+  X, Search, Image as ImageIcon, Users, Wand2, Sparkles, Palette, Timer, Mail, Share2, Trash2, ChevronRight, Lock, ChevronLeft, Clock,
 } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -17,6 +17,7 @@ interface RoomInfoModalProps {
   aiEnabled: boolean;
   messageTtlLabel?: string | null;
   roomExpiryLabel?: string | null;
+  roomExpiresAt?: string | null; // free rooms auto-delete at this ISO timestamp
   emailAlertsEnabled: boolean;
   // actions (all wired to the existing ChatScreen handlers)
   onToggleSearch: () => void;
@@ -59,9 +60,22 @@ const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   <p className="px-4 pt-4 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{children}</p>
 );
 
+// Free rooms carry an `expires_at` (24h from creation). Surface a friendly
+// relative countdown so free users know the room self-destructs. Returns null
+// for permanent rooms (paid) or already-past timestamps.
+function formatExpiryHint(iso?: string | null): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso) - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const mins = Math.floor(ms / 60000);
+  if (mins >= 1440) { const d = Math.round(mins / 1440); return `Auto-deletes in ~${d} day${d === 1 ? '' : 's'}`; }
+  if (mins >= 60) { const h = Math.round(mins / 60); return `Auto-deletes in ~${h}h`; }
+  return `Auto-deletes in ~${Math.max(1, mins)}m`;
+}
+
 const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   show, onClose, config, participants, roomAvatarUrl, isOwner, isGoogleUser,
-  aiEnabled, messageTtlLabel, roomExpiryLabel, emailAlertsEnabled,
+  aiEnabled, messageTtlLabel, roomExpiryLabel, roomExpiresAt, emailAlertsEnabled,
   onToggleSearch, onOpenGallery, onOpenParticipants, onToggleAI, onOpenAiAvatar,
   onOpenRoomAppearance, onOpenEphemeral, onOpenRoomExpiry, onOpenEmail, onDeleteRoom,
   ent, entLoading, onUpgrade,
@@ -76,10 +90,14 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   const onlineCount = participants.filter((p) => p.status === 'active').length;
   const total = participants.length;
   const initials = config.roomName.substring(0, 2).toUpperCase();
+  const expiryHint = formatExpiryHint(roomExpiresAt);
   // Collaborative room: any logged-in member (not only the creator) can manage
   // room settings and toggle Inco; the original creator keeps access even when
   // anonymous. Deleting the room is open to every member (see Delete row below).
-  const showAi = isGoogleUser;                  // Inco needs a logged-in account
+  // Inco/Auto-delete rows are ALWAYS shown (even to anonymous free users) so the
+  // locked upsell is consistent across login states; the per-feature `ent` gate
+  // below decides locked-vs-active. Anonymous users are always free -> locked.
+  const showAi = true;
   const canManage = isOwner || isGoogleUser;    // appearance / disappearing messages
 
   // open a sub-screen: close this hub first so modals don't stack awkwardly
@@ -137,6 +155,11 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
           <div className="flex items-center gap-1.5 mt-2 text-[11px] font-medium text-slate-400 dark:text-slate-500">
             <Lock size={12} /> Messages are encrypted
           </div>
+          {expiryHint && (
+            <div className="flex items-center gap-1.5 mt-1.5 text-[11px] font-semibold text-red-500 dark:text-red-400">
+              <Clock size={12} /> {expiryHint}
+            </div>
+          )}
 
           {/* Quick actions */}
           <div className="flex items-center justify-center gap-6 mt-5">
@@ -190,25 +213,24 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
           </>
         )}
 
-        {/* Room settings */}
+        {/* Room settings. Rows are ALWAYS shown so the locked upsell is identical
+            for everyone (incl. anonymous free joiners). Free -> locked -> Basic.
+            Paid editing stays manager-only (owner or any logged-in member). */}
         <SectionLabel>Room</SectionLabel>
-        {canManage && (
-          !entLoading && ent && !ent.canRoomAppearance ? (
-            <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => { onClose(); onUpgrade?.('Room appearance', 'basic'); }} tint="bg-blue-500/10 text-blue-500" trailing={lockedTrailing} />
-          ) : (
-            <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => go(onOpenRoomAppearance)} tint="bg-blue-500/10 text-blue-500" />
-          )
-        )}
-        {canManage && (
-          !entLoading && ent && !ent.canDisappearing ? (
-            <Row
-              icon={<Timer size={18} />}
-              label="Disappearing messages"
-              onClick={() => { onClose(); onUpgrade?.('Disappearing messages', 'basic'); }}
-              tint="bg-orange-500/10 text-orange-500"
-              trailing={lockedTrailing}
-            />
-          ) : (
+        {!entLoading && ent && !ent.canRoomAppearance ? (
+          <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => { onClose(); onUpgrade?.('Room appearance', 'basic'); }} tint="bg-blue-500/10 text-blue-500" trailing={lockedTrailing} />
+        ) : canManage ? (
+          <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => go(onOpenRoomAppearance)} tint="bg-blue-500/10 text-blue-500" />
+        ) : null}
+        {!entLoading && ent && !ent.canDisappearing ? (
+          <Row
+            icon={<Timer size={18} />}
+            label="Disappearing messages"
+            onClick={() => { onClose(); onUpgrade?.('Disappearing messages', 'basic'); }}
+            tint="bg-orange-500/10 text-orange-500"
+            trailing={lockedTrailing}
+          />
+        ) : canManage ? (
             <Row
               icon={<Timer size={18} />}
               label="Disappearing messages"
@@ -221,45 +243,60 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
                 </span>
               }
             />
-          )
+        ) : null}
+        {/* Auto-delete room — shown to everyone. Free rooms auto-delete in 1 day
+            (locked; tap upsells Basic). Paid managers can set a custom inactivity
+            TTL. Paid non-managers don't see the editable control (like the rows
+            above). */}
+        {!entLoading && ent && !ent.canDisappearing ? (
+          <Row
+            icon={<Trash2 size={18} />}
+            label="Auto-delete room"
+            onClick={() => { onClose(); onUpgrade?.('Auto-delete', 'basic'); }}
+            tint="bg-red-500/10 text-red-500"
+            trailing={
+              <span className="flex items-center gap-1.5 text-slate-400">
+                <span className="text-xs font-semibold">1 day</span>
+                {lockedTrailing}
+              </span>
+            }
+          />
+        ) : canManage ? (
+          <Row
+            icon={<Trash2 size={18} />}
+            label="Auto-delete room"
+            onClick={() => go(onOpenRoomExpiry)}
+            tint="bg-red-500/10 text-red-500"
+            trailing={
+              <span className="flex items-center gap-1 text-slate-400">
+                <span className="text-xs font-semibold">{roomExpiryLabel || 'Off'}</span>
+                <ChevronRight size={18} className="text-slate-300 dark:text-slate-600" />
+              </span>
+            }
+          />
+        ) : null}
+        {!entLoading && ent && !ent.canEmailAlerts ? (
+          <Row
+            icon={<Mail size={18} />}
+            label="Email alerts"
+            onClick={() => { onClose(); onUpgrade?.('Email alerts', 'basic'); }}
+            tint="bg-emerald-500/10 text-emerald-500"
+            trailing={lockedTrailing}
+          />
+        ) : (
+          <Row
+            icon={<Mail size={18} />}
+            label="Email alerts"
+            onClick={() => go(onOpenEmail)}
+            tint="bg-emerald-500/10 text-emerald-500"
+            trailing={
+              <span className="flex items-center gap-1 text-slate-400">
+                {emailAlertsEnabled && <span className="text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300 px-1.5 py-0.5 rounded">ON</span>}
+                <ChevronRight size={18} className="text-slate-300 dark:text-slate-600" />
+              </span>
+            }
+          />
         )}
-        {/* Auto-delete room — logged-in users only (per request). */}
-        {isGoogleUser && (
-          !entLoading && ent && !ent.canDisappearing ? (
-            <Row
-              icon={<Trash2 size={18} />}
-              label="Auto-delete room"
-              onClick={() => { onClose(); onUpgrade?.('Auto-delete', 'basic'); }}
-              tint="bg-red-500/10 text-red-500"
-              trailing={lockedTrailing}
-            />
-          ) : (
-            <Row
-              icon={<Trash2 size={18} />}
-              label="Auto-delete room"
-              onClick={() => go(onOpenRoomExpiry)}
-              tint="bg-red-500/10 text-red-500"
-              trailing={
-                <span className="flex items-center gap-1 text-slate-400">
-                  <span className="text-xs font-semibold">{roomExpiryLabel || 'Off'}</span>
-                  <ChevronRight size={18} className="text-slate-300 dark:text-slate-600" />
-                </span>
-              }
-            />
-          )
-        )}
-        <Row
-          icon={<Mail size={18} />}
-          label="Email alerts"
-          onClick={() => go(onOpenEmail)}
-          tint="bg-emerald-500/10 text-emerald-500"
-          trailing={
-            <span className="flex items-center gap-1 text-slate-400">
-              {emailAlertsEnabled && <span className="text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300 px-1.5 py-0.5 rounded">ON</span>}
-              <ChevronRight size={18} className="text-slate-300 dark:text-slate-600" />
-            </span>
-          }
-        />
 
         {/* Danger zone — any member can delete the room. */}
         <div className="h-px bg-slate-100 dark:bg-slate-800 my-2" />

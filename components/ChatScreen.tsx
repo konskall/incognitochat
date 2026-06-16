@@ -26,7 +26,7 @@ import RoomInfoModal from './RoomInfoModal';
 import { flashToast } from './MessageActionMenu';
 import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
 import { parseTierError } from '../utils/tierGatingErrors';
-import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin } from 'lucide-react';
+import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin, Sparkles } from 'lucide-react';
 
 // Hooks
 import { useChatMessages } from '../hooks/useChatMessages';
@@ -86,6 +86,39 @@ const RoomDeletedToast: React.FC<{ onExit: () => void, onRecreate: () => void }>
     );
 };
 
+// -- Soft upgrade nudge --
+// Shown once per room per day when a free user is halfway through the daily
+// message allowance. Non-blocking (unlike UpgradeModal): a corner card that
+// auto-dismisses and is tappable to open the upgrade sheet.
+const QuotaNudgeToast: React.FC<{ left: number; onUpgrade: () => void; onClose: () => void }> = ({ left, onUpgrade, onClose }) => {
+  useEffect(() => {
+    const t = setTimeout(onClose, 8000);
+    return () => clearTimeout(t);
+  }, [onClose]);
+  return createPortal(
+    <div className="fixed inset-x-0 bottom-24 z-[150] flex justify-center px-4 pointer-events-none animate-in fade-in slide-in-from-bottom-4 duration-300">
+      <div className="pointer-events-auto w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 shadow-2xl ring-1 ring-black/5 dark:ring-white/10 overflow-hidden">
+        <div className="h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-fuchsia-500" />
+        <div className="flex items-start gap-3 p-3.5">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 text-indigo-500">
+            <Sparkles size={18} />
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-slate-800 dark:text-white">{left} message{left === 1 ? '' : 's'} left today</p>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Upgrade for more messages, custom rooms &amp; more.</p>
+            <div className="mt-2.5 flex items-center gap-2">
+              <button onClick={onUpgrade} className="rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white shadow transition hover:opacity-90 active:scale-95">See plans</button>
+              <button onClick={onClose} className="rounded-full px-3 py-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800">Not now</button>
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Dismiss" className="-m-1 shrink-0 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-800"><X size={16} /></button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
 const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
   const [inputText, setInputText] = useState('');
@@ -110,6 +143,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   // `quotaBump` is incremented after each successful send to trigger a refetch.
   const [quotaBump, setQuotaBump] = useState(0);
   const quotaLeft = useMessageQuota(config.roomKey, tier, quotaBump);
+
+  // Soft upgrade nudge: when a free user is halfway through the daily allowance
+  // (<=5 left), show a one-per-room-per-day, non-blocking toast.
+  const [showQuotaNudge, setShowQuotaNudge] = useState(false);
+  useEffect(() => {
+    if (tier !== 'free' || quotaLeft === null) return;
+    if (quotaLeft > 5 || quotaLeft <= 0) return;
+    const key = `quotaNudge_${config.roomKey}_${new Date().toISOString().slice(0, 10)}`;
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, '1');
+    setShowQuotaNudge(true);
+  }, [tier, quotaLeft, config.roomKey]);
 
   // UI States
   const [isDeleting, setIsDeleting] = useState(false);
@@ -157,6 +202,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   // Auto-delete room: the whole room self-destructs after this much inactivity.
   const [roomExpiry, setRoomExpiry] = useState<number | null>(null);
   const [showRoomExpiry, setShowRoomExpiry] = useState(false);
+  // Free rooms auto-delete at this ISO timestamp (24h from creation; null =
+  // permanent). Surfaced as a countdown in Room info so free users are warned.
+  const [roomExpiresAt, setRoomExpiresAt] = useState<string | null>(null);
 
   // Pinned message (owner-set), poll composer, and media gallery.
   const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
@@ -861,6 +909,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             if (payload.new.background_url !== undefined) setBgUrl(payload.new.background_url || '');
             if (payload.new.message_ttl_seconds !== undefined) setMessageTtl(payload.new.message_ttl_seconds ?? null);
             if (payload.new.auto_delete_seconds !== undefined) setRoomExpiry(payload.new.auto_delete_seconds ?? null);
+            if (payload.new.expires_at !== undefined) setRoomExpiresAt(payload.new.expires_at ?? null);
             if (payload.new.pinned_message_id !== undefined) setPinnedMessageId(payload.new.pinned_message_id ?? null);
         }
       })
@@ -868,6 +917,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     roomStatusChannelRef.current = roomStatusChannel;
     return () => { roomStatusChannelRef.current = null; supabase.removeChannel(roomStatusChannel); };
   }, [config.roomKey, isRoomReady, roomDeleted]);
+
+  // The free-tier 24h auto-delete timestamp isn't in the join RPC payload; read
+  // it directly once the room is ready (members can SELECT room columns under
+  // RLS). Realtime keeps it fresh via the room_status handler above.
+  useEffect(() => {
+    if (!isRoomReady || !config.roomKey) return;
+    let alive = true;
+    supabase.from('rooms').select('expires_at').eq('room_key', config.roomKey).maybeSingle()
+      .then(({ data }) => { if (alive) setRoomExpiresAt((data as { expires_at?: string | null } | null)?.expires_at ?? null); });
+    return () => { alive = false; };
+  }, [isRoomReady, config.roomKey]);
 
   const handleExitChat = async () => {
       // No "left the room" system message — it spammed the chat.
@@ -1254,6 +1314,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       
       {roomDeleted && <RoomDeletedToast onExit={handleExitChat} onRecreate={handleRecreate} />}
 
+      {showQuotaNudge && (
+        <QuotaNudgeToast
+          left={quotaLeft ?? 0}
+          onUpgrade={() => { setShowQuotaNudge(false); promptUpgrade('Unlimited messaging', 'basic', "You're halfway through today's free messages in this room."); }}
+          onClose={() => setShowQuotaNudge(false)}
+        />
+      )}
+
       {accessError && createPortal(
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-slate-900/90 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center ring-1 ring-white/10">
@@ -1518,6 +1586,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         aiEnabled={aiEnabled}
         messageTtlLabel={formatTtl(messageTtl)}
         roomExpiryLabel={formatTtl(roomExpiry)}
+        roomExpiresAt={roomExpiresAt}
         emailAlertsEnabled={emailAlertsEnabled}
         onToggleSearch={() => { setShowSearch((s) => { const next = !s; if (!next) setSearchQuery(''); return next; }); }}
         onOpenGallery={() => setShowGallery(true)}
