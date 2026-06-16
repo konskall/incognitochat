@@ -941,6 +941,27 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       onExit();
   };
 
+  // Owner-only: wipe the room's membership history. The RPC deletes ALL
+  // subscriber rows (incl. the owner's), so we immediately re-subscribe the
+  // owner via the join RPC to keep their session's RLS access. Removed members
+  // can rejoin with the PIN. Returns success so the modal can refresh.
+  const handleClearMembers = useCallback(async (): Promise<boolean> => {
+    if (!config.roomKey) return false;
+    try {
+      const { error } = await supabase.rpc('clear_room_members', { p_room_key: config.roomKey });
+      if (error) throw error;
+      await joinOrCreateRoom({
+        roomKey: config.roomKey, roomName: config.roomName, pin: config.pin,
+        username: config.username, createIfMissing: false,
+      });
+      return true;
+    } catch (e) {
+      console.error('clear_room_members failed', e);
+      flashToast('Could not clear members. Please try again.');
+      return false;
+    }
+  }, [config]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setInputText(e.target.value);
       setTyping(true);
@@ -1616,6 +1637,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         roomKey={config.roomKey}
         onlineUids={participants.filter((p) => p.status === 'active').map((p) => p.uid)}
         selfUid={user?.uid}
+        canClear={user?.uid === roomCreatorId}
+        onClearMembers={handleClearMembers}
       />
 
       <MediaGalleryModal

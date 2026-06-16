@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChevronLeft, Users, Clock } from 'lucide-react';
+import { X, ChevronLeft, Users, Clock, Trash2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { safeAvatarUrl } from '../utils/helpers';
 import { useModalA11y } from '../hooks/useModalA11y';
 
-interface MemberRow { uid: string; username: string; joined_at: string; }
+interface MemberRow { uid: string; username: string; joined_at: string; avatar_url: string | null; }
 
 interface MembersHistoryModalProps {
   show: boolean;
@@ -12,6 +13,8 @@ interface MembersHistoryModalProps {
   roomKey: string;
   onlineUids: string[]; // uids currently present (status === 'active')
   selfUid?: string;
+  canClear?: boolean;                       // owner-only: show the Clear button
+  onClearMembers?: () => Promise<boolean>;  // wipes membership (owner re-subscribed by caller)
 }
 
 // Compact relative time, e.g. "5m ago", "3d ago". App code (Date.now allowed).
@@ -34,28 +37,43 @@ function timeAgo(iso: string): string {
 // History of everyone who has joined this room (the `subscribers` membership
 // records). The subscribers SELECT RLS is self-only, so the list comes from the
 // `room_members` SECURITY DEFINER RPC (gated to current members; excludes email).
-const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose, roomKey, onlineUids, selfUid }) => {
+const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose, roomKey, onlineUids, selfUid, canClear, onClearMembers }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
   const [members, setMembers] = useState<MemberRow[] | null>(null);
   const [error, setError] = useState(false);
+  const [reload, setReload] = useState(0);
+  const [failed, setFailed] = useState<Set<string>>(new Set()); // uids whose avatar img failed
+  const [confirming, setConfirming] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     if (!show || !roomKey) return;
     let alive = true;
     setMembers(null);
     setError(false);
+    setConfirming(false);
+    setFailed(new Set());
     supabase.rpc('room_members', { p_room_key: roomKey }).then(({ data, error: err }) => {
       if (!alive) return;
       if (err) { console.error('room_members failed', err); setError(true); return; }
       setMembers((data as MemberRow[]) ?? []);
     });
     return () => { alive = false; };
-  }, [show, roomKey]);
+  }, [show, roomKey, reload]);
 
   if (!show) return null;
 
   const online = new Set(onlineUids);
+
+  const handleClear = async () => {
+    if (!onClearMembers) return;
+    setClearing(true);
+    const ok = await onClearMembers();
+    setClearing(false);
+    setConfirming(false);
+    if (ok) setReload((r) => r + 1);
+  };
 
   return createPortal(
     <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex sm:items-center sm:justify-center sm:p-4 animate-in fade-in duration-200" onClick={onClose}>
@@ -120,9 +138,19 @@ const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose
               return (
                 <li key={m.uid} className="flex items-center gap-3 px-2 py-2.5 rounded-xl">
                   <div className="relative shrink-0">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
-                      {m.username.substring(0, 2).toUpperCase()}
-                    </div>
+                    {m.avatar_url && !failed.has(m.uid) ? (
+                      <img
+                        src={safeAvatarUrl(m.avatar_url)}
+                        alt=""
+                        loading="lazy"
+                        onError={() => setFailed((f) => { const n = new Set(f); n.add(m.uid); return n; })}
+                        className="w-10 h-10 rounded-full object-cover bg-slate-200 dark:bg-slate-800"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
+                        {m.username.substring(0, 2).toUpperCase()}
+                      </div>
+                    )}
                     {isOnline && <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 ring-2 ring-white dark:ring-slate-900" title="Online" />}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -138,6 +166,30 @@ const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose
               );
             })}
           </ul>
+        )}
+
+        {/* Owner-only: wipe the room's membership. Removed members can rejoin
+            with the PIN; the caller re-subscribes the owner so their session
+            keeps working. */}
+        {canClear && (members?.length ?? 0) > 0 && (
+          <div className="sticky bottom-0 mt-auto border-t border-slate-100 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+            {!confirming ? (
+              <button
+                onClick={() => setConfirming(true)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition active:scale-[0.99]"
+              >
+                <Trash2 size={16} /> Clear members
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-center text-xs text-slate-500 dark:text-slate-400">Remove all members? Everyone can rejoin with the PIN.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setConfirming(false)} disabled={clearing} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition disabled:opacity-50">Cancel</button>
+                  <button onClick={handleClear} disabled={clearing} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-500 transition active:scale-95 disabled:opacity-60">{clearing ? 'Clearing…' : 'Clear all'}</button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>,
