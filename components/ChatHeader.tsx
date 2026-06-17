@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Sun, Moon, LogOut, Timer, Trash2 } from 'lucide-react';
+import { Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Sun, Moon, LogOut, Timer, Trash2, Hourglass } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
 
 interface ChatHeaderProps {
@@ -21,6 +21,7 @@ interface ChatHeaderProps {
   roomAvatarUrl?: string;
   messageTtlLabel?: string | null;
   roomExpiryLabel?: string | null;
+  roomFreeExpiryLabel?: string | null; // free-tier 24h expiry countdown (rooms.expires_at)
   // Tapping the room identity opens the consolidated Room Info hub.
   onOpenRoomInfo: () => void;
   // The members icon opens the participants/calls panel directly.
@@ -46,6 +47,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   roomAvatarUrl,
   messageTtlLabel,
   roomExpiryLabel,
+  roomFreeExpiryLabel,
   onOpenRoomInfo,
   onOpenParticipants,
 }) => {
@@ -135,6 +137,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             {roomExpiryLabel && (
               <span className="flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-full" title={`Room auto-deletes after ${roomExpiryLabel} of inactivity`}>
                 <Trash2 size={11} /> {roomExpiryLabel}
+              </span>
+            )}
+            {roomFreeExpiryLabel && (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-full" title={`This free room auto-deletes — ${roomFreeExpiryLabel} left`}>
+                <Hourglass size={11} /> {roomFreeExpiryLabel}
               </span>
             )}
           </div>

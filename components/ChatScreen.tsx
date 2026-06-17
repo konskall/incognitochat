@@ -26,6 +26,7 @@ import RoomInfoModal from './RoomInfoModal';
 import MembersHistoryModal from './MembersHistoryModal';
 import { flashToast } from './MessageActionMenu';
 import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
+import { expiryShortLabel } from '../utils/roomLifecycle';
 import { parseTierError } from '../utils/tierGatingErrors';
 import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin, Sparkles } from 'lucide-react';
 
@@ -211,6 +212,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   // Free rooms auto-delete at this ISO timestamp (24h from creation; null =
   // permanent). Surfaced as a countdown in Room info so free users are warned.
   const [roomExpiresAt, setRoomExpiresAt] = useState<string | null>(null);
+
+  // Drives the live countdown of the free-tier 24h expiry pill. Only ticks while
+  // an expiry is actually set, so there's no always-on timer otherwise.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (!roomExpiresAt) return;
+    setNowTick(Date.now());
+    const id = setInterval(() => setNowTick(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, [roomExpiresAt]);
 
   // Pinned message (owner-set), poll composer, and media gallery.
   const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
@@ -578,7 +589,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       // verifies the PIN and registers membership. This is the only way to gain
       // access under the membership-gated RLS. Don't silently recreate a room we
       // already joined this session (so deletion is surfaced, not masked).
-      const alreadyJoined = !!sessionStorage.getItem(`joined_${config.roomKey}`);
+      // Durable (localStorage, not sessionStorage): "have I been in this room
+      // before?" must survive a tab close, or reopening a tab on an expired room
+      // re-creates it silently (createIfMissing). Consistent with the logout
+      // sweep + dashboard dismiss, which already target localStorage joined_ keys.
+      const alreadyJoined = !!localStorage.getItem(`joined_${config.roomKey}`);
 
       const { data: room, error } = await joinOrCreateRoom({
         roomKey: config.roomKey,
@@ -648,8 +663,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, [user, config.roomKey, config.roomName, config.pin, checkRoomStatus, initRoom]);
 
   const handleRecreate = () => {
-      // Clear the session flag so initRoom knows this is an intentional new creation
-      sessionStorage.removeItem(`joined_${config.roomKey}`);
+      // Clear the durable flag so initRoom knows this is an intentional new creation
+      localStorage.removeItem(`joined_${config.roomKey}`);
       // Re-run initialization
       initRoom();
   };
@@ -676,13 +691,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   }, [isRoomReady, user, config.roomKey, roomDeleted]);
 
   useEffect(() => {
-      // Mark this room as joined for the session (used by initRoom to avoid
-      // silently recreating a deleted room). We intentionally no longer post a
-      // "joined the room" system message — they spammed the chat.
+      // Mark this room as joined durably (localStorage, used by initRoom to avoid
+      // silently recreating a deleted/expired room after a tab close). We
+      // intentionally no longer post a "joined the room" system message — they
+      // spammed the chat.
       if (isRoomReady && user && config.roomKey && !roomDeleted) {
-          const sessionKey = `joined_${config.roomKey}`;
-          if (!sessionStorage.getItem(sessionKey)) {
-              sessionStorage.setItem(sessionKey, 'true');
+          const joinedKey = `joined_${config.roomKey}`;
+          if (!localStorage.getItem(joinedKey)) {
+              localStorage.setItem(joinedKey, 'true');
           }
       }
   }, [isRoomReady, user, config.roomKey, roomDeleted]);
@@ -937,7 +953,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   const handleExitChat = async () => {
       // No "left the room" system message — it spammed the chat.
-      sessionStorage.removeItem(`joined_${config.roomKey}`);
+      // Do NOT clear the durable `joined_` flag here: exiting the chat view does
+      // not drop room membership, and forgetting it would let an expired room
+      // silently re-create on the next auto-route re-entry (the bug we fixed).
       onExit();
   };
 
@@ -1109,9 +1127,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                await roomStatusChannelRef.current?.send({ type: 'broadcast', event: 'room_deleted', payload: { deletedBy: config.username } });
            } catch { /* best-effort; the recipient also falls back to checkRoomStatus on focus */ }
 
-           // Clear the session "joined" flag so a later re-entry creates a fresh
-           // room instead of being told the (now-gone) room was deleted.
-           sessionStorage.removeItem(`joined_${config.roomKey}`);
+           // Clear the durable "joined" flag: the owner just deleted the room, so
+           // a later re-entry with the same name+PIN should create a fresh room
+           // instead of being told the (now-gone) room was deleted.
+           localStorage.removeItem(`joined_${config.roomKey}`);
            onExit();
       } catch(e) {
           console.error("Delete failed", e);
@@ -1419,6 +1438,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         roomAvatarUrl={roomAvatarUrl}
         messageTtlLabel={formatTtl(messageTtl)}
         roomExpiryLabel={formatTtl(roomExpiry)}
+        roomFreeExpiryLabel={expiryShortLabel(roomExpiresAt, nowTick)}
         onOpenRoomInfo={() => setShowRoomInfo(true)}
         onOpenParticipants={() => setShowParticipantsList(true)}
       />
