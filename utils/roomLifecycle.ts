@@ -53,3 +53,23 @@ export async function broadcastRoomDeleted(
     /* best-effort */
   }
 }
+
+// Short countdown label for the free 24h expiry (rooms.expires_at). Returns null
+// when no expiry is set, the timestamp is malformed, or it has already passed.
+export function expiryShortLabel(iso?: string | null, now: number = Date.now()): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso) - now;
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const mins = Math.floor(ms / 60000);
+  if (mins >= 1440) { const d = Math.round(mins / 1440); return `~${d}d`; }
+  if (mins >= 60)   { const h = Math.round(mins / 60);   return `~${h}h`; }
+  return `~${Math.max(1, mins)}m`;
+}
+
+// True only when an expiry timestamp is set AND has passed. Absent/malformed → false
+// (fail-safe: never falsely mark a room deleted).
+export function isExpired(iso?: string | null, now: number = Date.now()): boolean {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) && t <= now;
+}
