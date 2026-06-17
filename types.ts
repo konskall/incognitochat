@@ -119,4 +119,5 @@ export interface Room {
   ai_enabled?: boolean;
   ai_avatar_url?: string;
   auto_delete_seconds?: number | null; // Ephemeral rooms: auto-delete after inactivity
+  expires_at?: string | null; // Free-tier rooms: fixed 24h auto-delete deadline (ISO)
 }

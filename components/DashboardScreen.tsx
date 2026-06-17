@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom, startCheckout, openBillingPortal } from '../services/supabase';
 import { flashToast } from './MessageActionMenu';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { broadcastRoomDeleted, parseRoomDeletedPayload } from '../utils/roomLifecycle';
+import { broadcastRoomDeleted, parseRoomDeletedPayload, expiryShortLabel, isExpired } from '../utils/roomLifecycle';
+import { readTombstones, upsertTombstone, removeTombstone, type RoomTombstone } from '../utils/roomTombstones';
 import { useEntitlements } from '../hooks/useEntitlements';
 import UpgradeModal from './UpgradeModal';
 import { parseTierError } from '../utils/tierGatingErrors';
@@ -17,7 +18,7 @@ import {
   LogOut, Trash2, ArrowRight, Loader2,
   Upload, RotateCcw,
   RefreshCw, Save, X, Edit2, Mail, LogIn, Link as LinkIcon, AlertCircle, Eye, EyeOff, GripVertical,
-  Search, Star, Sun, Moon, MoreVertical, Bell, BellOff, Archive, ArchiveRestore, Clock, Pencil,
+  Search, Star, Sun, Moon, MoreVertical, Bell, BellOff, Archive, ArchiveRestore, Clock, Hourglass, Pencil,
   Check, CheckSquare, MessageSquarePlus, Shuffle, Sparkles,
   type LucideIcon
 } from 'lucide-react';
@@ -55,7 +56,8 @@ type RoomCardProps = {
   unread: number; muted: boolean; archived: boolean; overview?: Overview;
   revealed: boolean; isFavorite: boolean;
   selectMode: boolean; selected: boolean; online?: Presence[];
-  deletedInfo?: { deletedBy?: string };
+  now: number;
+  deletedInfo?: { deletedBy?: string; reason?: 'deleted' | 'expired' };
   onJoin: (r: Room) => void;
   onOpenActions: (r: Room) => void;
   onTogglePin: (e: React.MouseEvent, key: string) => void;
@@ -203,12 +205,13 @@ const RoomActionsSheet: React.FC<{
 };
 
 // Presentational card body, shared by the sortable item and the drag overlay.
-const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, overview, revealed, isFavorite, selectMode, selected, online, deletedInfo, onJoin, onOpenActions, onTogglePin, onToggleFav, onRecreate, onDismissDeleted }: RoomCardProps) => {
+const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, overview, revealed, isFavorite, selectMode, selected, online, now, deletedInfo, onJoin, onOpenActions, onTogglePin, onToggleFav, onRecreate, onDismissDeleted }: RoomCardProps) => {
   const isOwner = room.created_by === userUid;
   const name = room.display_name || room.room_name;
   const showUnread = unread > 0 && !muted;
   const stop = (e: React.PointerEvent) => e.stopPropagation();
   const ttl = ttlLabel(room.auto_delete_seconds);
+  const expLabel = expiryShortLabel(room.expires_at, now);
   return (
     <>
       <div className="mb-3 relative z-10">
@@ -256,6 +259,11 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
               <Clock size={11} />{ttl}
             </span>
           )}
+          {expLabel && (
+            <span className="flex items-center gap-1 text-amber-600 dark:text-amber-500 font-medium" title="This free room auto-deletes (24h)">
+              <Hourglass size={11} />{expLabel}
+            </span>
+          )}
           {archived && <span className="flex items-center gap-1 text-slate-400"><Archive size={11} />Archived</span>}
           {online && online.length > 0 && (
             <span className="flex items-center gap-1.5" title={`${online.length} online now`}>
@@ -280,7 +288,11 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
         <div className="flex flex-col gap-2 relative z-10">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-red-600 dark:text-red-400">
             <AlertCircle size={14} className="shrink-0" />
-            <span className="truncate">{deletedInfo.deletedBy ? `Διαγράφηκε από ${deletedInfo.deletedBy}` : 'Το δωμάτιο διαγράφηκε'}</span>
+            <span className="truncate">{
+              deletedInfo.reason === 'expired'
+                ? 'Διαγράφηκε αυτόματα (όριο 24ώρου)'
+                : deletedInfo.deletedBy ? `Διαγράφηκε από ${deletedInfo.deletedBy}` : 'Το δωμάτιο διαγράφηκε'
+            }</span>
           </div>
           <div className="flex gap-2">
             <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onRecreate(room); }} className="flex-1 py-2 text-xs font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition flex items-center justify-center gap-1.5 active:scale-95">
@@ -400,6 +412,18 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const [isDark, setIsDark] = useState(() =>
     typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
   );
+
+  // Free rooms the cron already purged while the user was away (no server trace
+  // left): surfaced as non-navigable "auto-deleted" cards from localStorage.
+  const [tombstoneDeleted, setTombstoneDeleted] = useState<Map<string, RoomTombstone>>(new Map());
+
+  // Live clock for the expiry countdown pill + optimistic expiry flip. Dashboard
+  // is foreground while mounted, so an always-on 60s tick is fine.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   // Tell the push SW the dashboard is on screen: it shows live unread badges,
   // so OS notifications are suppressed while it's actually visible.
@@ -535,6 +559,26 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
         setRooms(allRooms);
         loadOverview(allRooms);
+
+        // Refresh tombstones for every free room we can still see (captures
+        // name+pin so we can render + recreate after the row is gone), then
+        // surface any tombstone whose room is gone AND whose 24h deadline passed
+        // (purged by the cron while away). Runs only here — i.e. after a
+        // SUCCESSFUL fetch — so a transient error never flips rooms to "deleted".
+        allRooms.forEach((r) => {
+          if (r.expires_at) upsertTombstone(user.uid, {
+            room_key: r.room_key, room_name: r.room_name, pin: r.pin,
+            created_by: r.created_by, expires_at: r.expires_at, name: r.display_name || r.room_name,
+          });
+        });
+        const liveKeys = new Set(allRooms.map((r) => r.room_key));
+        const stored = readTombstones(user.uid);
+        const purged = new Map<string, RoomTombstone>();
+        for (const k in stored) {
+          const t = stored[k];
+          if (!liveKeys.has(k) && isExpired(t.expires_at)) purged.set(k, t);
+        }
+        setTombstoneDeleted(purged);
 
         // Self-heal push from the dashboard too (not only on room open): if the
         // platform revoked this device's subscription (e.g. iOS silent-push
@@ -905,6 +949,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     }
     // Local cleanup — list, favorites, per-user settings (archive/mute/order).
     setRooms(prev => prev.filter(r => r.room_key !== key));
+    removeTombstone(user.uid, key);
+    setTombstoneDeleted(prev => { if (!prev.has(key)) return prev; const next = new Map(prev); next.delete(key); return next; });
     setFavorites(prev => {
         if (!prev.has(key)) return prev;
         const next = new Set(prev); next.delete(key);
@@ -924,8 +970,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     supabase.from('push_subscriptions').delete().eq('user_id', user.uid).eq('room_key', key).then(undefined, () => {});
   }, [user.uid, displayName]);
 
-  // Re-create a room deleted live (same name+PIN). The room reappears empty on the
-  // dashboard; the user stays here. joinOrCreateRoom defaults createIfMissing:true.
+  // Re-create a deleted/expired room (same name+PIN). Works for both a live-
+  // deleted room (still in `rooms`) and a tombstone (synthetic, not in `rooms`):
+  // after the RPC succeeds we read the fresh row so the card reflects the NEW
+  // expiry/created_at (the RPC payload omits expires_at). The user stays here.
   const recreateRoom = useCallback(async (room: Room) => {
     try {
       const { data, error } = await joinOrCreateRoom({
@@ -937,22 +985,38 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         return;
       }
       if (error || !data) { alert('Could not re-create the room. Please try again.'); return; }
-      // Clear the session "joined" flag so a later in-room re-entry creates fresh.
-      sessionStorage.removeItem(`joined_${room.room_key}`);
+      // Durable joined flag is localStorage now (see ChatScreen) — clear it so a
+      // later in-room entry treats this as a fresh, existing room.
+      localStorage.removeItem(`joined_${room.room_key}`);
+      const { data: freshRow } = await supabase.from('rooms').select('*').eq('room_key', room.room_key).maybeSingle();
+      const fresh = freshRow as Room | null;
       setDeletedRooms(prev => { const next = new Map(prev); next.delete(room.room_key); return next; });
+      setTombstoneDeleted(prev => { if (!prev.has(room.room_key)) return prev; const next = new Map(prev); next.delete(room.room_key); return next; });
       // The re-created room is empty — drop any stale overview so the card shows
       // "No messages yet" instead of the pre-deletion preview.
       setOverview(prev => { const next = new Map(prev); next.delete(room.room_key); return next; });
+      if (fresh) {
+        setRooms(prev => prev.some(r => r.room_key === fresh.room_key)
+          ? prev.map(r => (r.room_key === fresh.room_key ? fresh : r))
+          : [fresh, ...prev]);
+        if (fresh.expires_at) upsertTombstone(user.uid, {
+          room_key: fresh.room_key, room_name: fresh.room_name, pin: fresh.pin,
+          created_by: fresh.created_by, expires_at: fresh.expires_at, name: fresh.display_name || fresh.room_name,
+        });
+        else removeTombstone(user.uid, fresh.room_key);
+      }
     } catch {
       alert('Could not re-create the room. Please try again.');
     }
-  }, [displayName, tier]);
+  }, [displayName, tier, user.uid]);
 
   // Dismiss a live-deleted room from the dashboard. The room (and the user's
   // subscribers/room_settings/push rows) are already cascade-gone server-side, so
   // this is local-only cleanup — no DB call.
   const dismissDeletedRoom = useCallback((key: string) => {
     setDeletedRooms(prev => { const next = new Map(prev); next.delete(key); return next; });
+    setTombstoneDeleted(prev => { if (!prev.has(key)) return prev; const next = new Map(prev); next.delete(key); return next; });
+    removeTombstone(user.uid, key);
     setRooms(prev => prev.filter(r => r.room_key !== key));
     setFavorites(prev => {
       if (!prev.has(key)) return prev;
@@ -1150,7 +1214,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     selectMode,
     selected: selected.has(room.room_key),
     online: online.get(room.room_key),
-    deletedInfo: deletedRooms.get(room.room_key),
+    now: nowTick,
+    deletedInfo: deletedRooms.get(room.room_key) ?? (isExpired(room.expires_at, nowTick) ? { reason: 'expired' as const } : undefined),
     onJoin: handleJoin,
     onOpenActions: setActionsRoom,
     onTogglePin: togglePinVisibility,
@@ -1158,6 +1223,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     onToggleSelect: toggleSelect,
     onRecreate: recreateRoom,
     onDismissDeleted: dismissDeletedRoom,
+  });
+
+  // Display-only Room from a tombstone (its expires_at is in the past, so
+  // cardPropsFor's isExpired check renders it as an "auto-deleted" card).
+  const tombstoneToRoom = (t: RoomTombstone): Room => ({
+    id: '', room_key: t.room_key, room_name: t.room_name, pin: t.pin,
+    created_by: t.created_by, created_at: '', expires_at: t.expires_at, display_name: t.name,
   });
 
   const planCard = (
@@ -1458,6 +1530,14 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 </div>
                             )}
                         </div>
+                        {tombstoneDeleted.size > 0 && (
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 mb-4">
+                                {[...tombstoneDeleted.values()].map((t) => {
+                                    const room = tombstoneToRoom(t);
+                                    return <StaticRoomCard key={room.room_key} room={room} {...cardPropsFor(room)} />;
+                                })}
+                            </div>
+                        )}
                         {loadingRooms ? (
                             <div role="status" aria-label="Loading your rooms">
                                 <span className="sr-only">Loading your rooms…</span>
