@@ -2,6 +2,12 @@
 
 > Anonymous, PIN-locked private chat rooms — a privacy-focused chat PWA.
 
+<p align="center">
+  <a href="https://konskall.github.io/incognitochat/">
+    <img src="public/og-incognito.jpg" alt="Incognito Chat — anonymous, PIN-locked private chat rooms" width="680">
+  </a>
+</p>
+
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)
