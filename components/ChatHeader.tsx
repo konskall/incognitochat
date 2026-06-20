@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Sun, Moon, LogOut, Timer, Trash2, Hourglass } from 'lucide-react';
+import { Users, Settings, Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Sun, Moon, LogOut, Timer, Hourglass } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
 
 interface ChatHeaderProps {
@@ -20,8 +20,7 @@ interface ChatHeaderProps {
   onExit: () => void;
   roomAvatarUrl?: string;
   messageTtlLabel?: string | null;
-  roomExpiryLabel?: string | null;
-  roomFreeExpiryLabel?: string | null; // free-tier 24h expiry countdown (rooms.expires_at)
+  roomFreeExpiryLabel?: string | null; // absolute auto-delete countdown (rooms.expires_at)
   // Tapping the room identity opens the consolidated Room Info hub.
   onOpenRoomInfo: () => void;
   // The members icon opens the participants/calls panel directly.
@@ -46,7 +45,6 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   onExit,
   roomAvatarUrl,
   messageTtlLabel,
-  roomExpiryLabel,
   roomFreeExpiryLabel,
   onOpenRoomInfo,
   onOpenParticipants,
@@ -134,13 +132,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
                 <Timer size={11} /> {messageTtlLabel}
               </span>
             )}
-            {roomExpiryLabel && (
-              <span className="flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-full" title={`Auto-deletes in ${roomExpiryLabel} without activity (resets when someone posts)`}>
-                <Trash2 size={11} /> {roomExpiryLabel}
-              </span>
-            )}
             {roomFreeExpiryLabel && (
-              <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-full" title={`This free room auto-deletes — ${roomFreeExpiryLabel} left`}>
+              <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-full" title={`This room auto-deletes — ${roomFreeExpiryLabel} left`}>
                 <Hourglass size={11} /> {roomFreeExpiryLabel}
               </span>
             )}

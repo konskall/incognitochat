@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Trash2, Check, Loader2 } from 'lucide-react';
-import { supabase } from '../services/supabase';
+import { setRoomAutoDelete } from '../services/supabase';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { parseTierError } from '../utils/tierGatingErrors';
 
@@ -17,7 +17,7 @@ interface RoomExpiryModalProps {
   onClose: () => void;
   roomKey: string;
   currentSeconds: number | null;
-  onUpdate: (seconds: number | null) => void;
+  onUpdate: (seconds: number | null, expiresAt: string | null) => void;
   onUpgrade?: (featureLabel: string, requiredTier: 'basic' | 'ultra', reason?: string) => void;
 }
 
@@ -40,10 +40,10 @@ const RoomExpiryModal: React.FC<RoomExpiryModalProps> = ({ show, onClose, roomKe
     if (seconds === currentSeconds) { onClose(); return; }
     setSaving(seconds);
     try {
-      const { error } = await supabase.from('rooms').update({ auto_delete_seconds: seconds }).eq('room_key', roomKey);
+      const { data, error } = await setRoomAutoDelete(roomKey, seconds);
       if (error) throw error;
       if (!mountedRef.current || !openRef.current) return;
-      onUpdate(seconds);
+      onUpdate(seconds, data?.expires_at ?? null);
       onClose();
     } catch (e) {
       console.error(e);
@@ -70,7 +70,7 @@ const RoomExpiryModal: React.FC<RoomExpiryModalProps> = ({ show, onClose, roomKe
             <X size={20} className="text-slate-400" />
           </button>
         </div>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mb-5">When on, the whole room — every message and shared file — is permanently deleted for everyone after this period of inactivity.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-5">When on, the whole room — every message and shared file — is permanently deleted for everyone after this period, whether or not it's been used.</p>
 
         <div className="flex flex-col gap-1.5">
           {ROOM_EXPIRY_OPTIONS.map((opt) => {

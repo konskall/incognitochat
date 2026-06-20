@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase, joinOrCreateRoom, startCheckout, openBillingPortal } from '../services/supabase';
+import { supabase, joinOrCreateRoom, startCheckout, openBillingPortal, setRoomAutoDelete } from '../services/supabase';
 import { flashToast } from './MessageActionMenu';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { broadcastRoomDeleted, parseRoomDeletedPayload, expiryShortLabel, isExpired, inactivityExpiryLabel } from '../utils/roomLifecycle';
+import { broadcastRoomDeleted, parseRoomDeletedPayload, expiryShortLabel, isExpired } from '../utils/roomLifecycle';
 import { readTombstones, upsertTombstone, removeTombstone, type RoomTombstone } from '../utils/roomTombstones';
 import { useEntitlements } from '../hooks/useEntitlements';
 import UpgradeModal from './UpgradeModal';
@@ -203,7 +203,6 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
   const name = room.display_name || room.room_name;
   const showUnread = unread > 0 && !muted;
   const stop = (e: React.PointerEvent) => e.stopPropagation();
-  const ttl = inactivityExpiryLabel(room.auto_delete_seconds, overview?.lastAt ?? room.created_at, now);
   const expLabel = expiryShortLabel(room.expires_at, now);
   return (
     <>
@@ -247,11 +246,6 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
           {isOwner
             ? <span className="text-blue-500 font-medium">Owner</span>
             : <span className="text-emerald-500 font-medium">Joined</span>}
-          {ttl && (
-            <span className="flex items-center gap-1 text-red-600 dark:text-red-400 font-medium" title="Auto-deletes without activity — time remaining (resets when someone posts)">
-              <Clock size={11} />{ttl}
-            </span>
-          )}
           {expLabel && (
             <span className="flex items-center gap-1 text-amber-600 dark:text-amber-500 font-medium" title="This free room auto-deletes (24h)">
               <Hourglass size={11} />{expLabel}
@@ -867,7 +861,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
   // "Quick chat": random room, opens the form so the owner can copy the PIN.
   const handleQuickChat = useCallback(() => { setEphemeral(false); fillRandomRoom(); setShowCreate(true); }, [fillRandomRoom]);
-  // "Ephemeral 24h": same, but flagged to auto-delete after 24h of inactivity.
+  // "Ephemeral 24h": same, but flagged to auto-delete 24h after creation.
   const handleEphemeral = useCallback(() => { setEphemeral(true); fillRandomRoom(); setShowCreate(true); }, [fillRandomRoom]);
 
   // Keyboard shortcuts: ⌘/Ctrl+K focus search, ⌘/Ctrl+N open create, Esc
@@ -1089,11 +1083,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                return;
            }
            if (room) {
-               // Ephemeral preset: only set on a NEWLY created room (never override
-               // an existing room you're joining). The expire_rooms cron deletes it
-               // 24h after the last activity.
-               if (ephemeral && room.is_new) {
-                   const { error: ttlErr } = await supabase.from('rooms').update({ auto_delete_seconds: 86400 }).eq('room_key', room.room_key);
+               // Ephemeral preset: only on a NEWLY created room. Free rooms already
+               // auto-delete 24h after creation (expires_at stamped at creation), so
+               // this only applies to paid owners — set the absolute 24h deadline via
+               // the RPC (the direct auto_delete_seconds write is revoked).
+               if (ephemeral && room.is_new && tier !== 'free') {
+                   const { error: ttlErr } = await setRoomAutoDelete(room.room_key, 86400);
                    // Surface the failure: the user expects a self-destructing room
                    // and would otherwise believe a permanent one is ephemeral.
                    if (ttlErr) { console.warn('Could not set ephemeral TTL:', ttlErr); alert('Room created, but auto-delete could not be enabled — it will not self-destruct.'); }
@@ -1453,7 +1448,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         </span>
                                         <span className="min-w-0 flex-1">
                                             <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">Ephemeral room</span>
-                                            <span className="block text-xs text-slate-500 dark:text-slate-400">Auto-deletes 24h after the last message · new rooms only</span>
+                                            <span className="block text-xs text-slate-500 dark:text-slate-400">Auto-deletes 24h after creation · new rooms only</span>
                                         </span>
                                         <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${ephemeral ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
                                             <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${ephemeral ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -1562,7 +1557,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 <p className="text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto text-sm">Create a private room or join one with its name + PIN. Share the PIN to invite others — only people with it can read along.</p>
                                 <div className="flex flex-col sm:flex-row gap-2 justify-center mt-5 flex-wrap">
                                     <button onClick={handleQuickChat} className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold flex items-center justify-center gap-2 transition"><MessageSquarePlus size={18} className="text-blue-500" />Quick chat</button>
-                                    <button onClick={handleEphemeral} title="Random room that self-deletes 24h after the last message" className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold flex items-center justify-center gap-2 transition"><Clock size={18} className="text-red-500" />Ephemeral 24h</button>
+                                    <button onClick={handleEphemeral} title="Random room that auto-deletes 24h after creation" className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold flex items-center justify-center gap-2 transition"><Clock size={18} className="text-red-500" />Ephemeral 24h</button>
                                     <button onClick={() => setShowCreate(true)} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition"><LogIn size={18} />Create or Join</button>
                                 </div>
                             </div>

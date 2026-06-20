@@ -58,6 +58,21 @@ export async function joinOrCreateRoom(params: {
   return { data: data as JoinRoomResult, error: null };
 }
 
+// Set/clear a room's absolute auto-delete deadline (Basic+). The SECURITY DEFINER
+// RPC sets rooms.expires_at = now()+seconds (or null) AND stores the chosen
+// interval in auto_delete_seconds. The RPC is the ONLY writer of auto_delete_seconds
+// (the direct column write is revoked), so the two never desync.
+export async function setRoomAutoDelete(
+  roomKey: string,
+  seconds: number | null,
+): Promise<{ data: { expires_at: string | null; auto_delete_seconds: number | null } | null; error: unknown }> {
+  const { data, error } = await supabase.rpc('set_room_auto_delete', {
+    p_room_key: roomKey,
+    p_seconds: seconds,
+  });
+  return { data: (data as { expires_at: string | null; auto_delete_seconds: number | null } | null) ?? null, error };
+}
+
 // --- Billing (Phase 2 edge functions) ---
 // CRITICAL: only navigate when the function returned a real URL. supabase-js sets
 // `error` (FunctionsHttpError) on a non-2xx response, but our functions still

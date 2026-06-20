@@ -92,12 +92,12 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   const total = participants.length;
   const initials = config.roomName.substring(0, 2).toUpperCase();
   const expiryHint = formatExpiryHint(roomExpiresAt);
-  // A room sits on the FREE fixed-lifetime timer (24h `expires_at`) when its
-  // OWNER is free — independent of the viewer's tier. Its deletion is NOT the
-  // configurable inactivity `auto_delete_seconds` and can't be toggled away by a
-  // member, so for that room we surface the countdown (hero hint above) and do
-  // NOT offer the misleading editable inactivity control.
-  const roomOnFreeTimer = !!expiryHint;
+  // A room sits on the FREE fixed 24h timer when it carries an `expires_at` but
+  // NO chosen interval — only free creation does that. A paid-chosen auto-delete
+  // room also has an `expires_at` (set via the RPC) but ALSO an `auto_delete_seconds`
+  // (→ `roomExpiryLabel`), and must stay editable. So free-fixed = expires_at set
+  // AND no roomExpiryLabel. The hero hint (above) shows the countdown for both.
+  const roomOnFreeTimer = !!roomExpiresAt && !roomExpiryLabel;
   // Collaborative room: any logged-in member (not only the creator) can manage
   // room settings and toggle Inco; the original creator keeps access even when
   // anonymous. Deleting the room is open to every member (see Delete row below).

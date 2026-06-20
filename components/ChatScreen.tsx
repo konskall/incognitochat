@@ -26,7 +26,7 @@ import RoomInfoModal from './RoomInfoModal';
 import MembersHistoryModal from './MembersHistoryModal';
 import { flashToast } from './MessageActionMenu';
 import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
-import { expiryShortLabel, inactivityExpiryLabel } from '../utils/roomLifecycle';
+import { expiryShortLabel } from '../utils/roomLifecycle';
 import { parseTierError } from '../utils/tierGatingErrors';
 import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin, Sparkles } from 'lucide-react';
 
@@ -1438,7 +1438,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onExit={handleExitChat}
         roomAvatarUrl={roomAvatarUrl}
         messageTtlLabel={formatTtl(messageTtl)}
-        roomExpiryLabel={inactivityExpiryLabel(roomExpiry, messages[messages.length - 1]?.createdAt, nowTick)}
         roomFreeExpiryLabel={expiryShortLabel(roomExpiresAt, nowTick)}
         onOpenRoomInfo={() => setShowRoomInfo(true)}
         onOpenParticipants={() => setShowParticipantsList(true)}
@@ -1607,10 +1606,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onClose={() => setShowRoomExpiry(false)}
         roomKey={config.roomKey}
         currentSeconds={roomExpiry}
-        onUpdate={(secs) => {
+        onUpdate={(secs, expiresAt) => {
           setRoomExpiry(secs);
+          setRoomExpiresAt(expiresAt);
           const label = formatTtl(secs);
-          sendMessage(label ? `Auto-delete room set to ${label} of inactivity by ${config.username}` : `Auto-delete room turned off by ${config.username}`, config, null, null, null, 'system');
+          sendMessage(label ? `Auto-delete set to ${label} by ${config.username}` : `Auto-delete turned off by ${config.username}`, config, null, null, null, 'system');
         }}
         onUpgrade={promptUpgrade}
       />
