@@ -135,7 +135,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
               </span>
             )}
             {roomExpiryLabel && (
-              <span className="flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-full" title={`Room auto-deletes after ${roomExpiryLabel} of inactivity`}>
+              <span className="flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-full" title={`Auto-deletes in ${roomExpiryLabel} without activity (resets when someone posts)`}>
                 <Trash2 size={11} /> {roomExpiryLabel}
               </span>
             )}

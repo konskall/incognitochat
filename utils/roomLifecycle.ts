@@ -54,16 +54,38 @@ export async function broadcastRoomDeleted(
   }
 }
 
-// Short countdown label for the free 24h expiry (rooms.expires_at). Returns null
-// when no expiry is set, the timestamp is malformed, or it has already passed.
-export function expiryShortLabel(iso?: string | null, now: number = Date.now()): string | null {
-  if (!iso) return null;
-  const ms = Date.parse(iso) - now;
+// Format a positive remaining-milliseconds value as "~Nm"/"~Nh"/"~Nd". Returns
+// null for non-finite / non-positive input (already past, malformed, or absent).
+function shortMsLabel(ms: number): string | null {
   if (!Number.isFinite(ms) || ms <= 0) return null;
   const mins = Math.floor(ms / 60000);
   if (mins >= 1440) { const d = Math.round(mins / 1440); return `~${d}d`; }
   if (mins >= 60)   { const h = Math.round(mins / 60);   return `~${h}h`; }
   return `~${Math.max(1, mins)}m`;
+}
+
+// Short countdown label for the free 24h expiry (rooms.expires_at — an absolute
+// deadline). Returns null when no expiry is set, the timestamp is malformed, or
+// it has already passed.
+export function expiryShortLabel(iso?: string | null, now: number = Date.now()): string | null {
+  if (!iso) return null;
+  return shortMsLabel(Date.parse(iso) - now);
+}
+
+// Short countdown label for an INACTIVITY auto-delete room (rooms.auto_delete_seconds):
+// the room is deleted `autoDeleteSeconds` after the last activity (last message, else
+// creation), so the deadline = lastActivity + seconds and RESETS whenever someone posts.
+// Returns null when the timer is off, there's no anchor, the anchor is malformed, or the
+// deadline has already passed.
+export function inactivityExpiryLabel(
+  autoDeleteSeconds?: number | null,
+  lastActivityIso?: string | null,
+  now: number = Date.now(),
+): string | null {
+  if (!autoDeleteSeconds || autoDeleteSeconds <= 0 || !lastActivityIso) return null;
+  const anchor = Date.parse(lastActivityIso);
+  if (!Number.isFinite(anchor)) return null;
+  return shortMsLabel(anchor + autoDeleteSeconds * 1000 - now);
 }
 
 // True only when an expiry timestamp is set AND has passed. Absent/malformed → false

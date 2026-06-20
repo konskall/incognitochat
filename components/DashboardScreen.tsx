@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom, startCheckout, openBillingPortal } from '../services/supabase';
 import { flashToast } from './MessageActionMenu';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { broadcastRoomDeleted, parseRoomDeletedPayload, expiryShortLabel, isExpired } from '../utils/roomLifecycle';
+import { broadcastRoomDeleted, parseRoomDeletedPayload, expiryShortLabel, isExpired, inactivityExpiryLabel } from '../utils/roomLifecycle';
 import { readTombstones, upsertTombstone, removeTombstone, type RoomTombstone } from '../utils/roomTombstones';
 import { useEntitlements } from '../hooks/useEntitlements';
 import UpgradeModal from './UpgradeModal';
@@ -92,13 +92,6 @@ const previewLabel = (o?: Overview): string => {
   if (o.hasLocation) return '📍 Location';
   if (o.hasAttachment && !o.lastText) return '📎 Attachment';
   return o.lastText || '…';
-};
-
-const ttlLabel = (secs?: number | null): string | null => {
-  if (!secs || secs <= 0) return null;
-  if (secs % 86400 === 0) return `${secs / 86400}d`;
-  if (secs % 3600 === 0) return `${secs / 3600}h`;
-  return `${Math.max(1, Math.round(secs / 60))}m`;
 };
 
 const RoomDeleteToast: React.FC<{
@@ -210,7 +203,7 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
   const name = room.display_name || room.room_name;
   const showUnread = unread > 0 && !muted;
   const stop = (e: React.PointerEvent) => e.stopPropagation();
-  const ttl = ttlLabel(room.auto_delete_seconds);
+  const ttl = inactivityExpiryLabel(room.auto_delete_seconds, overview?.lastAt ?? room.created_at, now);
   const expLabel = expiryShortLabel(room.expires_at, now);
   return (
     <>
@@ -255,7 +248,7 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
             ? <span className="text-blue-500 font-medium">Owner</span>
             : <span className="text-emerald-500 font-medium">Joined</span>}
           {ttl && (
-            <span className="flex items-center gap-1 text-red-600 dark:text-red-400 font-medium" title="Auto-deletes after this much inactivity">
+            <span className="flex items-center gap-1 text-red-600 dark:text-red-400 font-medium" title="Auto-deletes without activity — time remaining (resets when someone posts)">
               <Clock size={11} />{ttl}
             </span>
           )}

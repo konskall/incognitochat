@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseRoomDeletedPayload, expiryShortLabel, isExpired } from './roomLifecycle';
+import { parseRoomDeletedPayload, expiryShortLabel, isExpired, inactivityExpiryLabel } from './roomLifecycle';
 
 const NOW = 1_700_000_000_000; // fixed reference instant
 const inMin = (m: number) => new Date(NOW + m * 60000).toISOString();
@@ -39,6 +39,26 @@ describe('isExpired', () => {
   });
   it('false when malformed', () => {
     expect(isExpired('garbage', NOW)).toBe(false);
+  });
+});
+
+describe('inactivityExpiryLabel', () => {
+  it('null when off / no anchor / non-positive seconds', () => {
+    expect(inactivityExpiryLabel(null, inMin(0), NOW)).toBeNull();
+    expect(inactivityExpiryLabel(0, inMin(0), NOW)).toBeNull();
+    expect(inactivityExpiryLabel(3600, null, NOW)).toBeNull();
+    expect(inactivityExpiryLabel(3600, undefined, NOW)).toBeNull();
+  });
+  it('counts down from last activity + seconds', () => {
+    expect(inactivityExpiryLabel(3600, inMin(-10), NOW)).toBe('~50m'); // 60m TTL, idle 10m → 50m left
+    expect(inactivityExpiryLabel(86400, inMin(0), NOW)).toBe('~1d');   // 24h TTL, fresh
+    expect(inactivityExpiryLabel(7200, inMin(0), NOW)).toBe('~2h');    // 2h TTL, fresh
+  });
+  it('null once the inactivity deadline has passed', () => {
+    expect(inactivityExpiryLabel(3600, inMin(-120), NOW)).toBeNull(); // idle 2h > 1h TTL
+  });
+  it('null for a malformed anchor', () => {
+    expect(inactivityExpiryLabel(3600, 'garbage', NOW)).toBeNull();
   });
 });
 

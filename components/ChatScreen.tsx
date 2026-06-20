@@ -26,7 +26,7 @@ import RoomInfoModal from './RoomInfoModal';
 import MembersHistoryModal from './MembersHistoryModal';
 import { flashToast } from './MessageActionMenu';
 import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
-import { expiryShortLabel } from '../utils/roomLifecycle';
+import { expiryShortLabel, inactivityExpiryLabel } from '../utils/roomLifecycle';
 import { parseTierError } from '../utils/tierGatingErrors';
 import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin, Sparkles } from 'lucide-react';
 
@@ -213,15 +213,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   // permanent). Surfaced as a countdown in Room info so free users are warned.
   const [roomExpiresAt, setRoomExpiresAt] = useState<string | null>(null);
 
-  // Drives the live countdown of the free-tier 24h expiry pill. Only ticks while
-  // an expiry is actually set, so there's no always-on timer otherwise.
+  // Drives the live countdown pills — the free-tier 24h expiry (expires_at) AND
+  // the inactivity auto-delete (auto_delete_seconds). Only ticks while at least
+  // one timer is active, so there's no always-on timer otherwise.
   const [nowTick, setNowTick] = useState(() => Date.now());
   useEffect(() => {
-    if (!roomExpiresAt) return;
+    if (!roomExpiresAt && !roomExpiry) return;
     setNowTick(Date.now());
     const id = setInterval(() => setNowTick(Date.now()), 60000);
     return () => clearInterval(id);
-  }, [roomExpiresAt]);
+  }, [roomExpiresAt, roomExpiry]);
 
   // Pinned message (owner-set), poll composer, and media gallery.
   const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
@@ -1437,7 +1438,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onExit={handleExitChat}
         roomAvatarUrl={roomAvatarUrl}
         messageTtlLabel={formatTtl(messageTtl)}
-        roomExpiryLabel={formatTtl(roomExpiry)}
+        roomExpiryLabel={inactivityExpiryLabel(roomExpiry, messages[messages.length - 1]?.createdAt, nowTick)}
         roomFreeExpiryLabel={expiryShortLabel(roomExpiresAt, nowTick)}
         onOpenRoomInfo={() => setShowRoomInfo(true)}
         onOpenParticipants={() => setShowParticipantsList(true)}
