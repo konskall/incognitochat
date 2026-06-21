@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, Search, Image as ImageIcon, Users, Wand2, Sparkles, Palette, Timer, Mail, Share2, Trash2, ChevronRight, Lock, ChevronLeft, Clock,
+  X, Search, Image as ImageIcon, Users, Wand2, Sparkles, Palette, Timer, Mail, Share2, Trash2, ChevronRight, Lock, ChevronLeft, Clock, Eraser,
 } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -29,6 +29,7 @@ interface RoomInfoModalProps {
   onOpenRoomAppearance: () => void;
   onOpenEphemeral: () => void;
   onOpenRoomExpiry: () => void;
+  onClearMessages: () => void; // wipe all messages in the room (Basic+)
   onOpenEmail: () => void;
   onDeleteRoom: () => void;
   // Tier plumbing (Phase 3): entitlements + upgrade prompt; gates the
@@ -78,7 +79,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   show, onClose, config, participants, roomAvatarUrl, isOwner, isGoogleUser,
   aiEnabled, messageTtlLabel, roomExpiryLabel, roomExpiresAt, emailAlertsEnabled,
   onToggleSearch, onOpenGallery, onOpenParticipants, onOpenMembers, onToggleAI, onOpenAiAvatar,
-  onOpenRoomAppearance, onOpenEphemeral, onOpenRoomExpiry, onOpenEmail, onDeleteRoom,
+  onOpenRoomAppearance, onOpenEphemeral, onOpenRoomExpiry, onClearMessages, onOpenEmail, onDeleteRoom,
   ent, entLoading, onUpgrade,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -255,6 +256,26 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
                 </span>
               }
             />
+        ) : null}
+        {/* Clear all messages (Basic+). Wipes every message in the room for
+            everyone but keeps the room. Free -> locked -> Basic; paid action is
+            offered to any logged-in member (mirrors the collaborative Delete row).
+            Server-enforced by the clear_room_messages RPC (tier + membership). */}
+        {!entLoading && ent && !ent.canClearMessages ? (
+          <Row
+            icon={<Eraser size={18} />}
+            label="Clear all messages"
+            onClick={() => { onClose(); onUpgrade?.('Clear all messages', 'basic'); }}
+            tint="bg-rose-500/10 text-rose-500"
+            trailing={lockedTrailing}
+          />
+        ) : canManage ? (
+          <Row
+            icon={<Eraser size={18} />}
+            label="Clear all messages"
+            onClick={() => go(onClearMessages)}
+            tint="bg-rose-500/10 text-rose-500"
+          />
         ) : null}
         {/* Auto-delete room. Label always reflects the ROOM's real state:
             free-owned rooms show their fixed "1 day" lifetime; otherwise the

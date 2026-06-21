@@ -1,6 +1,6 @@
 
 import React, { useRef } from 'react';
-import { ShieldAlert, Mail, X } from 'lucide-react';
+import { ShieldAlert, Mail, X, Eraser } from 'lucide-react';
 import { useModalA11y } from '../hooks/useModalA11y';
 
 interface DeleteModalProps {
@@ -8,6 +8,13 @@ interface DeleteModalProps {
   onCancel: () => void;
   onConfirm: () => void;
   isDeleting: boolean;
+}
+
+interface ClearMessagesModalProps {
+  show: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  isClearing: boolean;
 }
 
 interface EmailModalProps {
@@ -50,6 +57,44 @@ export const DeleteChatModal: React.FC<DeleteModalProps> = ({ show, onCancel, on
                         className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg shadow-red-500/30 transition"
                     >
                         {isDeleting ? 'Deleting...' : 'Delete All'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+  );
+};
+
+// Confirms wiping ALL messages in the room for everyone (keeps the room itself).
+export const ClearMessagesModal: React.FC<ClearMessagesModalProps> = ({ show, onCancel, onConfirm, isClearing }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(show, onCancel, dialogRef);
+  if (!show) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Clear all messages" className="outline-none bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl scale-100 animate-in zoom-in-95 duration-200 border border-white/10 dark:border-slate-800">
+            <div className="flex flex-col items-center text-center gap-4">
+                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center text-red-500">
+                    <Eraser size={30} />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">Clear all messages?</h3>
+                <p className="text-slate-500 dark:text-slate-400 text-sm">
+                    Permanently delete every message in this room for everyone. The room stays — only its messages are removed. This can't be undone.
+                </p>
+                <div className="flex gap-3 w-full mt-2">
+                    <button
+                        onClick={onCancel}
+                        className="flex-1 py-3 text-slate-600 dark:text-slate-300 font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={onConfirm}
+                        disabled={isClearing}
+                        className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg shadow-red-500/30 transition disabled:opacity-60"
+                    >
+                        {isClearing ? 'Clearing...' : 'Clear all'}
                     </button>
                 </div>
             </div>

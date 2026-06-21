@@ -13,7 +13,7 @@ import { subscribeToPushNotifications, unsubscribeFromPushNotifications } from '
 import { setActiveRoom, onPushSubscriptionChanged } from '../utils/swBridge';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
-import { DeleteChatModal, EmailAlertModal } from './ChatModals';
+import { DeleteChatModal, ClearMessagesModal, EmailAlertModal } from './ChatModals';
 import AiAvatarModal from './AiAvatarModal';
 import UserProfileModal from './UserProfileModal';
 import RoomAppearanceModal from './RoomAppearanceModal';
@@ -167,6 +167,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   // UI States
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showClearMessages, setShowClearMessages] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   const [showAiAvatarModal, setShowAiAvatarModal] = useState(false);
   const [selectedUserPresence, setSelectedUserPresence] = useState<Presence | null>(null);
   const [selectedUserSubscriber, setSelectedUserSubscriber] = useState<Subscriber | null>(null);
@@ -1023,6 +1025,25 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   }, [config]);
 
+  // Basic+ member: wipe ALL messages in the room (server-enforced via the
+  // SECURITY DEFINER clear_room_messages RPC). Per-row realtime DELETE events
+  // clear every member's open view (incl. this one), so we don't touch local
+  // state here. The room itself stays.
+  const handleClearMessages = useCallback(async () => {
+    if (!config.roomKey || isClearing) return;
+    setIsClearing(true);
+    try {
+      const { error } = await supabase.rpc('clear_room_messages', { p_room_key: config.roomKey });
+      if (error) throw error;
+      setShowClearMessages(false);
+    } catch (e) {
+      console.error('clear_room_messages failed', e);
+      flashToast('Could not clear messages. Please try again.');
+    } finally {
+      setIsClearing(false);
+    }
+  }, [config.roomKey, isClearing]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setInputText(e.target.value);
       setTyping(true);
@@ -1626,11 +1647,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         />
       )}
 
-      <DeleteChatModal 
-        show={showDeleteModal} 
-        onCancel={() => setShowDeleteModal(false)} 
-        onConfirm={handleDeleteChat} 
-        isDeleting={isDeleting} 
+      <DeleteChatModal
+        show={showDeleteModal}
+        onCancel={() => setShowDeleteModal(false)}
+        onConfirm={handleDeleteChat}
+        isDeleting={isDeleting}
+      />
+
+      <ClearMessagesModal
+        show={showClearMessages}
+        onCancel={() => setShowClearMessages(false)}
+        onConfirm={handleClearMessages}
+        isClearing={isClearing}
       />
 
       <EmailAlertModal 
@@ -1721,6 +1749,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onOpenRoomAppearance={() => setShowRoomAppearance(true)}
         onOpenEphemeral={() => setShowEphemeral(true)}
         onOpenRoomExpiry={() => setShowRoomExpiry(true)}
+        onClearMessages={() => setShowClearMessages(true)}
         onOpenEmail={() => setShowEmailModal(true)}
         onDeleteRoom={() => setShowDeleteModal(true)}
         ent={ent}

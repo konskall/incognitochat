@@ -74,6 +74,14 @@ describe('canMultiUpload', () => {
   });
 });
 
+describe('canClearMessages', () => {
+  it('is premium-only (Basic+)', () => {
+    expect(entitlements('free').canClearMessages).toBe(false);
+    expect(entitlements('basic').canClearMessages).toBe(true);
+    expect(entitlements('ultra').canClearMessages).toBe(true);
+  });
+});
+
 describe('canSendBatch', () => {
   it('rejects empty selections', () => {
     expect(canSendBatch(0, null)).toEqual({ ok: false, reason: 'empty', limit: 0 });
