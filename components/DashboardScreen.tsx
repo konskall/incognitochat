@@ -1148,13 +1148,22 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     setActiveDragKey(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const prev = roomsRef.current;
-    const oldIndex = prev.findIndex((r) => r.room_key === active.id);
-    const newIndex = prev.findIndex((r) => r.room_key === over.id);
+    // Reorder against the DISPLAYED (favorites-first) list — that's what the
+    // user sees and drags. handleDragEnd is recreated each render, so it closes
+    // over the current displayRooms/favorites (no refs needed).
+    const shown = displayRooms;
+    const oldIndex = shown.findIndex((r) => r.room_key === active.id);
+    const newIndex = shown.findIndex((r) => r.room_key === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
-    const next = arrayMove(prev, oldIndex, newIndex);
-    setRooms(next);
-    persistOrder(next);
+    const moved = arrayMove(shown, oldIndex, newIndex);
+    // Favorites stay pinned to the top: a cross-group drop settles at its
+    // group's edge. Then persist the full order (sort_order 0..n).
+    const regrouped = [
+      ...moved.filter((r) => favorites.has(r.room_key)),
+      ...moved.filter((r) => !favorites.has(r.room_key)),
+    ];
+    setRooms(regrouped);
+    persistOrder(regrouped);
   };
 
   const handleDragCancel = () => setActiveDragKey(null);
@@ -1174,11 +1183,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
   const anyArchived = useMemo(() => rooms.some((r) => settings.get(r.room_key)?.archived), [rooms, settings]);
 
-  // Drag is enabled only when the displayed order == the saved canonical order.
-  const dragEnabled = query.trim() === '' && filter === 'all' && favorites.size === 0 && !anyArchived && !selectMode;
+  // Drag is enabled when the displayed list is the full set in a persistable
+  // order. Favorites are allowed: they only re-pin to the top (handled in
+  // displayRooms + handleDragEnd), they never hide rooms. Search / non-'all'
+  // filter / archived / select-mode still disable it (partial or hidden lists).
+  const dragEnabled = query.trim() === '' && filter === 'all' && !anyArchived && !selectMode;
 
   const displayRooms = useMemo(() => {
-    if (dragEnabled) return rooms;
     const q = query.trim().toLowerCase();
     const filtered = rooms.filter((r) => {
       const s = settings.get(r.room_key);
@@ -1579,9 +1590,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 onDragEnd={handleDragEnd}
                                 onDragCancel={handleDragCancel}
                             >
-                                <SortableContext items={rooms.map((r) => r.room_key)} strategy={rectSortingStrategy}>
+                                <SortableContext items={displayRooms.map((r) => r.room_key)} strategy={rectSortingStrategy}>
                                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2">
-                                        {rooms.map((room) => (
+                                        {displayRooms.map((room) => (
                                             <SortableRoomCard key={room.room_key} room={room} {...cardPropsFor(room)} />
                                         ))}
                                     </div>
