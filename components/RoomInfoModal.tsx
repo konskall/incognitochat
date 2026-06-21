@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, Search, Image as ImageIcon, Users, Wand2, Sparkles, Palette, Timer, Mail, Share2, Trash2, ChevronRight, Lock, ChevronLeft, Clock,
@@ -83,6 +83,8 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
+  // Tapping the room photo opens an enlarged view (only when there's a real image).
+  const [avatarPreview, setAvatarPreview] = useState(false);
   if (!show) return null;
 
   // Only treat a feature as locked once entitlements have resolved (ent present).
@@ -126,6 +128,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   };
 
   return createPortal(
+    <>
     <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex sm:items-center sm:justify-center sm:p-4 animate-in fade-in duration-200" onClick={onClose}>
       <div
         ref={dialogRef}
@@ -151,7 +154,9 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
         {/* Hero */}
         <div className="flex flex-col items-center text-center px-6 pt-6 pb-5 border-b border-slate-100 dark:border-slate-800">
           {roomAvatarUrl ? (
-            <img src={roomAvatarUrl} alt={config.roomName} className="w-24 h-24 rounded-full object-cover shadow-lg border border-white/40 dark:border-slate-700 bg-slate-200 dark:bg-slate-800" />
+            <button type="button" onClick={() => setAvatarPreview(true)} aria-label="View room photo" title="View photo" className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+              <img src={roomAvatarUrl} alt={config.roomName} className="w-24 h-24 rounded-full object-cover shadow-lg border border-white/40 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 cursor-zoom-in transition-transform hover:scale-105 active:scale-95" />
+            </button>
           ) : (
             <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-3xl shadow-lg">{initials}</div>
           )}
@@ -322,7 +327,27 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
 
         <div className="h-[env(safe-area-inset-bottom)] shrink-0" />
       </div>
-    </div>,
+    </div>
+    {avatarPreview && roomAvatarUrl && (
+      <div
+        className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+        onClick={() => setAvatarPreview(false)}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Room photo"
+      >
+        <button onClick={() => setAvatarPreview(false)} aria-label="Close photo" className="absolute top-4 right-4 p-2.5 rounded-full text-white/80 hover:text-white hover:bg-white/10 transition">
+          <X size={24} />
+        </button>
+        <img
+          src={roomAvatarUrl}
+          alt={config.roomName}
+          onClick={(e) => e.stopPropagation()}
+          className="max-w-full max-h-[85vh] rounded-2xl object-contain shadow-2xl animate-in zoom-in-95 duration-200"
+        />
+      </div>
+    )}
+    </>,
     document.body
   );
 };
