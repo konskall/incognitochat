@@ -204,14 +204,17 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
   const showUnread = unread > 0 && !muted;
   const stop = (e: React.PointerEvent) => e.stopPropagation();
   const expLabel = expiryShortLabel(room.expires_at, now);
+  // Fall back to the initials circle if the room's avatar URL fails to load
+  // (404 / broken link), instead of showing a broken-image icon.
+  const [avatarFailed, setAvatarFailed] = useState(false);
   return (
     <>
       <div className="mb-3 relative z-10">
         <div className="flex justify-between items-start mb-2 gap-2">
           <h4 className="font-bold text-base text-slate-800 dark:text-slate-100 truncate flex items-center gap-1.5 min-w-0 flex-1">
             <GripVertical size={16} className="text-slate-300 dark:text-slate-600 shrink-0" />
-            {room.avatar_url ? (
-              <img src={safeAvatarUrl(room.avatar_url)} alt="" width={24} height={24} className="w-6 h-6 rounded-full object-cover shrink-0 bg-slate-200 dark:bg-slate-700 border border-white/40 dark:border-slate-700" />
+            {room.avatar_url && !avatarFailed ? (
+              <img src={safeAvatarUrl(room.avatar_url)} alt="" width={24} height={24} onError={() => setAvatarFailed(true)} className="w-6 h-6 rounded-full object-cover shrink-0 bg-slate-200 dark:bg-slate-700 border border-white/40 dark:border-slate-700" />
             ) : (
               <span className="w-6 h-6 rounded-full shrink-0 bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-[10px] font-bold flex items-center justify-center" aria-hidden>{name.substring(0, 2).toUpperCase()}</span>
             )}
