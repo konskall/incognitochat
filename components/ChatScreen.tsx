@@ -735,9 +735,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     const last = messages[messages.length - 1];
     const isMine = last.uid === user?.uid;
     if (isFirstLoad.current) {
-        messagesEndRef.current.scrollIntoView({ behavior: "auto" });
         isFirstLoad.current = false;
         setLastRead(last.createdAt);
+        const end = messagesEndRef.current;
+        end.scrollIntoView({ behavior: "auto" });
+        // The first scroll fires before late-loading content (image/video
+        // attachments, link previews) grows the list, which would otherwise
+        // leave the view parked above the newest message. Re-pin to the bottom
+        // across a short settling window — but only while still at the bottom,
+        // so a user who immediately scrolls up to read history isn't yanked back.
+        [100, 300, 650].forEach((d) =>
+            window.setTimeout(() => { if (atBottomRef.current) end.scrollIntoView({ behavior: "auto" }); }, d)
+        );
     } else if (last.id !== lastMessageIdRef.current) {
         // New message at the bottom. Follow it only if it's mine or the user is
         // already parked at the bottom; otherwise surface the "new messages"
