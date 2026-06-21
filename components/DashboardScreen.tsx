@@ -19,7 +19,7 @@ import {
   Upload, RotateCcw,
   RefreshCw, Save, X, Edit2, Mail, LogIn, Link as LinkIcon, AlertCircle, Eye, EyeOff, GripVertical,
   Search, Star, Sun, Moon, MoreVertical, Bell, BellOff, Archive, ArchiveRestore, Clock, Hourglass, Pencil,
-  Check, CheckSquare, MessageSquarePlus, Shuffle, Sparkles, Lock, ChevronRight,
+  Check, CheckSquare, MessageSquarePlus, Shuffle, Sparkles, Lock, ChevronRight, Copy, Crown, Rocket, MessageCircle,
   type LucideIcon
 } from 'lucide-react';
 import {
@@ -151,6 +151,14 @@ const RoomActionsSheet: React.FC<{
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(room.display_name || room.room_name);
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copyPin = async () => {
+    try {
+      await navigator.clipboard.writeText(room.pin);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable (insecure context / denied) — no-op */ }
+  };
   const save = async () => {
     if (!name.trim()) return;
     setBusy(true);
@@ -185,6 +193,7 @@ const RoomActionsSheet: React.FC<{
         ) : (
           <div className="p-2">
             {isOwner && <SheetBtn icon={Pencil} label="Rename room" onClick={() => setEditing(true)} />}
+            <SheetBtn icon={copied ? Check : Copy} label={copied ? 'PIN copied!' : 'Copy PIN'} onClick={copyPin} />
             <SheetBtn icon={muted ? Bell : BellOff} label={muted ? 'Unmute notifications' : 'Mute notifications'} onClick={() => { onToggleMute(); onClose(); }} />
             <SheetBtn icon={archived ? ArchiveRestore : Archive} label={archived ? 'Unarchive' : 'Archive'} onClick={() => { onToggleArchive(); onClose(); }} />
             <div className="my-1 h-px bg-slate-100 dark:bg-slate-800" />
@@ -1269,7 +1278,16 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const planCard = (
     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-5">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Your plan</h3>
+        <div className="flex items-center gap-2.5">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+            entLoading ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+            : tier === 'ultra' ? 'bg-gradient-to-br from-fuchsia-500 to-purple-600 text-white shadow-sm shadow-purple-500/30'
+            : tier === 'basic' ? 'bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-sm shadow-blue-500/30'
+            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+            {tier === 'ultra' ? <Crown size={18} /> : tier === 'basic' ? <Rocket size={18} /> : <MessageCircle size={18} />}
+          </span>
+          <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Your plan</h3>
+        </div>
         <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${
           entLoading ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
           : tier === 'ultra' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'

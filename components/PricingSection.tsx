@@ -107,14 +107,19 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onStartFree, onChoosePl
                   </span>
                 )}
 
-                <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-110 ${a.iconWrap}`}>
-                  {plan.icon}
+                {/* Icon on the LEFT, name + blurb to its right. flex-row wraps text
+                    naturally; on a narrow card the text column shrinks (min-w-0). */}
+                <div className="mb-5 flex items-start gap-4">
+                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-110 ${a.iconWrap}`}>
+                    {plan.icon}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">{plan.name}</h3>
+                    {/* min-height keeps the price row on a shared baseline across all three
+                        cards, regardless of whether the blurb wraps to one line or two. */}
+                    <p className="mt-1 min-h-[2.5rem] text-sm text-slate-500 dark:text-slate-400">{plan.blurb}</p>
+                  </div>
                 </div>
-
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white">{plan.name}</h3>
-                {/* min-height keeps the price row on a shared baseline across all three cards,
-                    regardless of whether the blurb wraps to one line or two. */}
-                <p className="mt-1 mb-5 min-h-[2.5rem] text-sm text-slate-500 dark:text-slate-400">{plan.blurb}</p>
 
                 <div className="mb-6 flex flex-wrap items-end gap-x-1.5" aria-busy={plan.key !== 'free' && loading}>
                   {plan.key !== 'free' && loading ? (
