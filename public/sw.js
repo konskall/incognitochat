@@ -3,7 +3,7 @@
 // Bumped on every push-logic change; the page can query it (INCO_GET_VERSION)
 // and shows it in the UI, so a device running a stale SW is diagnosable
 // without devtools (iOS especially).
-const SW_VERSION = 'push-v11';
+const SW_VERSION = 'push-v12';
 
 const CACHE = 'incognito-cache-v2';
 // Page-written suppression beacon (see utils/swBridge.ts): MUST survive the
@@ -27,6 +27,7 @@ const APP_SHELL = [
   BASE,
   BASE + 'index.html',
   BASE + 'favicon-96x96.png',
+  BASE + 'badge-96x96.png',
   BASE + 'site.webmanifest',
 ];
 
@@ -145,7 +146,11 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || 'You have a new message',
     icon: BASE + 'favicon-96x96.png',
-    badge: BASE + 'favicon-96x96.png',
+    // Android renders the badge (status-bar small icon) from the ALPHA channel
+    // only — a full-color favicon there collapses to a solid white square. This
+    // is a dedicated monochrome silhouette (white-on-transparent) so it tints
+    // correctly. The large `icon` can stay full-color.
+    badge: BASE + 'badge-96x96.png',
     vibrate: [100, 50, 100],
     // One stacked notification per room (collapses a burst into one) and a
     // stable handle the page can use to close it. renotify still alerts on each
