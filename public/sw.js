@@ -3,7 +3,7 @@
 // Bumped on every push-logic change; the page can query it (INCO_GET_VERSION)
 // and shows it in the UI, so a device running a stale SW is diagnosable
 // without devtools (iOS especially).
-const SW_VERSION = 'push-v12';
+const SW_VERSION = 'push-v13';
 
 const CACHE = 'incognito-cache-v2';
 // Page-written suppression beacon (see utils/swBridge.ts): MUST survive the
@@ -29,6 +29,14 @@ const APP_SHELL = [
   BASE + 'favicon-96x96.png',
   BASE + 'badge-96x96.png',
   BASE + 'site.webmanifest',
+  // Quick-reaction Twemoji SVGs (👍 ❤️ 😂 😮 😢 🔥) so the reaction bar renders
+  // offline before the emoji picker (which lazy-loads the rest) is ever opened.
+  BASE + 'emoji/1f44d.svg',
+  BASE + 'emoji/2764.svg',
+  BASE + 'emoji/1f602.svg',
+  BASE + 'emoji/1f62e.svg',
+  BASE + 'emoji/1f622.svg',
+  BASE + 'emoji/1f525.svg',
 ];
 
 self.addEventListener('install', (event) => {

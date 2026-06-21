@@ -228,6 +228,13 @@ Deployment is automated via GitHub Actions to **GitHub Pages**:
 | `npm run preview` | `vite preview` | Serve the built `./dist` locally. |
 | `npm test` | `vitest run` | Run the unit test suite. |
 
+## Credits
+
+Emoji graphics in the reaction bar, picker, and reaction pills are
+[Twemoji](https://github.com/jdecked/twemoji) — © Twitter, Inc. and other
+contributors, licensed **CC-BY 4.0**. The SVGs are self-hosted under
+`public/emoji/`.
+
 ## License
 
 No license file is present and `package.json` declares no license, so the project is **proprietary / all rights reserved** by default (`"private": true` is set). If you intend to use, modify, or distribute this code, contact the author (KonsKall) for permission.

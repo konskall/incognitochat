@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { useModalA11y } from '../hooks/useModalA11y';
+import Emoji from './Emoji';
 
 const EMOJIS = [
   '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂',
@@ -50,9 +51,9 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onSelect, onClose }) => {
               key={emoji}
               onClick={() => onSelect(emoji)}
               aria-label={`Emoji ${emoji}`}
-              className="text-xl p-2 hover:bg-blue-50 dark:hover:bg-slate-700 hover:scale-110 transition rounded cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              className="flex items-center justify-center p-1.5 hover:bg-blue-50 dark:hover:bg-slate-700 hover:scale-110 transition rounded cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             >
-              {emoji}
+              <Emoji emoji={emoji} className="w-7 h-7" />
             </button>
           ))}
         </div>
