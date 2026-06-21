@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase, joinOrCreateRoom } from '../services/supabase';
+import { supabase, joinOrCreateRoom, setMyAvatar } from '../services/supabase';
 import { ChatConfig, Message, User, Subscriber, Presence } from '../types';
 import MessageList from './MessageList';
 // WebRTC call logic is the heaviest component in the app (~43KB); load it
@@ -29,6 +29,7 @@ import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
 import { expiryShortLabel } from '../utils/roomLifecycle';
 import { parseTierError } from '../utils/tierGatingErrors';
 import { canSendBatch } from '../utils/entitlements';
+import { buildLiveAvatars } from '../utils/avatars';
 import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin, Sparkles } from 'lucide-react';
 
 // Hooks
@@ -352,6 +353,32 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const participantsRef = useRef(participants);
   useEffect(() => { participantsRef.current = participants; }, [participants]);
 
+  // Live avatar resolution. A member's CURRENT avatar comes from the room_members
+  // RPC (subscribers.avatar_url — covers offline users and old messages), overlaid
+  // by live presence (freshest for online users). Overlaid onto each message so a
+  // profile-photo change shows everywhere, not only on messages sent afterwards.
+  const [memberAvatarRows, setMemberAvatarRows] = useState<{ uid: string; avatar_url: string | null }[]>([]);
+  useEffect(() => {
+    if (!isRoomReady || !config.roomKey) return;
+    let alive = true;
+    supabase.rpc('room_members', { p_room_key: config.roomKey }).then(({ data, error }) => {
+      if (!alive || error || !Array.isArray(data)) return;
+      setMemberAvatarRows((data as { uid: string; avatar_url: string | null }[]).map((r) => ({ uid: r.uid, avatar_url: r.avatar_url })));
+    });
+    return () => { alive = false; };
+  }, [isRoomReady, config.roomKey]);
+
+  // Stable signature so the Map's reference only changes when an avatar actually
+  // changes — preserving React.memo on MessageList/MessageItem across keystrokes.
+  const liveAvatarsSig = useMemo(() => {
+    const parts: string[] = [];
+    for (const m of memberAvatarRows) if (m.avatar_url) parts.push(`${m.uid}=${m.avatar_url}`);
+    for (const p of participants) if (p.avatar) parts.push(`${p.uid}=${p.avatar}`);
+    return parts.sort().join('|');
+  }, [memberAvatarRows, participants]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const liveAvatars = useMemo(() => buildLiveAvatars(memberAvatarRows, participants), [liveAvatarsSig]);
+
   const handleRecordingComplete = async (blob: Blob, mimeType: string) => {
       try {
            const ext = mimeType.includes('mp4') || mimeType.includes('aac') ? 'mp4' : 'webm';
@@ -638,6 +665,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         setIsRoomReady(true);
         setRoomDeleted(false);
         setAccessError(null);
+        // Mirror our current avatar onto this room's membership row so other
+        // members resolve it live (covers every room entry — the self-healing
+        // path for anyone who changed their photo before this shipped).
+        void setMyAvatar(config.avatarURL);
         if (room.is_new) {
           await sendMessage(`Room created by ${config.username}`, config, null, null, null, 'system');
         }
@@ -1534,6 +1565,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             onReply={handleReply}
             onReact={reactToMessage}
             onUserClick={handleUserClick}
+            liveAvatars={liveAvatars}
             hasMoreOlder={hasMoreOlder}
             onLoadEarlier={loadOlderMessages}
             searchQuery={showSearch ? searchQuery : ''}

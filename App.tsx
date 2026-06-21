@@ -66,7 +66,7 @@ const App: React.FC = () => {
         const storedPin = localStorage.getItem('chatPin');
         const storedRoomName = localStorage.getItem('chatRoomName');
         const storedUsername = localStorage.getItem('chatUsername') || session?.user?.user_metadata?.full_name;
-        const storedAvatar = localStorage.getItem('chatAvatarURL') || session?.user?.user_metadata?.avatar_url;
+        const storedAvatar = localStorage.getItem('chatAvatarURL') || session?.user?.user_metadata?.custom_avatar || session?.user?.user_metadata?.avatar_url;
 
         if (storedPin && storedRoomName && storedUsername) {
             const roomKey = generateRoomKey(storedPin, storedRoomName);

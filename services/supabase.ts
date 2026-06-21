@@ -58,6 +58,19 @@ export async function joinOrCreateRoom(params: {
   return { data: data as JoinRoomResult, error: null };
 }
 
+// Mirror the caller's CURRENT avatar onto ALL their `subscribers` rows so other
+// members read it live (messages, tap-modal, Members, participants) instead of
+// the avatar baked into old messages. Best-effort: a failed propagation just
+// leaves room_members' latest-message fallback in place. Call after a profile
+// photo change and after each successful room join.
+export async function setMyAvatar(url: string): Promise<void> {
+  try {
+    await supabase.rpc('set_my_avatar', { p_avatar: url });
+  } catch {
+    /* best-effort — non-fatal */
+  }
+}
+
 // Set/clear a room's absolute auto-delete deadline (Basic+). The SECURITY DEFINER
 // RPC sets rooms.expires_at = now()+seconds (or null) AND stores the chosen
 // interval in auto_delete_seconds. The RPC is the ONLY writer of auto_delete_seconds

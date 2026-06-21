@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase, joinOrCreateRoom, startCheckout, openBillingPortal, setRoomAutoDelete } from '../services/supabase';
+import { supabase, joinOrCreateRoom, startCheckout, openBillingPortal, setRoomAutoDelete, setMyAvatar } from '../services/supabase';
 import { flashToast } from './MessageActionMenu';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { broadcastRoomDeleted, parseRoomDeletedPayload, expiryShortLabel, isExpired } from '../utils/roomLifecycle';
@@ -710,6 +710,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           const { error } = await supabase.auth.updateUser({ data: updates });
           if (error) throw error;
           setAvatarUrl(tempAvatarUrl);
+          // Propagate the new photo to every room's membership row so other
+          // members see it live (not just on messages sent after this point).
+          void setMyAvatar(tempAvatarUrl);
           localStorage.setItem('chatUsername', displayName);
           localStorage.setItem('chatAvatarURL', tempAvatarUrl);
           setIsEditingProfile(false);
