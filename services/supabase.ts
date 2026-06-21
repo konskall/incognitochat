@@ -58,6 +58,29 @@ export async function joinOrCreateRoom(params: {
   return { data: data as JoinRoomResult, error: null };
 }
 
+// The user's permanent personal "Notes" room (Basic+). Idempotent server-side:
+// returns the existing room or creates it (random PIN, default Notes avatar,
+// permanent). Free tier is rejected (TIER_REQUIRED) — the UI shows a locked card.
+export interface NotesRoomResult {
+  room_key: string;
+  room_name: string;
+  pin: string;
+  avatar_url: string | null;
+  created_by: string;
+  is_notes: true;
+}
+
+export async function getOrCreateNotesRoom(
+  username: string,
+): Promise<{ data: NotesRoomResult | null; error: { tierRequired: boolean; message: string } | null }> {
+  const { data, error } = await supabase.rpc('get_or_create_notes_room', { p_username: username });
+  if (error) {
+    const msg = error.message || '';
+    return { data: null, error: { tierRequired: msg.includes('TIER_REQUIRED'), message: msg } };
+  }
+  return { data: data as NotesRoomResult, error: null };
+}
+
 // Mirror the caller's CURRENT avatar onto ALL their `subscribers` rows so other
 // members read it live (messages, tap-modal, Members, participants) instead of
 // the avatar baked into old messages. Best-effort: a failed propagation just

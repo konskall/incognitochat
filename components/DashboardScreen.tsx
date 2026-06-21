@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase, joinOrCreateRoom, startCheckout, openBillingPortal, setRoomAutoDelete, setMyAvatar } from '../services/supabase';
+import { supabase, joinOrCreateRoom, startCheckout, openBillingPortal, setRoomAutoDelete, setMyAvatar, getOrCreateNotesRoom } from '../services/supabase';
 import { flashToast } from './MessageActionMenu';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { broadcastRoomDeleted, parseRoomDeletedPayload, expiryShortLabel, isExpired } from '../utils/roomLifecycle';
@@ -19,7 +19,7 @@ import {
   Upload, RotateCcw,
   RefreshCw, Save, X, Edit2, Mail, LogIn, Link as LinkIcon, AlertCircle, Eye, EyeOff, GripVertical,
   Search, Star, Sun, Moon, MoreVertical, Bell, BellOff, Archive, ArchiveRestore, Clock, Hourglass, Pencil,
-  Check, CheckSquare, MessageSquarePlus, Shuffle, Sparkles,
+  Check, CheckSquare, MessageSquarePlus, Shuffle, Sparkles, Lock, ChevronRight,
   type LucideIcon
 } from 'lucide-react';
 import {
@@ -358,6 +358,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   const [newRoomPin, setNewRoomPin] = useState('');
   const [ephemeral, setEphemeral] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [notesBusy, setNotesBusy] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [googleAvatarUrl, setGoogleAvatarUrl] = useState('');
@@ -533,7 +534,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         (createdRooms || []).forEach(r => roomMap.set(r.room_key, r));
         (joinedRooms || []).forEach(r => roomMap.set(r.room_key, r));
 
-        const allRooms = Array.from(roomMap.values());
+        // The personal "Notes" room is surfaced as its own pinned card, never in
+        // the grid (and it must not feed sort/overview/tombstones).
+        const allRooms = Array.from(roomMap.values()).filter(r => !r.is_notes);
 
         // Custom dashboard order lives per-user in room_settings.sort_order
         // (server-side, so it survives logout/login and syncs across devices).
@@ -1120,6 +1123,27 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       }
   };
 
+  // Open (or first-time create) the user's permanent personal Notes room. Free
+  // tier shows the upgrade prompt instead — the server RPC enforces the same gate.
+  const openNotes = useCallback(async () => {
+    if (tier === 'free') { setUpgradePrompt({ featureLabel: 'Notes', requiredTier: 'basic' }); return; }
+    if (notesBusy) return;
+    setNotesBusy(true);
+    try {
+      const { data, error } = await getOrCreateNotesRoom(displayName || 'Notes');
+      if (error || !data) {
+        if (error?.tierRequired) setUpgradePrompt({ featureLabel: 'Notes', requiredTier: 'basic' });
+        else alert('Could not open Notes. Please try again.');
+        return;
+      }
+      onJoinRoom({ username: displayName, avatarURL: avatarUrl, roomName: data.room_name, pin: data.pin, roomKey: data.room_key });
+    } catch {
+      alert('Could not open Notes. Please try again.');
+    } finally {
+      setNotesBusy(false);
+    }
+  }, [tier, notesBusy, displayName, avatarUrl, onJoinRoom]);
+
   const togglePinVisibility = useCallback((e: React.MouseEvent, roomKey: string) => {
     e.stopPropagation();
     setRevealedPins(prev => {
@@ -1540,6 +1564,50 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 </div>
                             )}
                         </div>
+                        {/* Personal "Notes" room — a permanent pinned fixture.
+                            Basic+: tap to open (server creates it on first use).
+                            Free: grayed-out with an upgrade prompt. */}
+                        {!entLoading && (
+                            <button
+                                onClick={openNotes}
+                                disabled={notesBusy}
+                                aria-label={tier === 'free' ? 'Notes (upgrade to unlock)' : 'Open your Notes room'}
+                                className={`group w-full flex items-center gap-4 p-4 mb-4 rounded-2xl border text-left transition active:scale-[0.99] disabled:opacity-70 ${
+                                    tier === 'free'
+                                        ? 'bg-slate-50 dark:bg-slate-900/50 border-dashed border-slate-300 dark:border-slate-700'
+                                        : 'bg-white dark:bg-slate-900 border-amber-200/70 dark:border-amber-900/40 hover:border-amber-300 dark:hover:border-amber-800 hover:shadow-lg hover:shadow-amber-500/10'
+                                }`}
+                            >
+                                <div className="relative shrink-0">
+                                    <img
+                                        src={`${import.meta.env.BASE_URL}notes-default.jpg`}
+                                        alt=""
+                                        width={48}
+                                        height={48}
+                                        className={`w-12 h-12 rounded-xl object-cover shadow-sm bg-slate-100 dark:bg-slate-800 ${tier === 'free' ? 'grayscale opacity-60' : ''}`}
+                                    />
+                                    {tier === 'free' && (
+                                        <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center border-2 border-white dark:border-slate-900">
+                                            <Lock size={11} className="text-slate-500 dark:text-slate-400" />
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-sm font-bold text-slate-800 dark:text-white truncate">Notes</h3>
+                                        <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-300">Personal</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                        {tier === 'free'
+                                            ? 'Upgrade to Basic to keep private notes & files'
+                                            : notesBusy ? 'Opening…' : 'Your private space for notes & files'}
+                                    </p>
+                                </div>
+                                {tier === 'free'
+                                    ? <span className="shrink-0 text-xs font-bold text-blue-600 dark:text-blue-400">Upgrade</span>
+                                    : <ChevronRight className="shrink-0 text-slate-300 dark:text-slate-600 group-hover:text-amber-400 transition" size={20} />}
+                            </button>
+                        )}
                         {tombstoneDeleted.size > 0 && (
                             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 mb-4">
                                 {[...tombstoneDeleted.values()].map((t) => {

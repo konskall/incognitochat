@@ -121,4 +121,5 @@ export interface Room {
   ai_avatar_url?: string;
   auto_delete_seconds?: number | null; // Ephemeral rooms: auto-delete after inactivity
   expires_at?: string | null; // Free-tier rooms: fixed 24h auto-delete deadline (ISO)
+  is_notes?: boolean; // The user's permanent personal "Notes" room (Basic+)
 }
