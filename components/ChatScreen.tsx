@@ -28,6 +28,7 @@ import { flashToast } from './MessageActionMenu';
 import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
 import { expiryShortLabel } from '../utils/roomLifecycle';
 import { parseTierError } from '../utils/tierGatingErrors';
+import { canSendBatch } from '../utils/entitlements';
 import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin, Sparkles } from 'lucide-react';
 
 // Hooks
@@ -255,7 +256,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [isSavingEmail, setIsSavingEmail] = useState(false);
   
   // File & Location handling state
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -997,39 +999,72 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   const handleSend = async (e?: React.FormEvent) => {
       e?.preventDefault();
-      if ((!inputText.trim() && !selectedFile) || !user || roomDeleted) return;
+      if ((!inputText.trim() && selectedFiles.length === 0) || !user || roomDeleted) return;
 
-      // Snapshot what the user is sending so we can restore it if the send fails
-      // — clearing the composer optimistically must not silently eat their
-      // message/file/reply on error (BUG-2).
+      // Snapshot so a failed send can restore the composer (optimistic clear
+      // must not silently eat the user's text/files/reply).
       const textToSend = inputText.trim();
-      const fileToSend = selectedFile;
+      const filesToSend = selectedFiles;
       const replyToSend = replyingTo;
       const editingId = editingMessageId;
 
       setInputText('');
       setTyping(false);
-      setSelectedFile(null);
+      setSelectedFiles([]);
       setReplyingTo(null);
 
       try {
           if (editingId) {
               await editMessage(editingId, textToSend);
               setEditingMessageId(null);
-          } else {
-              let attachment = null;
-              if (fileToSend) {
-                  attachment = await uploadFile(fileToSend);
-              }
-              await sendMessage(textToSend, config, attachment, replyToSend, null, 'text');
+          } else if (filesToSend.length === 0) {
+              // Plain text message (no attachments) — unchanged single-send path.
+              await sendMessage(textToSend, config, null, replyToSend, null, 'text');
               setQuotaBump((n) => n + 1);
               notifySubscribers('message', textToSend || 'Sent a file');
+          } else {
+              // Multi-file: client-side gate first (the DB also enforces the
+              // daily quota and raises QT002 on the over-limit insert).
+              const gate = canSendBatch(filesToSend.length, quotaLeft);
+              if (!gate.ok) {
+                  setInputText(textToSend);
+                  setSelectedFiles(filesToSend);
+                  setReplyingTo(replyToSend);
+                  if (gate.reason === 'quota') promptUpgrade('A higher message limit', 'ultra', "You've hit today's limit for this room.");
+                  else if (gate.reason === 'max') flashToast(`You can send up to ${gate.limit} files at once.`);
+                  return;
+              }
+              // Send each file as its own message, in order. Caption + reply
+              // attach to the FIRST message only; the rest are bare.
+              for (let i = 0; i < filesToSend.length; i++) {
+                  setUploadProgress({ current: i + 1, total: filesToSend.length });
+                  try {
+                      const attachment = await uploadFile(filesToSend[i]);
+                      await sendMessage(i === 0 ? textToSend : '', config, attachment, i === 0 ? replyToSend : null, null, 'text');
+                      if (i === 0) setQuotaBump((n) => n + 1);
+                  } catch (err) {
+                      // Keep what's already sent; restore the unsent remainder
+                      // (plus caption/reply if the first never went) for retry.
+                      setUploadProgress(null);
+                      setSelectedFiles(filesToSend.slice(i));
+                      if (i === 0) { setInputText(textToSend); setReplyingTo(replyToSend); }
+                      const tierErr = parseTierError(err, tier);
+                      if (tierErr?.code === 'QT002') promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
+                      else if (tierErr) flashToast(tierErr.message);
+                      else flashToast(`Sent ${i} of ${filesToSend.length} files. Tap send to retry the rest.`);
+                      return;
+                  }
+              }
+              setUploadProgress(null);
+              setQuotaBump((n) => n + 1);
+              notifySubscribers('message', textToSend || `Sent ${filesToSend.length} files`);
           }
       } catch (err) {
           console.error('Send failed', err);
-          // Put the composer back the way it was so nothing is lost.
+          // Restore composer (covers the editing + text-only paths; the
+          // multi-file loop restores its own remainder above before returning).
           setInputText(textToSend);
-          setSelectedFile(fileToSend);
+          if (filesToSend.length === 0) setSelectedFiles(filesToSend);
           setReplyingTo(replyToSend);
           if (editingId) setEditingMessageId(editingId);
           const tierErr = parseTierError(err, tier);
@@ -1037,10 +1072,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             if (tierErr.code === 'QT004') {
               promptUpgrade('Inco AI', tierErr.requiredTier);
             } else if (tierErr.code === 'QT002') {
-              // Daily quota is a hard paywall moment -> offer an actionable upgrade.
               promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
             } else {
-              // QT001 (room read-only) can't be cleared by an instant upgrade -> just inform.
               flashToast(tierErr.message);
             }
           }
@@ -1083,7 +1116,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       setInputText(msg.text);
       setEditingMessageId(msg.id);
       setReplyingTo(null);
-      setSelectedFile(null);
+      setSelectedFiles([]);
   }, []);
   
   const handleReply = useCallback((msg: Message) => {
@@ -1541,8 +1574,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             startRecording={startRecording}
             stopRecording={stopRecording}
             cancelRecording={cancelRecording}
-            selectedFile={selectedFile}
-            setSelectedFile={setSelectedFile}
+            selectedFiles={selectedFiles}
+            setSelectedFiles={setSelectedFiles}
             isUploading={isUploading}
             isGettingLocation={isGettingLocation}
             handleSendLocation={handleSendLocation}
@@ -1555,6 +1588,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
             typingUsers={combinedTypingUsers}
             onOpenPoll={() => setShowPollComposer(true)}
             maxFileBytes={ent.maxFileBytes}
+            canMultiUpload={ent.canMultiUpload}
+            uploadProgress={uploadProgress}
             quotaLeft={quotaLeft}
         />
       )}

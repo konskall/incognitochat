@@ -4,6 +4,7 @@ import { Send, Paperclip, MapPin, Smile, Mic, Trash2, X, Image as ImageIcon, Fil
 import EmojiPicker from './EmojiPicker';
 import AttachmentSheet, { SheetAction } from './AttachmentSheet';
 import { compressImage } from '../utils/helpers';
+import { MAX_FILES_PER_SEND } from '../utils/entitlements';
 import { Message } from '../types';
 
 interface ChatInputProps {
@@ -19,8 +20,10 @@ interface ChatInputProps {
   stopRecording: () => void;
   cancelRecording: () => void;
   
-  selectedFile: File | null;
-  setSelectedFile: (file: File | null) => void;
+  selectedFiles: File[];
+  setSelectedFiles: (files: File[]) => void;
+  canMultiUpload: boolean;
+  uploadProgress?: { current: number; total: number } | null;
   isUploading: boolean;
   
   isGettingLocation: boolean;
@@ -57,8 +60,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
   startRecording,
   stopRecording,
   cancelRecording,
-  selectedFile,
-  setSelectedFile,
+  selectedFiles,
+  setSelectedFiles,
+  canMultiUpload,
+  uploadProgress,
   isUploading,
   isGettingLocation,
   handleSendLocation,
@@ -115,40 +120,44 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !e.target.files[0]) return;
-    let file = e.target.files[0];
-    // Reset the input NOW so picking the SAME file again still fires a change
-    // event. Without this, re-attaching after a send did nothing, and on iOS —
-    // where every camera/library capture is named "image.jpg" — sending two
-    // photos in a row silently failed on the second.
+    const picked = Array.from(e.target.files ?? []);
+    // Reset NOW so re-picking the same file(s) fires change again. iOS names
+    // every camera/library capture "image.jpg", so without this the 2nd pick
+    // silently no-ops.
     e.target.value = '';
-
-    // Always downscale/compress images (not just oversized ones) to save
-    // bandwidth and speed up loading. GIFs are skipped so animation survives.
-    if (file.type.startsWith('image/') && file.type !== 'image/gif') {
-        try {
-            file = await compressImage(file);
-        } catch (error) {
-            console.error("Compression failed, sending original:", error);
-        }
-    }
+    if (picked.length === 0) return;
 
     const limitBytes = maxFileBytes ?? 40 * 1024 * 1024;
-    if (file.size > limitBytes) {
-        const limitMb = Math.round(limitBytes / (1024 * 1024));
-        alert(
-            `File is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Your plan allows up to ${limitMb}MB.` +
-            (limitBytes < 40 * 1024 * 1024 ? ' Upgrade to Ultra for 40MB uploads.' : '')
-        );
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        return;
+    const limitMb = Math.round(limitBytes / (1024 * 1024));
+    const accepted: File[] = [];
+    const tooBig: string[] = [];
+
+    for (let f of picked) {
+      // Always downscale/compress images (GIFs skipped so animation survives).
+      if (f.type.startsWith('image/') && f.type !== 'image/gif') {
+        try { f = await compressImage(f); } catch (err) { console.error('Compression failed, sending original:', err); }
+      }
+      if (f.size > limitBytes) { tooBig.push(f.name); continue; }
+      accepted.push(f);
     }
 
-    setSelectedFile(file);
+    // Accumulate across picks, then clamp to the per-send ceiling.
+    const merged = [...selectedFiles, ...accepted];
+    const clamped = merged.slice(0, MAX_FILES_PER_SEND);
+    const droppedForCap = merged.length - clamped.length;
+
+    setSelectedFiles(clamped);
+
+    if (tooBig.length || droppedForCap > 0) {
+      const parts: string[] = [];
+      if (tooBig.length) parts.push(`${tooBig.length} file(s) over ${limitMb}MB were skipped.`);
+      if (droppedForCap > 0) parts.push(`You can attach up to ${MAX_FILES_PER_SEND} files at once.`);
+      alert(parts.join(' '));
+    }
   };
 
-  const clearFile = () => {
-    setSelectedFile(null);
+  const removeFileAt = (idx: number) => {
+    setSelectedFiles(selectedFiles.filter((_, i) => i !== idx));
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -246,18 +255,22 @@ const ChatInput: React.FC<ChatInputProps> = ({
          )}
 
          <div className="relative flex flex-col items-center w-full max-w-4xl mx-auto">
-             {selectedFile && !editingMessageId && (
-               <div className="flex items-center gap-3 p-2 bg-blue-50 dark:bg-slate-800 border border-blue-100 dark:border-slate-700 rounded-xl w-fit animate-in slide-in-from-bottom-2 mb-2 self-start">
-                  <div className="w-10 h-10 bg-blue-100 dark:bg-slate-700 rounded-lg flex items-center justify-center text-blue-500 dark:text-blue-400">
-                    {getFileIcon(selectedFile.type)}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 max-w-[150px] truncate">{selectedFile.name}</span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400">{(selectedFile.size / 1024).toFixed(1)} KB</span>
-                  </div>
-                  <button onClick={clearFile} className="p-1 hover:bg-blue-200 dark:hover:bg-slate-600 rounded-full text-slate-500 transition">
-                    <X size={16} />
-                  </button>
+             {selectedFiles.length > 0 && !editingMessageId && (
+               <div className="flex items-center gap-2 mb-2 w-full overflow-x-auto pb-1 self-start">
+                  {selectedFiles.map((file, idx) => (
+                    <div key={`${file.name}-${file.size}-${idx}`} className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-slate-800 border border-blue-100 dark:border-slate-700 rounded-xl shrink-0 animate-in slide-in-from-bottom-2">
+                       <div className="w-9 h-9 bg-blue-100 dark:bg-slate-700 rounded-lg flex items-center justify-center text-blue-500 dark:text-blue-400">
+                         {getFileIcon(file.type)}
+                       </div>
+                       <div className="flex flex-col">
+                         <span className="text-xs font-bold text-slate-700 dark:text-slate-200 max-w-[120px] truncate">{file.name}</span>
+                         <span className="text-[10px] text-slate-500 dark:text-slate-400">{(file.size / 1024).toFixed(1)} KB</span>
+                       </div>
+                       <button onClick={() => removeFileAt(idx)} className="p-1 hover:bg-blue-200 dark:hover:bg-slate-600 rounded-full text-slate-500 transition" aria-label={`Remove ${file.name}`}>
+                         <X size={16} />
+                       </button>
+                    </div>
+                  ))}
                </div>
              )}
 
@@ -289,10 +302,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
                      {showEmoji && <EmojiPicker onSelect={handleEmojiSelect} onClose={() => setShowEmoji(false)} />}
                      <AttachmentSheet show={showAttach} onClose={() => setShowAttach(false)} actions={attachActions} />
                      
-                     <input 
-                        type="file" 
+                     <input
+                        type="file"
                         ref={fileInputRef}
                         onChange={handleFileSelect}
+                        multiple={canMultiUpload}
                         className="hidden"
                         accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip,.rar,.7z,.tar"
                      />
@@ -302,7 +316,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                             disabled={actionsDisabled}
                             aria-label="Add attachment"
                             aria-expanded={showAttach}
-                            className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${selectedFile || showAttach ? 'text-blue-500 bg-blue-50 dark:bg-slate-800' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
+                            className={`w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${selectedFiles.length > 0 || showAttach ? 'text-blue-500 bg-blue-50 dark:bg-slate-800' : 'text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-slate-800'}`}
                             title={actionsDisabled ? 'Unavailable offline' : 'Attach'}
                         >
                             <Plus size={24} className={`transition-transform duration-200 ${showAttach ? 'rotate-45' : ''}`} />
@@ -316,7 +330,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                             onChange={handleInputChange}
                             onKeyDown={handleKeyDown}
                             rows={1}
-                            placeholder={selectedFile ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
+                            placeholder={selectedFiles.length > 0 ? "Add caption..." : (editingMessageId ? "Edit..." : "Message...")}
                             className="w-full bg-slate-100 dark:bg-slate-800 border-0 rounded-2xl pl-4 pr-11 py-2.5 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 transition-all outline-none resize-none leading-6 text-base block"
                             style={{ minHeight: '44px' }}
                          />
@@ -330,7 +344,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                          </button>
                      </div>
                      
-                     {(!inputText.trim() && !selectedFile && !editingMessageId && !isUploading) ? (
+                     {(!inputText.trim() && selectedFiles.length === 0 && !editingMessageId && !isUploading) ? (
                         <button
                              onClick={startRecording}
                              disabled={actionsDisabled}
@@ -342,11 +356,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
                      ) : (
                          <button
                             onClick={() => handleSend()}
-                            disabled={isOffline || isUploading || !isRoomReady}
+                            disabled={isOffline || isUploading || !isRoomReady || !!uploadProgress}
                             aria-label="Send message"
                             className="w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
                          >
-                             {isUploading ? (
+                             {uploadProgress ? (
+                                 <span className="text-[11px] font-bold tabular-nums">{uploadProgress.current}/{uploadProgress.total}</span>
+                             ) : isUploading ? (
                                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                              ) : (
                                  <Send size={20} className="ml-0.5" />
