@@ -113,6 +113,7 @@ export interface Room {
   room_key: string;
   room_name: string;
   display_name?: string | null; // Cosmetic owner-set label; room_key/PIN unchanged
+  avatar_url?: string | null; // room's own avatar (collaborative; any member can set)
   pin: string; // Stored to allow auto-join for creator
   created_at: string;
   created_by: string;
