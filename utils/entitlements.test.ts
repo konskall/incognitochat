@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  TIER_CONFIG, resolveTier, entitlements, messagesRemaining, type SubscriptionRow,
+  TIER_CONFIG, resolveTier, entitlements, messagesRemaining, canSendBatch, MAX_FILES_PER_SEND, type SubscriptionRow,
 } from './entitlements';
 
 const T0 = Date.parse('2026-06-14T12:00:00.000Z');
@@ -63,5 +63,32 @@ describe('entitlements + helpers', () => {
     expect(messagesRemaining('free', 10)).toBe(0);
     expect(messagesRemaining('free', 15)).toBe(0);
     expect(messagesRemaining('ultra', 9999)).toBeNull();
+  });
+});
+
+describe('canMultiUpload', () => {
+  it('is premium-only', () => {
+    expect(entitlements('free').canMultiUpload).toBe(false);
+    expect(entitlements('basic').canMultiUpload).toBe(true);
+    expect(entitlements('ultra').canMultiUpload).toBe(true);
+  });
+});
+
+describe('canSendBatch', () => {
+  it('rejects empty selections', () => {
+    expect(canSendBatch(0, null)).toEqual({ ok: false, reason: 'empty', limit: 0 });
+  });
+  it('allows within the file ceiling when quota is unlimited', () => {
+    expect(canSendBatch(3, null)).toEqual({ ok: true });
+    expect(canSendBatch(MAX_FILES_PER_SEND, null)).toEqual({ ok: true });
+  });
+  it('rejects more than the file ceiling', () => {
+    expect(canSendBatch(MAX_FILES_PER_SEND + 1, null)).toEqual({ ok: false, reason: 'max', limit: MAX_FILES_PER_SEND });
+  });
+  it('rejects when the batch exceeds remaining daily quota', () => {
+    expect(canSendBatch(5, 3)).toEqual({ ok: false, reason: 'quota', limit: 3 });
+  });
+  it('allows when the batch exactly fits remaining quota', () => {
+    expect(canSendBatch(3, 3)).toEqual({ ok: true });
   });
 });
