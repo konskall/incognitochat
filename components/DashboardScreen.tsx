@@ -19,7 +19,7 @@ import {
   Upload, RotateCcw,
   RefreshCw, Save, X, Edit2, Mail, LogIn, Link as LinkIcon, AlertCircle, Eye, EyeOff, GripVertical,
   Search, Star, Sun, Moon, MoreVertical, Bell, BellOff, Archive, ArchiveRestore, Clock, Hourglass, Pencil,
-  Check, CheckSquare, MessageSquarePlus, Shuffle, Sparkles, Lock, ChevronRight, Copy, Crown, Rocket, MessageCircle,
+  Check, CheckSquare, MessageSquarePlus, Shuffle, Sparkles, Lock, ChevronRight, ChevronDown, SlidersHorizontal, Copy, Crown, Rocket, MessageCircle,
   type LucideIcon
 } from 'lucide-react';
 import {
@@ -203,6 +203,69 @@ const RoomActionsSheet: React.FC<{
       </div>
     </div>,
     document.body
+  );
+};
+
+// Compact filter control for "Your Rooms": a dropdown trigger + menu, replacing
+// the wrapping chip row (which took a third line on mobile). Self-contained
+// open state, closing on outside-click and Escape. The outside-click handler
+// ignores clicks INSIDE this wrapper, so tapping the trigger toggles cleanly.
+const ROOM_FILTERS: RoomFilter[] = ['all', 'owned', 'joined', 'unread', 'archived'];
+const filterLabel = (f: RoomFilter) => f.charAt(0).toUpperCase() + f.slice(1);
+
+const FilterMenu: React.FC<{
+  filter: RoomFilter;
+  setFilter: (f: RoomFilter) => void;
+  anyArchived: boolean;
+  unreadCount: number;
+}> = ({ filter, setFilter, anyArchived, unreadCount }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const options = ROOM_FILTERS.filter((f) => f !== 'archived' || anyArchived);
+  const withCount = (f: RoomFilter) => `${filterLabel(f)}${f === 'unread' && unreadCount > 0 ? ` (${unreadCount})` : ''}`;
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Filter rooms"
+        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-bold text-slate-600 dark:text-slate-300 hover:border-blue-300 transition"
+      >
+        <SlidersHorizontal size={15} className="text-slate-400 shrink-0" />
+        <span className="whitespace-nowrap">{withCount(filter)}</span>
+        <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 z-30 mt-1.5 min-w-[180px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl p-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
+          {options.map((f) => {
+            const active = filter === f;
+            return (
+              <button
+                key={f}
+                type="button"
+                role="menuitemradio"
+                aria-checked={active}
+                onClick={() => { setFilter(f); setOpen(false); }}
+                className={`flex w-full items-center justify-between gap-3 h-9 px-2.5 rounded-lg text-sm font-semibold transition ${active ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+              >
+                <span>{withCount(f)}</span>
+                {active && <Check size={15} className="shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -1578,7 +1641,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 </div>
                             </div>
                             {rooms.length > 0 && (
-                                <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                                <div className="flex items-center gap-2">
                                     <div className="relative flex-1 min-w-0">
                                         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                                         <input
@@ -1596,21 +1659,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                             </button>
                                         )}
                                     </div>
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {(['all', 'owned', 'joined', 'unread', 'archived'] as const).map((key) => {
-                                            if (key === 'archived' && !anyArchived) return null;
-                                            return (
-                                                <button
-                                                    key={key}
-                                                    onClick={() => setFilter(key)}
-                                                    aria-pressed={filter === key}
-                                                    className={`shrink-0 px-3 py-1.5 text-xs font-bold rounded-lg border capitalize transition ${filter === key ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}
-                                                >
-                                                    {key}{key === 'unread' && unreadFilterCount > 0 ? ` (${unreadFilterCount})` : ''}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                    <FilterMenu filter={filter} setFilter={setFilter} anyArchived={anyArchived} unreadCount={unreadFilterCount} />
                                 </div>
                             )}
                         </div>
