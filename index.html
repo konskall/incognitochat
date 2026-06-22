@@ -6,7 +6,11 @@
     <meta name="theme-color" content="#f8fafc" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- black-translucent: the dark-by-default app paints under the iOS status bar
+         (layout already pads env(safe-area-inset-top)), avoiding a light status-bar
+         seam over the dark UI. iOS ignores theme-color for the standalone status bar,
+         so this meta is the only lever. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
     <!-- Favicons (relative paths). The 1 MB favicon.svg was removed — modern
          browsers preferred it, downloading it on every first visit. -->
@@ -33,11 +37,7 @@
     <meta name="twitter:description" content="Anonymous, private chat in PIN-locked rooms. No phone number or sign-up.">
     <meta name="twitter:image" content="https://konskall.github.io/incognitochat/og-incognito.jpg">
 
-    <!-- LinkedIn Tags -->
-    <meta property="linkedin:url" content="https://konskall.github.io/incognitochat/">
-    <meta property="linkedin:title" content="Incognito Chat - Speak Free">
-    <meta property="linkedin:description" content="Anonymous, private chat in PIN-locked rooms. No phone number or sign-up">
-    <meta property="linkedin:image" content="https://konskall.github.io/incognitochat/og-incognito.jpg">
+    <!-- LinkedIn reads standard Open Graph (og:*) above — no 'linkedin:*' namespace exists. -->
 
     <meta property="og:locale" content="en_US">
     <meta name="author" content="KonsKall">
@@ -97,7 +97,7 @@
             {
               "@type": "Question",
               "name": "Can messages or rooms delete themselves?",
-              "acceptedAnswer": { "@type": "Answer", "text": "Yes. On Basic and Ultra you can set messages to disappear on a timer, or have the entire room auto-delete after a chosen period of inactivity. Free rooms also expire automatically 24 hours after they are created." }
+              "acceptedAnswer": { "@type": "Answer", "text": "Yes. On Basic and Ultra you can set messages to disappear on a timer, or have the entire room auto-delete after a chosen period. Free rooms also expire automatically 24 hours after they are created." }
             },
             {
               "@type": "Question",
@@ -159,6 +159,14 @@
 </head>
   <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased selection:bg-primary-200 selection:text-primary-900">
     <div id="root" class="w-full"></div>
+    <!-- Static fallback for non-JS text crawlers (Googlebot renders JS; head
+         metadata + JSON-LD already cover indexing and social previews). -->
+    <noscript>
+      <div style="max-width:42rem;margin:3rem auto;padding:0 1.25rem;font-family:system-ui,sans-serif;line-height:1.6">
+        <h1>Incognito Chat — anonymous, PIN-locked private chat rooms</h1>
+        <p>Anonymous, private chat in PIN-locked rooms. No phone number or sign-up — share the room name and PIN to talk freely. Installable as a Progressive Web App, with optional audio/video calls. Incognito Chat requires JavaScript to run.</p>
+      </div>
+    </noscript>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

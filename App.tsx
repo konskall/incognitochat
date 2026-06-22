@@ -130,6 +130,14 @@ const App: React.FC = () => {
                 }
                 setCurrentView(prev => (prev === 'chat' ? prev : 'dashboard'));
             }
+        } else if (event === 'SIGNED_OUT') {
+            // A sign-out (or token revocation / permanent refresh failure), possibly
+            // propagated from ANOTHER tab via shared storage. Supabase emits this with
+            // a null session. Mirror handleLogout's in-tab cleanup so this tab doesn't
+            // keep rendering a stale signed-in identity (email + room list) until refresh.
+            setCurrentUser(null);
+            setChatConfig(null);
+            setCurrentView(prev => (prev === 'landing' ? prev : 'login'));
         }
       });
       subscription = data.subscription;

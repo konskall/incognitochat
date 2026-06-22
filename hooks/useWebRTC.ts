@@ -57,6 +57,10 @@ interface PeerEntry {
   videoSender: RTCRtpSender | null;
   everConnected: boolean;
   failTimer: ReturnType<typeof setTimeout> | null;
+  // Group calls only: drops a peer that never completes ICE (stuck in checking/
+  // new and never reaching 'failed', so failTimer never arms) → no permanent
+  // "Connecting…" tile. 1-on-1 is covered by the ring/no-answer timeout instead.
+  connectTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface CallNotice {
@@ -331,6 +335,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
     const entry = peersRef.current.get(uid);
     if (entry) {
       if (entry.failTimer) { clearTimeout(entry.failTimer); entry.failTimer = null; }
+      if (entry.connectTimer) { clearTimeout(entry.connectTimer); entry.connectTimer = null; }
       try { entry.pc.close(); } catch { /* noop */ }
       peersRef.current.delete(uid);
       setSharingUids((prev) => {
@@ -389,7 +394,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
     const stream = new MediaStream();
-    const entry: PeerEntry = { uid, name, avatar, pc, stream, candidateQueue: [], makingOffer: false, needsRenegotiation: false, audioSender: null, videoSender: null, everConnected: false, failTimer: null };
+    const entry: PeerEntry = { uid, name, avatar, pc, stream, candidateQueue: [], makingOffer: false, needsRenegotiation: false, audioSender: null, videoSender: null, everConnected: false, failTimer: null, connectTimer: null };
     peersRef.current.set(uid, entry);
 
     // ALWAYS create exactly one audio + one video sender, even with no mic/camera,
@@ -438,6 +443,7 @@ export function useWebRTC(user: User, config: ChatConfig) {
       if (st === 'connected' || st === 'completed') {
         entry.everConnected = true;
         if (entry.failTimer) { clearTimeout(entry.failTimer); entry.failTimer = null; }
+        if (entry.connectTimer) { clearTimeout(entry.connectTimer); entry.connectTimer = null; }
         if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
       }
       if (st === 'failed' || st === 'disconnected') {
@@ -459,6 +465,16 @@ export function useWebRTC(user: User, config: ChatConfig) {
     // Drain any candidates that arrived before the peer existed.
     const pend = pendingCandidates.current.get(uid);
     if (pend) { entry.candidateQueue.push(...pend); pendingCandidates.current.delete(uid); }
+
+    // Group calls have no ring/no-answer timeout, so a peer that never completes
+    // ICE (stuck checking/new, never 'failed') would show "Connecting…" forever.
+    // Drop it after a grace window if it never connected. 1-on-1 is covered by the
+    // enterCall ring timeout, so skip it there to preserve that flow.
+    if (!directTargetRef.current) {
+      entry.connectTimer = setTimeout(() => {
+        if (!entry.everConnected) removePeer(uid);
+      }, 35000);
+    }
 
     syncPeers();
     return entry;

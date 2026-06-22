@@ -545,7 +545,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
   };
 
   return (
-    <div id={`msg-${msg.id}`} className={`relative flex w-full ${isLastOfGroup ? 'mb-3' : 'mb-0.5'} animate-in slide-in-from-bottom-2 duration-300 group ${isMe ? 'justify-end' : 'justify-start'}`}>
+    <div id={`msg-${msg.id}`} style={CV_STYLE} className={`relative flex w-full ${isLastOfGroup ? 'mb-3' : 'mb-0.5'} animate-in slide-in-from-bottom-2 duration-300 group ${isMe ? 'justify-end' : 'justify-start'}`}>
       {swipeX !== 0 && (
         <div
           className={`absolute top-1/2 -translate-y-1/2 ${swipeX > 0 ? 'left-2' : 'right-2'} text-blue-500 pointer-events-none`}
@@ -573,6 +573,15 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
               // http:// mixed-content / tracking beacons.
               src={displayAvatar && /^https:\/\//i.test(displayAvatar) ? displayAvatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=64748b&color=fff&rounded=true`}
               alt={msg.username}
+              // A valid-but-dead avatar URL (deleted/rotated in storage, or a stale
+              // baked URL on an old message) would otherwise show the browser's
+              // broken-image glyph. Fall back to ui-avatars once (guard against a loop
+              // if ui-avatars itself fails), matching DashboardScreen's onAvatarError.
+              onError={(e) => {
+                const img = e.currentTarget;
+                const fb = `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=64748b&color=fff&rounded=true`;
+                if (img.src !== fb) { img.onerror = null; img.src = fb; }
+              }}
               onClick={() => !isBot && onUserClick?.(msg.uid, msg.username, displayAvatar)}
               role={!isBot ? 'button' : undefined}
               tabIndex={!isBot ? 0 : undefined}
@@ -685,13 +694,21 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
 
 const EMPTY_AVATARS = new Map<string, string>();
 
+// Virtualization-lite: let the browser skip rendering/layout/paint of off-screen
+// message rows. `auto` remembers each row's last-rendered height (so on-screen
+// rows are never estimated), and the 72px fallback is only used for rows that have
+// never rendered. Cuts the cost of a long, media-heavy history without unmounting
+// anything (so scroll anchoring + the "Load earlier" restore stay intact). Ignored
+// by browsers that don't support it (older Safari) — graceful, no behavior change.
+const CV_STYLE = { contentVisibility: 'auto', containIntrinsicSize: 'auto 72px' } as React.CSSProperties;
+
 const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onUserClick, liveAvatars, hasMoreOlder, onLoadEarlier, searchQuery, seenMessageId, messageTtlSeconds, roomOwnerUid, isOwner, pinnedMessageId, onPin, onUnpin, onVotePoll, onToggleClosedPoll }) => {
   const avatars = liveAvatars ?? EMPTY_AVATARS;
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
   // Ticks while disappearing-messages is on, so expired messages drop from view
   // promptly (the cron is the authoritative deleter, this is for precision).
-  const [, setTtlTick] = useState(0);
+  const [ttlTick, setTtlTick] = useState(0);
   useEffect(() => {
     if (!messageTtlSeconds || messageTtlSeconds <= 0) return;
     const id = setInterval(() => setTtlTick((t) => t + 1), 20000);
@@ -740,18 +757,25 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
   }, [messages]);
 
   // Hide messages already past the room's disappearing-messages TTL (the cron
-  // deletes them server-side; this keeps the view precise between runs).
-  const ttlCutoff = messageTtlSeconds && messageTtlSeconds > 0 ? Date.now() - messageTtlSeconds * 1000 : 0;
-  const liveMessages = ttlCutoff
-    ? messages.filter((m) => new Date(m.createdAt as any).getTime() >= ttlCutoff)
-    : messages;
+  // deletes them server-side; this keeps the view precise between runs). Memoized
+  // so MessageList's frequent non-message re-renders (keystroke/presence/typing,
+  // seenMessageId, pinnedMessageId, liveAvatars) don't re-scan + re-allocate the
+  // whole window each time. `ttlTick` is a dep so the 20s tick still recomputes
+  // the cutoff and drops freshly-expired messages.
+  const liveMessages = useMemo(() => {
+    const cutoff = messageTtlSeconds && messageTtlSeconds > 0 ? Date.now() - messageTtlSeconds * 1000 : 0;
+    return cutoff ? messages.filter((m) => new Date(m.createdAt as any).getTime() >= cutoff) : messages;
+  }, [messages, messageTtlSeconds, ttlTick]);
 
   // Search filters the (loaded) messages client-side — message text is encrypted
   // so it can only be matched after decryption on the client.
   const q = searchQuery?.trim().toLowerCase() || '';
-  const visibleMessages = q
-    ? liveMessages.filter((m) => m.type !== 'system' && (((m.text || '').toLowerCase().includes(q)) || (m.username || '').toLowerCase().includes(q)))
-    : liveMessages;
+  const visibleMessages = useMemo(
+    () => q
+      ? liveMessages.filter((m) => m.type !== 'system' && (((m.text || '').toLowerCase().includes(q)) || (m.username || '').toLowerCase().includes(q)))
+      : liveMessages,
+    [liveMessages, q]
+  );
 
   // Viber-style grouping: consecutive non-system messages from the same sender
   // (within 5 min) form a group — the avatar + name show once on the first

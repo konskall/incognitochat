@@ -49,7 +49,10 @@ export const useIncoAI = (
     if (isBusy.current) return;
 
     const lowerText = lastMsg.text.toLowerCase().trim();
-    const mentionsInco = lowerText.includes('inco');
+    // Match "inco" as a whole word (optionally @-mentioned), NOT as a substring —
+    // otherwise ordinary words like "incoming", "income", "incomplete" and the
+    // app's own name "incognito" would spuriously summon the bot.
+    const mentionsInco = /(^|[^a-z0-9])@?inco([^a-z0-9]|$)/i.test(lowerText);
     const isReplyToBot = lastMsg.replyTo &&
       messages.find(m => m.id === lastMsg.replyTo?.id)?.uid === INCO_BOT_UUID;
 

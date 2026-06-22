@@ -41,7 +41,12 @@ const hostname = (url: string) => {
 const MediaGalleryModal: React.FC<MediaGalleryModalProps> = ({ show, onClose, media, files, links }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
-  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  // Track the OPEN lightbox item by its URL, not a numeric index. galleryMedia is
+  // rebuilt newest-first whenever a message arrives, so a new photo prepends at
+  // index 0 and shifts every existing index by +1 — an index-based lightbox would
+  // silently jump to a neighbouring image. Keying on the URL keeps the same image
+  // fixed; the live index is derived per render below.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('media');
 
   // On each OPEN, land on the first tab that actually has content. Depends on
@@ -51,6 +56,7 @@ const MediaGalleryModal: React.FC<MediaGalleryModalProps> = ({ show, onClose, me
   useEffect(() => {
     if (!show) return;
     setTab(media.length ? 'media' : files.length ? 'files' : links.length ? 'links' : 'media');
+    setPreviewUrl(null); // never reopen straight into a stale lightbox
   }, [show]);
 
   if (!show) return null;
@@ -105,7 +111,7 @@ const MediaGalleryModal: React.FC<MediaGalleryModalProps> = ({ show, onClose, me
                   return (
                     <button
                       key={`${item.url}_${i}`}
-                      onClick={() => setPreviewIndex(i)}
+                      onClick={() => setPreviewUrl(item.url)}
                       className="relative aspect-square rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 group focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       {isVideo ? (
@@ -179,9 +185,21 @@ const MediaGalleryModal: React.FC<MediaGalleryModalProps> = ({ show, onClose, me
         </div>
       </div>
 
-      {previewIndex !== null && (
-        <MediaPreviewModal items={media} index={previewIndex} onNavigate={setPreviewIndex} onClose={() => setPreviewIndex(null)} />
-      )}
+      {previewUrl !== null && (() => {
+        // Re-resolve the index from the URL each render so a prepended new item
+        // can't shift what's shown. If the item is gone (e.g. expired via TTL),
+        // close the lightbox cleanly instead of showing a wrong/blank frame.
+        const idx = media.findIndex((m) => m.url === previewUrl);
+        if (idx < 0) return null;
+        return (
+          <MediaPreviewModal
+            items={media}
+            index={idx}
+            onNavigate={(i) => setPreviewUrl(media[i]?.url ?? null)}
+            onClose={() => setPreviewUrl(null)}
+          />
+        );
+      })()}
     </div>,
     document.body
   );

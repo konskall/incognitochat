@@ -51,8 +51,13 @@ export default defineConfig({
         manualChunks: {
           vendor: ['react', 'react-dom'],
           supabase: ['@supabase/supabase-js'],
-          crypto: ['crypto-js'],
-          ui: ['lucide-react']
+          crypto: ['crypto-js']
+          // NOTE: lucide-react is intentionally NOT a manualChunk. Forcing it into
+          // one shared `ui` chunk pulled the entire ~100-icon graph onto the eager
+          // landing's first paint (the lazy ChatScreen/Dashboard import the same
+          // chunk, defeating their route split). Letting Rollup place each icon in
+          // the chunk that references it keeps chat/dashboard-only icons in their
+          // lazy chunks and only the ~30 landing icons eager.
         }
       }
     }

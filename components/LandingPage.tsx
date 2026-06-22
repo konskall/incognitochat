@@ -23,7 +23,7 @@ const FEATURES = [
   { icon: <Shield className="text-purple-500" />, title: 'No Sign-Up, Truly Anonymous', description: 'No phone number or email. Pick a username and a secret room; a Google login is optional, just to save your rooms.' },
   { icon: <Video className="text-green-500" />, title: 'Audio, Video & Screen Share', description: 'Group and 1-on-1 calls connect peer-to-peer with a secure relay fallback. Add video and screen sharing on Ultra.' },
   { icon: <Sparkles className="text-fuchsia-500" />, title: 'Inco AI Assistant', description: 'Summon an in-room AI to answer questions and look things up — with cited sources. Available on Ultra.' },
-  { icon: <Timer className="text-orange-500" />, title: 'Disappearing & Self-Destruct Rooms', description: 'Set messages to vanish on a timer, or have the whole room auto-delete after a chosen period of inactivity.' },
+  { icon: <Timer className="text-orange-500" />, title: 'Disappearing & Self-Destruct Rooms', description: 'Set messages to vanish on a timer, or have the whole room auto-delete after a chosen period.' },
   { icon: <MessagesSquare className="text-emerald-500" />, title: 'Rich Messaging', description: 'Replies, reactions, polls, voice notes, location, a media gallery, link previews and in-room search.' },
   { icon: <Bell className="text-rose-500" />, title: 'Push & Email Alerts', description: 'Get notified of new messages by web push — even when the app is closed — or by email, without exposing your message content.' },
   { icon: <Smartphone className="text-sky-500" />, title: 'Installable PWA + Dark Mode', description: 'Add it to your home screen like a native app, offline-ready, with a polished dark theme.' },
@@ -71,7 +71,7 @@ const FAQS = [
   },
   {
     q: 'Can messages or rooms delete themselves?',
-    a: 'Yes. On Basic and Ultra you can set messages to disappear on a timer, or have the entire room auto-delete after a chosen period of inactivity. Free rooms also expire automatically 24 hours after they are created.',
+    a: 'Yes. On Basic and Ultra you can set messages to disappear on a timer, or have the entire room auto-delete after a chosen period. Free rooms also expire automatically 24 hours after they are created.',
   },
   {
     q: 'How large can my uploads be?',
@@ -127,6 +127,32 @@ const Reveal: React.FC<{ children: React.ReactNode; className?: string; delay?: 
       {children}
     </Tag>
   );
+};
+
+// Defers MOUNTING its children until they approach the viewport. Unlike Reveal
+// (which renders children immediately and only animates opacity), this keeps the
+// subtree — and any effect/fetch it runs on mount — out of the initial landing
+// view. Used to hold PricingSection's get-prices edge fetch until the user
+// scrolls near it, so a bounce that never reaches pricing costs no invocation.
+const DeferUntilVisible: React.FC<{ children: React.ReactNode; minHeight?: number }> = ({ children, minHeight = 640 }) => {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setShow(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: '300px 0px' }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return show ? <>{children}</> : <div ref={ref} aria-hidden="true" style={{ minHeight }} />;
 };
 
 const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
@@ -306,7 +332,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
           </ol>
         </section>
 
-        <PricingSection onStartFree={onStart} onChoosePlan={onChoosePlan} />
+        <DeferUntilVisible minHeight={720}>
+          <PricingSection onStartFree={onStart} onChoosePlan={onChoosePlan} />
+        </DeferUntilVisible>
 
         {/* Trust Section */}
         <section aria-labelledby="trust-title" className="max-w-4xl mx-auto px-6 py-12 lg:py-20 text-center">

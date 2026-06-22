@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { X, Sparkles, Lock, Loader2 } from 'lucide-react';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { usePrices, formatPrice } from '../hooks/usePrices';
-import { Tier } from '../utils/entitlements';
 import { startCheckout } from '../services/supabase';
 import { flashToast } from './MessageActionMenu';
 
@@ -11,7 +10,6 @@ interface UpgradeModalProps {
   open: boolean;
   onClose: () => void;
   requiredTier: 'basic' | 'ultra';
-  currentTier: Tier;
   featureLabel: string; // e.g. "Video calls", "Inco AI", "Room appearance"
   reason?: string;      // optional extra sentence
 }

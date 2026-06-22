@@ -148,17 +148,53 @@ export const useChatMessages = (
     if (!roomKey || !enabled) return;
     const ids = messagesRef.current.map((m) => m.id);
     if (ids.length === 0) return;
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .in('id', ids);
-    if (error || !data) return;
-    const byId = new Map((data as MessageRow[]).map((r) => [r.id, r]));
-    setMessages((prev) =>
-      prev
-        .filter((m) => byId.has(m.id))            // drop messages deleted while away
-        .map((m) => (byId.has(m.id) ? mapRow(byId.get(m.id)!) : m)) // refresh edits/reactions/votes
-    );
+    // Chunk the id list: a single .in('id', ids) with a few hundred 36-char UUIDs
+    // can blow past PostgREST/proxy URL-length limits and fail silently, which
+    // would stop reconciliation exactly on the heavily-scrolled rooms it exists
+    // for. The room filter also lets Postgres use the room index. Abort the whole
+    // pass on any chunk error so a partial fetch can't be misread as deletions.
+    const CHUNK = 100;
+    const byId = new Map<string, MessageRow>();
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK);
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('room_key', roomKey)
+        .in('id', slice);
+      if (error || !data) {
+        console.error('reconcileHeld failed', error);
+        return;
+      }
+      for (const r of data as MessageRow[]) byId.set(r.id, r);
+    }
+    setMessages((prev) => {
+      let changed = false;
+      const next: Message[] = [];
+      for (const m of prev) {
+        const row = byId.get(m.id);
+        if (!row) { changed = true; continue; } // deleted while away — drop it
+        // Only re-map (re-decrypt + re-allocate) when a tracked field actually
+        // changed; otherwise reuse the existing object so MessageItem's React.memo
+        // holds and the whole window isn't re-decrypted on every refocus. text is
+        // compared via the ciphertext cache; reactions/poll-votes/closed/is_edited
+        // are plaintext on both the row and the mapped message.
+        const prevCipher = cipherCacheRef.current.get(m.id);
+        const cipherSame = prevCipher !== undefined && prevCipher === (row.text || '');
+        const editSame = (row.is_edited ?? false) === m.isEdited;
+        const reactionsSame = JSON.stringify(row.reactions || {}) === JSON.stringify(m.reactions || {});
+        const pollSame =
+          (row.poll?.closed ?? false) === (m.poll?.closed ?? false) &&
+          JSON.stringify(row.poll?.votes || null) === JSON.stringify(m.poll?.votes || null);
+        if (cipherSame && editSame && reactionsSame && pollSame) {
+          next.push(m);
+        } else {
+          next.push(mapRow(row));
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   }, [roomKey, enabled, mapRow]);
 
   // Pull the previous page of older messages and prepend them (the UI calls this
@@ -278,7 +314,20 @@ export const useChatMessages = (
 
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
-              return [...prev, newMsg];
+              // Insert at the correct chronological position (created_at, then id)
+              // rather than always appending: two near-simultaneous inserts (a user
+              // message + the Inco reply, or two senders at once) can arrive in a
+              // commit order that doesn't match created_at, and a plain push would
+              // render them — and any reply quote — out of order until a reload.
+              const t = new Date(newMsg.createdAt).getTime();
+              let i = prev.length;
+              while (i > 0) {
+                const p = prev[i - 1];
+                const pt = new Date(p.createdAt).getTime();
+                if (pt < t || (pt === t && p.id <= newMsg.id)) break;
+                i--;
+              }
+              return i === prev.length ? [...prev, newMsg] : [...prev.slice(0, i), newMsg, ...prev.slice(i)];
             });
 
             if (onNewMessageRef.current) {
@@ -493,6 +542,16 @@ export const useChatMessages = (
 
   const editMessage = useCallback(async (msgId: string, newText: string) => {
     const encryptedText = encryptMessage(newText, pin, roomKey);
+    // Optimistic local update (mirrors delete/react): the edited text renders
+    // instantly and survives a missed realtime UPDATE echo on a foregrounded tab.
+    // Prime cipherCacheRef with the new ciphertext so the eventual echo is treated
+    // as text-unchanged (no redundant re-decrypt). Snapshot for rollback.
+    const before = messagesRef.current.find((m) => m.id === msgId);
+    const prevCipher = cipherCacheRef.current.get(msgId);
+    cipherCacheRef.current.set(msgId, encryptedText);
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msgId ? { ...m, text: newText, isEdited: true } : m))
+    );
     const { error } = await supabase
       .from('messages')
       .update({
@@ -500,9 +559,16 @@ export const useChatMessages = (
         is_edited: true,
       })
       .eq('id', msgId);
-    // Rethrow so the caller can restore the edit input instead of losing it.
+    // Roll back the optimistic edit (text + flag only, preserving any concurrent
+    // reaction/vote changes) and rethrow so the caller can restore the input.
     if (error) {
       console.error('Edit failed', error);
+      if (prevCipher !== undefined) cipherCacheRef.current.set(msgId, prevCipher);
+      if (before) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === msgId ? { ...m, text: before.text, isEdited: before.isEdited } : m))
+        );
+      }
       throw error;
     }
   }, [pin, roomKey]);
@@ -564,10 +630,15 @@ export const useChatMessages = (
       });
       if (error) {
         console.error('Reaction failed', error);
-        // Roll back optimistic update on failure.
+        // Re-read the authoritative reactions rather than restoring the pre-click
+        // snapshot — a peer's concurrent reaction may already have arrived via
+        // realtime during the await, and restoring `currentReactions` would visibly
+        // drop it until the next UPDATE. Mirrors the votePoll failure path.
+        const { data } = await supabase.from('messages').select('reactions').eq('id', msg.id).maybeSingle();
+        const fresh = ((data?.reactions as { [emoji: string]: string[] } | null) ?? currentReactions) || {};
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === msg.id ? { ...m, reactions: currentReactions } : m
+            m.id === msg.id ? { ...m, reactions: fresh } : m
           )
         );
       }

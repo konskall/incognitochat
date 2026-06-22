@@ -153,7 +153,18 @@ export function stopRingtone() {
 // (block javascript:/data:/http: tracking-or-mixed-content), else a neutral inline avatar.
 const FALLBACK_AVATAR = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="%23334155"/><circle cx="48" cy="38" r="18" fill="%2364748b"/><rect x="20" y="64" width="56" height="34" rx="17" fill="%2364748b"/></svg>';
 export function safeAvatarUrl(url: string | undefined | null): string {
-  return url && /^https:\/\//i.test(url) ? url : FALLBACK_AVATAR;
+  if (!url) return FALLBACK_AVATAR;
+  // Parse with the WHATWG URL API (same discipline as getYouTubeId / isStripeUrl)
+  // rather than a bare /^https:/ prefix test: require the https scheme AND reject
+  // embedded credentials (user:pass@host), so a member-set avatar can't smuggle a
+  // credentialed URL into an <img src> beacon. Falls back to the neutral inline avatar.
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:' || u.username || u.password) return FALLBACK_AVATAR;
+    return u.href;
+  } catch {
+    return FALLBACK_AVATAR;
+  }
 }
 
 // Strip trailing punctuation that the greedy URL regex (matches up to

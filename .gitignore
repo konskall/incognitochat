@@ -19,6 +19,7 @@ dist-ssr
 
 # Local-only security audit report (do not publish to a public repo)
 AUDIT.md
+AUDIT-*.md
 
 # Playwright MCP test artifacts
 .playwright-mcp/

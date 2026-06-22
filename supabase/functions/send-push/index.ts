@@ -67,6 +67,16 @@ Deno.serve(async (req: Request) => {
 
     if (!roomKey) return json({ error: "BAD_REQUEST" }, 400);
 
+    // Redacted room label for logs. roomKey is `${name}_${pin}` and the PIN is the
+    // app's sole access credential — it must NEVER be written to the retained log
+    // store (logs have a broader/longer access boundary than the RLS-gated rows).
+    // Strip the PIN suffix (everything after the last '_'); the room name alone is
+    // not a secret (joining still requires the PIN).
+    const roomLabel = (() => {
+      const i = (roomKey as string).lastIndexOf("_");
+      return i > 0 ? (roomKey as string).slice(0, i) : "room";
+    })();
+
     // 1. Authn/authz: caller must be a member.
     const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
@@ -176,7 +186,7 @@ Deno.serve(async (req: Request) => {
     // subscriptions the room has, how many survived member/dedupe filtering,
     // how many devices were excluded (sender/muted), how many remain.
     console.log(
-      `send-push v10 room=${roomKey} subs=${subs?.length ?? 0} members=${memberSubs.length} deduped=${deduped.length} garbage=${garbageIds.length} excludedDevices=${excludedEndpoints.size} targets=${targets.length}${membersTrustworthy ? "" : " MEMBERS_READ_EMPTY"}`,
+      `send-push v10 room=${roomLabel} subs=${subs?.length ?? 0} members=${memberSubs.length} deduped=${deduped.length} garbage=${garbageIds.length} excludedDevices=${excludedEndpoints.size} targets=${targets.length}${membersTrustworthy ? "" : " MEMBERS_READ_EMPTY"}`,
     );
     if (targets.length === 0) return json({ sent: 0 }, 200);
 
@@ -223,7 +233,7 @@ Deno.serve(async (req: Request) => {
       }),
     );
 
-    console.log(`send-push room=${roomKey} sent=${sent} pruned=${staleIds.length}`);
+    console.log(`send-push room=${roomLabel} sent=${sent} pruned=${staleIds.length}`);
 
     // Prune stale subscriptions.
     if (staleIds.length > 0) {

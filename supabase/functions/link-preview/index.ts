@@ -73,6 +73,44 @@ function toPublicHttpUrl(raw: string, base?: string | URL): URL | null {
   return u;
 }
 
+// Private/loopback/link-local/CGNAT/metadata IP literal? Reused for BOTH the URL
+// hostname and the DNS-resolved addresses below.
+function isPrivateIp(ip: string): boolean {
+  const host = ip.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "0.0.0.0" || host === "::1" || host === "::") return true;
+  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+      /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+      /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host)) return true;
+  if (/^f[cd][0-9a-f]{0,2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host)) return true;
+  if (host.startsWith("::ffff:")) return true;
+  return false;
+}
+
+function isIpLiteral(host: string): boolean {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":");
+}
+
+// Resolve the hostname and reject if ANY resolved address is private. The string
+// check in toPublicHttpUrl only inspects the literal hostname, so a public-looking
+// host whose attacker-controlled A/AAAA record points at 169.254.169.254 / 10.x /
+// ::1 would otherwise pass it and let fetch() connect internally (DNS-based SSRF).
+// Best-effort: where Deno.resolveDns isn't available we keep the string-level guard
+// rather than block every preview. (Not fully rebinding-proof — the edge runtime
+// gives no IP pinning — but it closes the practical attack.)
+async function resolvedHostIsPublic(u: URL): Promise<boolean> {
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (isIpLiteral(host)) return !isPrivateIp(host); // literal already vetted by toPublicHttpUrl
+  // deno-lint-ignore no-explicit-any
+  const resolveDns = (Deno as any).resolveDns as undefined | ((h: string, t: string) => Promise<string[]>);
+  if (typeof resolveDns !== "function") return true; // unsupported here — fall back to string guard
+  let addrs: string[] = [];
+  for (const type of ["A", "AAAA"]) {
+    try { addrs = addrs.concat(await resolveDns(host, type)); } catch { /* no record of this type */ }
+  }
+  if (addrs.length === 0) return true; // nothing resolved — fetch will fail on its own
+  return addrs.every((a) => !isPrivateIp(a));
+}
+
 function decodeEntities(s?: string) {
   return s
     ? s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
@@ -126,10 +164,16 @@ Deno.serve(async (req: Request) => {
     try {
       // Follow redirects MANUALLY so every hop is re-validated against the SSRF
       // guard — redirect:"follow" would let a public host 302 us to an internal
-      // address (http://[::1]/, 169.254.169.254, …) unchecked.
+      // address (http://[::1]/, 169.254.169.254, …) unchecked. Each hop is checked
+      // at BOTH levels: the hostname string (toPublicHttpUrl, when computing `next`)
+      // AND the DNS-resolved address (resolvedHostIsPublic, just below).
       let current = target;
       let hops = 0;
       for (;;) {
+        // DNS-level SSRF check: reject if the host resolves to a private address.
+        if (!(await resolvedHostIsPublic(current))) {
+          return json({ data: null }, 200, { "Cache-Control": "public, max-age=3600" });
+        }
         resp = await fetch(current.href, {
           signal: controller.signal,
           redirect: "manual",

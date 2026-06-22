@@ -39,6 +39,7 @@ import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useIncoAI } from '../hooks/useIncoAI';
 import { useEntitlements } from '../hooks/useEntitlements';
 import { useMessageQuota } from '../hooks/useMessageQuota';
+import { useModalA11y } from '../hooks/useModalA11y';
 import UpgradeModal from './UpgradeModal';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
@@ -50,9 +51,13 @@ interface ChatScreenProps {
 
 // -- Custom Room Deleted Toast (Persistent) --
 const RoomDeletedToast: React.FC<{ onExit: () => void, onRecreate: () => void }> = ({ onExit, onRecreate }) => {
+    // Blocking dialog: move focus in, trap Tab, close on Escape (→ return home),
+    // restore focus on unmount — parity with every other modal (useModalA11y).
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useModalA11y(true, onExit, dialogRef);
     return createPortal(
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-500">
-            <div className="relative bg-slate-900/90 dark:bg-slate-900/90 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center overflow-hidden ring-1 ring-white/10">
+            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="room-deleted-title" tabIndex={-1} className="outline-none relative bg-slate-900/90 dark:bg-slate-900/90 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center overflow-hidden ring-1 ring-white/10">
                 
                 <div className="flex flex-col items-center gap-6">
                     <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(239,68,68,0.3)] ring-1 ring-red-500/50">
@@ -60,7 +65,7 @@ const RoomDeletedToast: React.FC<{ onExit: () => void, onRecreate: () => void }>
                     </div>
                     
                     <div className="space-y-3">
-                        <h2 className="text-2xl font-bold text-white tracking-tight">The room was deleted</h2>
+                        <h2 id="room-deleted-title" className="text-2xl font-bold text-white tracking-tight">The room was deleted</h2>
                         <p className="text-slate-300 text-sm font-medium leading-relaxed">
                             This room no longer exists. You can recreate it now or return to home.
                         </p>
@@ -388,6 +393,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
            const attachment = await uploadFile(file);
            if (attachment) {
                await sendMessage("", config, attachment, null, null, 'text');
+               // A voice note is a quota-counted insert too — refresh the per-room
+               // "remaining" counter, matching the text/poll/file send paths.
+               setQuotaBump((n) => n + 1);
                notifySubscribers('message', 'Sent a voice message');
            }
       } catch (e) {
@@ -417,7 +425,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   const isBotResponding = useIncoAI(config.roomKey, config.pin, messages, config, aiEnabled, aiAvatarUrl, user?.uid);
 
-  const combinedTypingUsers = isBotResponding ? [...typingUsers, 'inco'] : typingUsers;
+  const combinedTypingUsers = useMemo(
+    () => (isBotResponding ? [...typingUsers, 'inco'] : typingUsers),
+    [isBotResponding, typingUsers]
+  );
+
+  // Dialog a11y for the blocking access-error overlay (focus move/trap, Escape →
+  // return home, focus restore) — parity with the rest of the app's modals.
+  const accessErrorDialogRef = useRef<HTMLDivElement>(null);
+  useModalA11y(!!accessError, onExit, accessErrorDialogRef);
 
   // --- SIDE EFFECTS ---
 
@@ -1139,6 +1155,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
            async (pos) => {
                try {
                    await sendMessage("📍 Shared a location", config, null, null, { lat: pos.coords.latitude, lng: pos.coords.longitude }, 'text');
+                   // Quota-counted insert — refresh the per-room remaining counter.
+                   setQuotaBump((n) => n + 1);
                    notifySubscribers('message', 'Shared a location');
                } catch(e) {
                    console.error(e);
@@ -1465,13 +1483,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
       {accessError && createPortal(
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-slate-900/90 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center ring-1 ring-white/10">
+          <div ref={accessErrorDialogRef} role="dialog" aria-modal="true" aria-labelledby="access-error-title" tabIndex={-1} className="outline-none bg-slate-900/90 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center ring-1 ring-white/10">
             <div className="flex flex-col items-center gap-6">
               <div className="w-20 h-20 bg-amber-500/10 rounded-full flex items-center justify-center ring-1 ring-amber-500/50">
                 <Trash2 size={40} className="text-amber-400" />
               </div>
               <div className="space-y-3">
-                <h2 className="text-2xl font-bold text-white tracking-tight">Can't enter room</h2>
+                <h2 id="access-error-title" className="text-2xl font-bold text-white tracking-tight">Can't enter room</h2>
                 <p className="text-slate-300 text-sm font-medium leading-relaxed">{accessError}</p>
               </div>
               <button
@@ -1602,7 +1620,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         <div ref={messagesEndRef} />
       </main>
 
-      {showScrollDown && !roomDeleted && (
+      {/* Hidden while the quota nudge is up: both sit at bottom-24 and would
+          overlap (and the nudge card could swallow a tap meant for this pill). */}
+      {showScrollDown && !roomDeleted && !showQuotaNudge && (
         <button
           onClick={() => scrollToBottom()}
           className="absolute bottom-24 right-4 z-30 flex items-center gap-1.5 pl-3 pr-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl shadow-blue-900/30 transition-all active:scale-95 animate-in fade-in slide-in-from-bottom-2"
@@ -1779,7 +1799,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         open={!!upgradePrompt}
         onClose={() => setUpgradePrompt(null)}
         requiredTier={upgradePrompt?.requiredTier ?? 'basic'}
-        currentTier={tier}
         featureLabel={upgradePrompt?.featureLabel ?? ''}
         reason={upgradePrompt?.reason}
       />

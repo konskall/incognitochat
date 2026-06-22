@@ -206,6 +206,12 @@ const RoomActionsSheet: React.FC<{
   );
 };
 
+// Stable sentinel for the "expired" deletedInfo. Returning a fresh object literal
+// per render from cardPropsFor broke the React.memo shallow-compare on every
+// expired card (they re-rendered on each dashboard state change); a shared
+// reference lets memo bail out.
+const EXPIRED_INFO = { reason: 'expired' as const };
+
 // Presentational card body, shared by the sortable item and the drag overlay.
 const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, overview, revealed, isFavorite, selectMode, selected, online, now, deletedInfo, onJoin, onOpenActions, onTogglePin, onToggleFav, onRecreate, onDismissDeleted }: RoomCardProps) => {
   const isOwner = room.created_by === userUid;
@@ -244,27 +250,35 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
                 onClick={(e) => { e.stopPropagation(); onToggleFav(e, room.room_key); }}
                 aria-pressed={isFavorite}
                 title={isFavorite ? 'Unpin from top' : 'Pin to top'}
-                className={`p-1.5 rounded-lg transition ${isFavorite ? 'text-amber-400 opacity-100' : 'text-slate-300 hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'}`}
+                className={`min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg transition ${isFavorite ? 'text-amber-400 opacity-100' : 'text-slate-300 hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'}`}
               >
                 <Star size={16} fill={isFavorite ? 'currentColor' : 'none'} />
               </button>
-              <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onOpenActions(room); }} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" title="Room actions" aria-label="Room actions">
+              <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onOpenActions(room); }} className="min-w-[40px] min-h-[40px] inline-flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" title="Room actions" aria-label="Room actions">
                 <MoreVertical size={16} />
               </button>
             </div>
           )}
         </div>
         <div className="flex items-center flex-wrap gap-x-2 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-          <div onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onTogglePin(e, room.room_key); }} className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono border border-slate-200 dark:border-slate-700 hover:border-blue-300 transition-colors cursor-pointer select-none" title="Click to reveal PIN">
+          <button
+            type="button"
+            onPointerDown={stop}
+            onClick={(e) => { e.stopPropagation(); onTogglePin(e, room.room_key); }}
+            aria-label={revealed ? 'Hide PIN' : 'Reveal PIN'}
+            aria-pressed={revealed}
+            className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-mono border border-slate-200 dark:border-slate-700 hover:border-blue-300 transition-colors cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            title="Click to reveal PIN"
+          >
             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">PIN:</span>
             <span className="font-bold text-slate-700 dark:text-blue-400 min-w-[32px] text-center">{revealed ? room.pin : '••••'}</span>
             {revealed ? <EyeOff size={12} className="text-blue-500" /> : <Eye size={12} className="text-slate-400" />}
-          </div>
+          </button>
           {isOwner
             ? <span className="text-blue-500 font-medium">Owner</span>
             : <span className="text-emerald-500 font-medium">Joined</span>}
           {expLabel && (
-            <span className="flex items-center gap-1 text-amber-600 dark:text-amber-500 font-medium" title="This free room auto-deletes (24h)">
+            <span className="flex items-center gap-1 text-amber-600 dark:text-amber-500 font-medium" title={room.auto_delete_seconds ? 'This room auto-deletes at the set time' : 'This free room auto-deletes (24h)'}>
               <Hourglass size={11} />{expLabel}
             </span>
           )}
@@ -294,16 +308,16 @@ const RoomCardInner = React.memo(({ room, userUid, unread, muted, archived, over
             <AlertCircle size={14} className="shrink-0" />
             <span className="truncate">{
               deletedInfo.reason === 'expired'
-                ? 'Διαγράφηκε αυτόματα (όριο 24ώρου)'
-                : deletedInfo.deletedBy ? `Διαγράφηκε από ${deletedInfo.deletedBy}` : 'Το δωμάτιο διαγράφηκε'
+                ? (room.auto_delete_seconds ? 'Auto-deleted' : 'Auto-deleted (24h limit)')
+                : deletedInfo.deletedBy ? `Deleted by ${deletedInfo.deletedBy}` : 'Room was deleted'
             }</span>
           </div>
           <div className="flex gap-2">
             <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onRecreate(room); }} className="flex-1 py-2 text-xs font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition flex items-center justify-center gap-1.5 active:scale-95">
-              <RefreshCw size={14} /> Ξανα-δημιούργησε
+              <RefreshCw size={14} /> Re-create
             </button>
             <button onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onDismissDeleted(room.room_key); }} className="flex-1 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition active:scale-95">
-              Απόρριψη
+              Dismiss
             </button>
           </div>
         </div>
@@ -980,6 +994,15 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     supabase.from('push_subscriptions').delete().eq('user_id', user.uid).eq('room_key', key).then(undefined, () => {});
   }, [user.uid, displayName]);
 
+  // Keys the user just re-created this session. join_or_create_room only stamps a
+  // fresh expires_at on the CREATE branch; if a free room's row still lingers
+  // (cron purges every ~15 min), re-create merely re-joins it and freshRow keeps
+  // the past expires_at — so cardPropsFor's optimistic isExpired() check would
+  // flip the card straight back to "expired" and the button looks like a no-op.
+  // The room is fully usable in that window, so we suppress the false expired
+  // label for these keys until the next dashboard reload.
+  const [recreatedKeys, setRecreatedKeys] = useState<Set<string>>(new Set());
+
   // Re-create a deleted/expired room (same name+PIN). Works for both a live-
   // deleted room (still in `rooms`) and a tombstone (synthetic, not in `rooms`):
   // after the RPC succeeds we read the fresh row so the card reflects the NEW
@@ -1014,6 +1037,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           created_by: fresh.created_by, expires_at: fresh.expires_at, name: fresh.display_name || fresh.room_name,
         });
         else removeTombstone(user.uid, fresh.room_key);
+        // If the re-joined free row's expires_at is still in the past (server
+        // didn't re-arm it because the room already existed), suppress the
+        // optimistic "expired" flip so the card doesn't bounce straight back.
+        if (fresh.expires_at && isExpired(fresh.expires_at)) {
+          setRecreatedKeys(prev => { const next = new Set(prev); next.add(fresh.room_key); return next; });
+        }
       }
     } catch {
       alert('Could not re-create the room. Please try again.');
@@ -1244,7 +1273,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     const favs = filtered.filter((r) => favorites.has(r.room_key));
     const rest = filtered.filter((r) => !favorites.has(r.room_key));
     return [...favs, ...rest];
-  }, [dragEnabled, rooms, query, filter, favorites, settings, isUnread, user.uid]);
+    // dragEnabled intentionally NOT a dep: the memo body never reads it, and all
+    // its genuine inputs (rooms/query/filter/favorites/settings/isUnread/uid) are
+    // already listed — including it only forced redundant recomputes on selectMode.
+  }, [rooms, query, filter, favorites, settings, isUnread, user.uid]);
 
   const cardPropsFor = (room: Room): Omit<RoomCardProps, 'room'> => ({
     userUid: user.uid,
@@ -1258,7 +1290,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     selected: selected.has(room.room_key),
     online: online.get(room.room_key),
     now: nowTick,
-    deletedInfo: deletedRooms.get(room.room_key) ?? (isExpired(room.expires_at, nowTick) ? { reason: 'expired' as const } : undefined),
+    deletedInfo: deletedRooms.get(room.room_key) ?? ((!recreatedKeys.has(room.room_key) && isExpired(room.expires_at, nowTick)) ? EXPIRED_INFO : undefined),
     onJoin: handleJoin,
     onOpenActions: setActionsRoom,
     onTogglePin: togglePinVisibility,
@@ -1329,7 +1361,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         open={!!upgradePrompt}
         onClose={() => setUpgradePrompt(null)}
         requiredTier={upgradePrompt?.requiredTier ?? 'basic'}
-        currentTier={tier}
         featureLabel={upgradePrompt?.featureLabel ?? ''}
     />
     {roomToDelete && (
@@ -1626,7 +1657,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                     : <ChevronRight className="shrink-0 text-slate-300 dark:text-slate-600 group-hover:text-amber-400 transition" size={20} />}
                             </button>
                         )}
-                        {tombstoneDeleted.size > 0 && (
+                        {/* Hidden during multi-select: tombstones are synthetic (not in
+                            `rooms`), so selecting them produced a no-op "delete" and inflated
+                            the selection count. They keep their own Re-create/Dismiss actions. */}
+                        {!selectMode && tombstoneDeleted.size > 0 && (
                             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 mb-4">
                                 {[...tombstoneDeleted.values()].map((t) => {
                                     const room = tombstoneToRoom(t);

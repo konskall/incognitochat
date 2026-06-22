@@ -3,7 +3,7 @@
 // Bumped on every push-logic change; the page can query it (INCO_GET_VERSION)
 // and shows it in the UI, so a device running a stale SW is diagnosable
 // without devtools (iOS especially).
-const SW_VERSION = 'push-v13';
+const SW_VERSION = 'push-v14';
 
 const CACHE = 'incognito-cache-v2';
 // Page-written suppression beacon (see utils/swBridge.ts): MUST survive the
@@ -68,30 +68,14 @@ self.addEventListener('fetch', (event) => {
   // Stay out of the way of the Vite dev server so HMR keeps working.
   if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return;
 
-  // App navigations: network-first so new deploys are picked up, falling back to
-  // the cached shell so the app still opens offline.
+  // App navigations: network-first (so new deploys are picked up) but BOUNDED by a
+  // timeout, falling back to the cached shell. Without the timeout, a half-open /
+  // high-latency connection (TCP connects but no bytes flow) leaves the fetch
+  // neither resolving nor rejecting, so an installed PWA that already precached the
+  // shell sat on a blank screen until the browser's own network timeout. See
+  // handleNavigate below.
   if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          // Cache under the SHELL key, not the full per-URL request: every
-          // distinct room link (?room=…) would otherwise add its own nav entry.
-          // ONLY overwrite the shell with a healthy response: a GitHub Pages
-          // 404 / 5xx / opaque or error response must not poison the offline
-          // shell (it would be served to every subsequent offline open until
-          // the next successful navigate). Mirrors the static-asset guard below.
-          if (res && res.ok && res.type === 'basic') {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(BASE + 'index.html', copy));
-          }
-          return res;
-        })
-        .catch(async () =>
-          (await caches.match(BASE + 'index.html')) ||
-          (await caches.match(BASE)) ||
-          Response.error()
-        )
-    );
+    event.respondWith(handleNavigate(req));
     return;
   }
 
@@ -102,7 +86,15 @@ self.addEventListener('fetch', (event) => {
         .then((res) => {
           if (res && res.status === 200 && res.type === 'basic') {
             const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy).then(() => trimAssetCache()));
+            // Only re-enumerate + trim the cache when this is a genuinely NEW key.
+            // A no-op SWR refresh of an already-cached content-hashed asset (the
+            // common case) doesn't change the cache size, so skip the O(n) keys()
+            // scan that previously ran on every successful asset response.
+            caches.open(CACHE).then(async (c) => {
+              const existed = await c.match(req);
+              await c.put(req, copy);
+              if (!existed) trimAssetCache();
+            });
           }
           return res;
         })
@@ -111,6 +103,42 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// Network-first navigation with a timeout fallback to the precached shell.
+const NAV_TIMEOUT_MS = 3000;
+async function handleNavigate(req) {
+  const fromCache = async () =>
+    (await caches.match(BASE + 'index.html')) || (await caches.match(BASE));
+  const network = fetch(req).then((res) => {
+    // Cache under the SHELL key, not the full per-URL request (every distinct
+    // ?room=… link would otherwise add its own nav entry). ONLY overwrite the
+    // shell with a healthy response so a GitHub Pages 404 / 5xx / opaque response
+    // can't poison the offline shell.
+    if (res && res.ok && res.type === 'basic') {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(BASE + 'index.html', copy)).catch(() => {});
+    }
+    return res;
+  });
+  // Prevent an unhandled rejection if the network ultimately fails AFTER we have
+  // already served the cached shell on timeout.
+  network.catch(() => {});
+  let timer;
+  const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(null), NAV_TIMEOUT_MS); });
+  try {
+    const winner = await Promise.race([network, timeout]);
+    clearTimeout(timer);
+    if (winner) return winner;
+    // Timed out: serve the precached shell instantly if present; otherwise (first
+    // visit, nothing cached yet) keep waiting on the network.
+    const cached = await fromCache();
+    if (cached) return cached;
+    return (await network) || Response.error();
+  } catch {
+    clearTimeout(timer);
+    return (await fromCache()) || Response.error();
+  }
+}
 
 // Bound the cache: content-hashed asset filenames change every deploy, so the
 // single-named cache would otherwise accumulate every past build's bundle
