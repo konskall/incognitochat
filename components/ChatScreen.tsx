@@ -1049,9 +1049,41 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     if (!config.roomKey || isClearing) return;
     setIsClearing(true);
     try {
+      // Capture BEFORE the wipe: only attachments uploaded up to this instant
+      // belong to messages the RPC removes. A file uploaded concurrently (another
+      // member sending mid-clear) must survive with its still-live message.
+      const clearStart = new Date().toISOString();
       const { error } = await supabase.rpc('clear_room_messages', { p_room_key: config.roomKey });
       if (error) throw error;
       setShowClearMessages(false);
+
+      // The RPC is SQL and can't touch Storage, so the wiped messages leave their
+      // attachment files orphaned under `${roomKey}/`. Remove them — but PRESERVE
+      // the room's appearance files (room_*, ai_avatar_*), which share the same
+      // prefix and are NOT messages. Best-effort, paginated, non-fatal: a failure
+      // only leaves files that the room-deletion sweep later reclaims.
+      try {
+        const PAGE = 100;
+        let offset = 0;
+        const toRemove: string[] = [];
+        for (;;) {
+          const { data: files } = await supabase.storage.from('attachments').list(config.roomKey, { limit: PAGE, offset });
+          if (!files || files.length === 0) break;
+          for (const f of files) {
+            if (f.id === null) continue; // sub-folder placeholder, not a file
+            if (f.name.startsWith('room_') || f.name.startsWith('ai_avatar_')) continue; // room appearance — keep
+            if (f.created_at && f.created_at > clearStart) continue; // uploaded after the wipe — keep
+            toRemove.push(`${config.roomKey}/${f.name}`);
+          }
+          if (files.length < PAGE) break;
+          offset += PAGE;
+        }
+        for (let i = 0; i < toRemove.length; i += 1000) {
+          await supabase.storage.from('attachments').remove(toRemove.slice(i, i + 1000));
+        }
+      } catch (storageErr) {
+        console.warn('Clear-messages storage cleanup failed (non-fatal):', storageErr);
+      }
     } catch (e) {
       console.error('clear_room_messages failed', e);
       flashToast('Could not clear messages. Please try again.');

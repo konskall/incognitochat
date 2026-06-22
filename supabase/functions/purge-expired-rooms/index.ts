@@ -12,13 +12,15 @@
 //   PASS 1 (expiry): delete the expired room ROWS (same predicate as the old
 //     cron; service role bypasses RLS; FK ON DELETE CASCADE removes messages +
 //     subscribers).
-//   PASS 2 (GC sweep): list every top-level prefix in the `attachments` bucket
-//     and remove (via the Storage API, which deletes both the DB row AND the S3
-//     object) every `${roomKey}/` prefix that has no matching live room. This
-//     cleans the rooms PASS 1 just deleted AND any pre-existing orphans AND files
-//     left behind by a best-effort client-side cleanup that failed. The
-//     `profiles/${uid}/` prefix (per-user avatars, not room-scoped) is never
-//     touched.
+//   PASS 2 (room GC sweep): list every top-level prefix in the `attachments`
+//     bucket and remove (via the Storage API, which deletes both the DB row AND
+//     the S3 object) every `${roomKey}/` prefix that has no matching live room.
+//     This cleans the rooms PASS 1 just deleted AND any pre-existing orphans AND
+//     files left behind by a best-effort client-side cleanup that failed. The
+//     `profiles/` prefix (per-user avatars) is skipped here and handled by PASS 3.
+//   PASS 3 (profile GC sweep): remove `profiles/${uid}/` avatar folders whose
+//     uid no longer exists in auth.users (left behind when the daily
+//     cleanup_abandoned_anon_users cron deletes an abandoned anonymous user).
 //
 // Idempotent and only ever removes data that is already doomed (expired rooms /
 // owner-less files), so re-running it is harmless. Invoked by pg_cron via pg_net
@@ -43,6 +45,9 @@ const REMOVE_CHUNK = 1000;  // storage.remove() keys per call
 // A real room has a handful of files; hitting this means something is wrong, so
 // stop and log rather than mass-delete.
 const MAX_DELETE_PER_RUN = 5000;
+// profiles/<uuid>/ folder names must look like a real auth uid before we probe
+// auth.users for them (defensive — a malformed folder name is left untouched).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -118,6 +123,8 @@ Deno.serve(async (req: Request) => {
       expired_rooms: 0,
       orphan_prefixes: 0,
       orphan_files: 0,
+      orphan_profile_dirs: 0,
+      orphan_profile_files: 0,
       skipped_recreated: [] as string[],
       capped: false,
       errors: [] as string[],
@@ -184,6 +191,45 @@ Deno.serve(async (req: Request) => {
       } catch (e) {
         result.errors.push(`gc ${prefix}: ${String(e)}`);
       }
+    }
+
+    // ---- PASS 3: profile-avatar GC — reclaim profiles/${uid}/ of deleted users. ----
+    // `cleanup_abandoned_anon_users` (daily cron) deletes abandoned anonymous
+    // users but leaves their uploaded avatar behind. Remove the avatar folders
+    // whose uid no longer exists in auth.users. The orphan_profile_uids RPC
+    // (SECURITY DEFINER) checks only the uids that actually have a storage
+    // folder — it never enumerates the full user base — and is evaluated at a
+    // single point in time, so a user (re)created meanwhile keeps their avatar.
+    try {
+      const profileUids: string[] = [];
+      let offset = 0;
+      for (;;) {
+        const { data, error } = await admin.storage.from(BUCKET).list(PROFILES_PREFIX, { limit: LIST_PAGE, offset });
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        for (const e of data) {
+          if (e.id === null && UUID_RE.test(e.name)) profileUids.push(e.name); // uid sub-folder
+        }
+        if (data.length < LIST_PAGE) break;
+        offset += LIST_PAGE;
+      }
+      if (profileUids.length > 0) {
+        const { data: orphans, error: rpcErr } = await admin.rpc("orphan_profile_uids", { p_uids: profileUids });
+        if (rpcErr) throw rpcErr;
+        for (const uid of (orphans ?? []) as string[]) {
+          if (budget <= 0) { result.capped = true; break; }
+          const keys = await listFilesUnder(admin, `${PROFILES_PREFIX}/${uid}`);
+          if (keys.length === 0) continue;
+          const take = keys.slice(0, budget);
+          result.orphan_profile_dirs += 1;
+          if (dryRun) result.orphan_profile_files += take.length;
+          else result.orphan_profile_files += await removeKeys(admin, take);
+          budget -= take.length;
+          if (take.length < keys.length) result.capped = true;
+        }
+      }
+    } catch (e) {
+      result.errors.push(`profile-gc: ${String(e)}`);
     }
 
     console.log(`purge-expired-rooms ${JSON.stringify(result)}`);
