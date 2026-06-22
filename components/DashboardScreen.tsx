@@ -1309,10 +1309,10 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
   const planCard = (
     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-5">
-      {/* Header row (horizontal): "Your plan" label + tier icon on the left, tier badge on the right. */}
+      {/* Header row: "Your plan" label on the left; tier icon + tier badge grouped on the right. */}
       <div className="flex items-center justify-between gap-2.5 mb-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Your plan</h3>
+        <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Your plan</h3>
+        <div className="flex items-center gap-2 shrink-0">
           <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
             entLoading ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
             : tier === 'ultra' ? 'bg-gradient-to-br from-fuchsia-500 to-purple-600 text-white shadow-sm shadow-purple-500/30'
@@ -1320,14 +1320,14 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
             {tier === 'ultra' ? <Crown size={18} /> : tier === 'basic' ? <Rocket size={18} /> : <MessageCircle size={18} />}
           </span>
+          <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${
+            entLoading ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+            : tier === 'ultra' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+            : tier === 'basic' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+            {entLoading ? '…' : tier === 'ultra' ? 'Ultra' : tier === 'basic' ? 'Basic' : 'Free'}
+          </span>
         </div>
-        <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${
-          entLoading ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-          : tier === 'ultra' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-          : tier === 'basic' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
-          {entLoading ? '…' : tier === 'ultra' ? 'Ultra' : tier === 'basic' ? 'Basic' : 'Free'}
-        </span>
       </div>
       <ul className="text-sm text-slate-600 dark:text-slate-300 space-y-1 mb-4">
         {entLoading ? (
