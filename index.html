@@ -6,11 +6,13 @@
     <meta name="theme-color" content="#f8fafc" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <!-- black-translucent: the dark-by-default app paints under the iOS status bar
-         (layout already pads env(safe-area-inset-top)), avoiding a light status-bar
-         seam over the dark UI. iOS ignores theme-color for the standalone status bar,
-         so this meta is the only lever. -->
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- MUST stay "default". "black-translucent" makes the iOS standalone PWA paint
+         FULL-BLEED under the status bar; combined with the fixed/100dvh chat layout +
+         interactive-widget=resizes-content it broke the keyboard handling — the input
+         bar was cut off below the keyboard and a safe-area gap showed at the bottom
+         (regression 2026-06-22, PWA-only — browser was fine). "default" keeps the web
+         view inset below the status bar = the known-good behavior. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 
     <!-- Favicons (relative paths). The 1 MB favicon.svg was removed — modern
          browsers preferred it, downloading it on every first visit. -->
