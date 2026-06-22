@@ -128,31 +128,50 @@ STRICT RULES:
       generationConfig: { temperature: 0.7 },
     };
 
-    // Per-call timeout so a slow/hung Gemini response can't pin the isolate up
-    // to the platform's hard function timeout.
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 25000);
-    let resp: Response;
-    try {
-      resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-        {
+    // Call Gemini, RETRYING transient upstream failures (503 "model overloaded"
+    // and other 5xx blips) a couple of times with short backoff. These momentary
+    // errors were the cause of inco intermittently "not working" — the client
+    // masks ANY non-ok as a silent no-op, so a one-off 503 looked like a dead bot.
+    // NOT retried: 429 (quota — won't recover in ms), and permanent 4xx (bad key,
+    // 403, 404 — retrying just wastes time). Each attempt keeps its own timeout so
+    // a hung response can't pin the isolate; a hung/aborted call throws to the
+    // outer catch (→ 500) rather than being retried into another long wait.
+    const GEMINI_URL =
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    const TRANSIENT = new Set([500, 502, 503, 504]);
+    const MAX_ATTEMPTS = 3;
+    let resp: Response | null = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 20000);
+      try {
+        resp = await fetch(GEMINI_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(geminiBody),
           signal: ctl.signal,
-        },
-      );
-    } finally {
-      clearTimeout(timer);
-    }
+        });
+      } finally {
+        clearTimeout(timer);
+      }
 
-    if (resp.status === 429) return json({ quota: true }, 200);
-    if (!resp.ok) {
+      if (resp.status === 429) return json({ quota: true }, 200);
+      if (resp.ok) break;
+
+      // Transient 5xx (returns fast) → brief backoff (400ms, 800ms) and retry.
+      if (TRANSIENT.has(resp.status) && attempt < MAX_ATTEMPTS) {
+        const detail = await resp.text().catch(() => "");
+        console.warn(`Gemini transient ${resp.status} (attempt ${attempt}/${MAX_ATTEMPTS}), retrying`, detail.slice(0, 200));
+        await new Promise((r) => setTimeout(r, attempt * 400));
+        continue;
+      }
+
+      // Permanent error, or transient retries exhausted.
       const detail = await resp.text();
       console.error("Gemini error", resp.status, detail.slice(0, 500));
       return json({ error: "AI_REQUEST_FAILED" }, 502);
     }
+    if (!resp || !resp.ok) return json({ error: "AI_REQUEST_FAILED" }, 502);
 
     const data = await resp.json();
     const cand = data?.candidates?.[0];
