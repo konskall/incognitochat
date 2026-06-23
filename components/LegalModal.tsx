@@ -34,17 +34,17 @@ const LegalModal: React.FC<LegalModalProps> = ({ show, onClose }) => {
   );
 
   return createPortal(
-    <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[130] flex sm:items-center sm:justify-center sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div
         ref={dialogRef}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Privacy and Terms"
-        className="outline-none flex flex-col w-full max-w-2xl max-h-[88vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-white/10 dark:border-slate-800 animate-in zoom-in-95 duration-200"
+        className="outline-none flex flex-col w-full h-[100dvh] sm:h-auto sm:max-h-[88dvh] sm:max-w-2xl bg-white dark:bg-slate-900 sm:rounded-3xl shadow-2xl border border-white/10 dark:border-slate-800 animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
+        {/* Header (sticks to the top of the sheet so the X is always reachable on mobile) */}
+        <div className="flex items-center justify-between gap-3 px-6 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] sm:pt-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div>
             <h2 className="text-lg font-bold text-slate-800 dark:text-white">Privacy &amp; Terms</h2>
             <p className="text-[11px] text-slate-400 dark:text-slate-500">Last updated: {LAST_UPDATED}</p>
@@ -55,7 +55,7 @@ const LegalModal: React.FC<LegalModalProps> = ({ show, onClose }) => {
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto px-6 py-5 space-y-5">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-5">
           <Section icon={<Shield size={15} />} title="Privacy">
             <p>Incognito Chat is built to collect as little as possible. We never sell your data or use it for advertising.</p>
             <ul className="list-disc pl-5 space-y-1.5">
@@ -91,8 +91,8 @@ const LegalModal: React.FC<LegalModalProps> = ({ show, onClose }) => {
           </Section>
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
+        {/* Footer (pinned to the bottom of the sheet, clear of the iOS home indicator) */}
+        <div className="px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
           <button onClick={onClose} className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition active:scale-[0.98]">Close</button>
         </div>
       </div>
