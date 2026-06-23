@@ -656,7 +656,10 @@ export const useChatMessages = (
     
         const { error } = await supabase.storage
           .from('attachments')
-          .upload(filePath, file);
+          // Filenames are random + immutable, so cache hard (1 year). Stops every
+          // scroll-back / room re-open from re-downloading media against the
+          // limited Storage egress, and speeds up repeat media render on mobile.
+          .upload(filePath, file, { cacheControl: '31536000' });
     
         if (error) throw error;
     

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import LandingPage from './components/LandingPage';
+import ErrorBoundary from './components/ErrorBoundary';
 import { ChatConfig, User } from './types';
 import { generateRoomKey } from './utils/helpers';
 import { flashToast } from './components/MessageActionMenu';
@@ -280,6 +281,7 @@ const App: React.FC = () => {
   };
 
   return (
+    <ErrorBoundary>
     <div className="min-h-[100dvh] w-full">
       {currentView === 'landing' ? (
         <LandingPage onStart={handleStartApp} onChoosePlan={handleChoosePlan} />
@@ -295,6 +297,7 @@ const App: React.FC = () => {
         </Suspense>
       )}
     </div>
+    </ErrorBoundary>
   );
 };
 

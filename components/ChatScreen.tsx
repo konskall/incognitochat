@@ -19,7 +19,7 @@ import UserProfileModal from './UserProfileModal';
 import RoomAppearanceModal from './RoomAppearanceModal';
 import EphemeralModal, { formatTtl } from './EphemeralModal';
 import RoomExpiryModal from './RoomExpiryModal';
-import MicErrorModal from './MicErrorModal';
+import PermissionModal from './PermissionModal';
 import PollComposerModal from './PollComposerModal';
 import MediaGalleryModal from './MediaGalleryModal';
 import RoomInfoModal from './RoomInfoModal';
@@ -30,7 +30,7 @@ import { expiryShortLabel } from '../utils/roomLifecycle';
 import { parseTierError } from '../utils/tierGatingErrors';
 import { canSendBatch } from '../utils/entitlements';
 import { buildLiveAvatars } from '../utils/avatars';
-import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin, Sparkles } from 'lucide-react';
+import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin, Sparkles, MicOff, MapPinOff } from 'lucide-react';
 
 // Hooks
 import { useChatMessages } from '../hooks/useChatMessages';
@@ -280,6 +280,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   // Scroll-to-bottom affordance + in-room search.
   const [showScrollDown, setShowScrollDown] = useState(false);
+  // Blocked-location error -> shown via the shared PermissionModal (same style as mic).
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1181,7 +1183,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   };
 
   const handleSendLocation = async () => {
-       if (!navigator.geolocation || !user || roomDeleted) return;
+       if (!user || roomDeleted) return;
+       if (!navigator.geolocation) { setLocationError('Location isn’t available on this device.'); return; }
        setIsGettingLocation(true);
        navigator.geolocation.getCurrentPosition(
            async (pos) => {
@@ -1206,9 +1209,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
            (err) => {
                console.warn('Geolocation failed', err);
                setIsGettingLocation(false);
-               flashToast(err.code === err.PERMISSION_DENIED
-                   ? 'Location permission denied.'
-                   : 'Could not get your location.');
+               setLocationError(err.code === err.PERMISSION_DENIED
+                   ? 'Location access is blocked. Allow location permission in your browser settings, then try again.'
+                   : 'Could not get your location. Please try again.');
            },
            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
        );
@@ -1771,7 +1774,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         onUpgrade={promptUpgrade}
       />
 
-      <MicErrorModal show={!!micError} message={micError || ''} onClose={dismissMicError} />
+      <PermissionModal show={!!micError} title="Microphone unavailable" icon={<MicOff size={22} />} message={micError || ''} onClose={dismissMicError} />
+      <PermissionModal show={!!locationError} title="Location unavailable" icon={<MapPinOff size={22} />} message={locationError || ''} onClose={() => setLocationError(null)} />
 
       <PollComposerModal
         show={showPollComposer}
