@@ -1051,6 +1051,23 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     }
   }, [config]);
 
+  // Owner-only: remove a SINGLE member (kick, not ban). The server RPC re-checks
+  // ownership and refuses self-removal; messages stay and the user can rejoin
+  // with the PIN. No owner re-subscribe needed (the owner's own row is untouched).
+  const handleRemoveMember = useCallback(async (uid: string, username: string): Promise<boolean> => {
+    if (!config.roomKey || !uid) return false;
+    try {
+      const { error } = await supabase.rpc('remove_room_member', { p_room_key: config.roomKey, p_uid: uid });
+      if (error) throw error;
+      flashToast(`Removed ${username}.`);
+      return true;
+    } catch (e) {
+      console.error('remove_room_member failed', e);
+      flashToast('Could not remove member. Please try again.');
+      return false;
+    }
+  }, [config.roomKey]);
+
   // Basic+ member: wipe ALL messages in the room (server-enforced via the
   // SECURITY DEFINER clear_room_messages RPC). Per-row realtime DELETE events
   // clear every member's open view (incl. this one), so we don't touch local
@@ -1829,6 +1846,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
         selfUid={user?.uid}
         canClear={user?.uid === roomCreatorId}
         onClearMembers={handleClearMembers}
+        onRemoveMember={handleRemoveMember}
       />
 
       <MediaGalleryModal

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChevronLeft, Users, Clock, Trash2 } from 'lucide-react';
+import { X, ChevronLeft, Users, Clock, Trash2, UserMinus } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { safeAvatarUrl } from '../utils/helpers';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -13,8 +13,9 @@ interface MembersHistoryModalProps {
   roomKey: string;
   onlineUids: string[]; // uids currently present (status === 'active')
   selfUid?: string;
-  canClear?: boolean;                       // owner-only: show the Clear button
+  canClear?: boolean;                       // owner-only: show the Clear button + per-member remove
   onClearMembers?: () => Promise<boolean>;  // wipes membership (owner re-subscribed by caller)
+  onRemoveMember?: (uid: string, username: string) => Promise<boolean>; // owner-only: remove one member
 }
 
 // Compact relative time, e.g. "5m ago", "3d ago". App code (Date.now allowed).
@@ -37,7 +38,7 @@ function timeAgo(iso: string): string {
 // History of everyone who has joined this room (the `subscribers` membership
 // records). The subscribers SELECT RLS is self-only, so the list comes from the
 // `room_members` SECURITY DEFINER RPC (gated to current members; excludes email).
-const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose, roomKey, onlineUids, selfUid, canClear, onClearMembers }) => {
+const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose, roomKey, onlineUids, selfUid, canClear, onClearMembers, onRemoveMember }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
   const [members, setMembers] = useState<MemberRow[] | null>(null);
@@ -46,6 +47,8 @@ const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose
   const [failed, setFailed] = useState<Set<string>>(new Set()); // uids whose avatar img failed
   const [confirming, setConfirming] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [pendingRemove, setPendingRemove] = useState<MemberRow | null>(null); // row awaiting remove confirm
+  const [removingUid, setRemovingUid] = useState<string | null>(null);        // remove in flight
 
   useEffect(() => {
     if (!show || !roomKey) return;
@@ -53,6 +56,7 @@ const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose
     setMembers(null);
     setError(false);
     setConfirming(false);
+    setPendingRemove(null);
     setFailed(new Set());
     supabase.rpc('room_members', { p_room_key: roomKey }).then(({ data, error: err }) => {
       if (!alive) return;
@@ -72,6 +76,15 @@ const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose
     const ok = await onClearMembers();
     setClearing(false);
     setConfirming(false);
+    if (ok) setReload((r) => r + 1);
+  };
+
+  const handleRemove = async (m: MemberRow) => {
+    if (!onRemoveMember) return;
+    setRemovingUid(m.uid);
+    const ok = await onRemoveMember(m.uid, m.username);
+    setRemovingUid(null);
+    setPendingRemove(null);
     if (ok) setReload((r) => r + 1);
   };
 
@@ -162,6 +175,38 @@ const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose
                       {isOnline && <span className="ml-1 font-semibold text-green-500">· Online</span>}
                     </p>
                   </div>
+
+                  {/* Owner-only per-member remove (kick). Hidden on self; the
+                      server RPC re-checks ownership and refuses self-removal. */}
+                  {canClear && !isSelf && onRemoveMember && (
+                    pendingRemove?.uid === m.uid ? (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => setPendingRemove(null)}
+                          disabled={removingUid === m.uid}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => handleRemove(m)}
+                          disabled={removingUid === m.uid}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-500 transition active:scale-95 disabled:opacity-60"
+                        >
+                          {removingUid === m.uid ? 'Removing…' : 'Remove'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setPendingRemove(m)}
+                        aria-label={`Remove ${m.username}`}
+                        title="Remove member"
+                        className="shrink-0 p-2 rounded-full text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition"
+                      >
+                        <UserMinus size={16} />
+                      </button>
+                    )
+                  )}
                 </li>
               );
             })}
