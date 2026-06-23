@@ -1543,6 +1543,11 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                     <button onClick={handleSaveProfile} disabled={isSavingProfile} className="flex-1 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg shadow-md hover:bg-blue-700 transition flex items-center justify-center gap-2">{isSavingProfile ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}Save Changes</button>
                                 </div>
                                 <div className="lg:hidden pt-4 border-t border-slate-200 dark:border-slate-800">{planCard}</div>
+                                <div className="pt-3 border-t border-slate-200 dark:border-slate-800 text-center">
+                                    <button onClick={() => setShowDeleteAccount(true)} className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400">
+                                        <Trash2 size={12} /> Delete account
+                                    </button>
+                                </div>
                             </div>
                         ) : (
                             <div className="flex items-center gap-5 animate-in fade-in zoom-in-95 duration-300 relative z-10">
@@ -1788,15 +1793,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 ))}
                             </div>
                         )}
-                        <div className="mt-8 text-center">
-                            <button
-                                onClick={() => setShowDeleteAccount(true)}
-                                className="text-[11px] font-medium text-slate-400 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-colors rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
-                            >
-                                Delete account
-                            </button>
-                        </div>
-                        <p className="text-center text-[10px] text-slate-300 dark:text-slate-700 mt-3 select-none" title="Service worker version on this device">
+                        <p className="text-center text-[10px] text-slate-300 dark:text-slate-700 mt-8 select-none" title="Service worker version on this device">
                             SW {swVersion ?? 'unknown (stale or none)'}
                         </p>
                     </div>
