@@ -1,8 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, Search, Image as ImageIcon, Users, Wand2, Sparkles, Palette, Timer, Mail, Share2, Trash2, ChevronRight, Lock, ChevronLeft, Clock, Eraser,
+  X, Search, Image as ImageIcon, Users, Wand2, Sparkles, Palette, Timer, Mail, Share2, Trash2, ChevronRight, Lock, ChevronLeft, Clock, Eraser, QrCode, Copy, Check,
 } from 'lucide-react';
+import qrcode from 'qrcode-generator';
 import { ChatConfig, Presence } from '../types';
 import { useModalA11y } from '../hooks/useModalA11y';
 
@@ -86,6 +87,19 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   useModalA11y(show, onClose, dialogRef);
   // Tapping the room photo opens an enlarged view (only when there's a real image).
   const [avatarPreview, setAvatarPreview] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const [copied, setCopied] = useState(false);
+  // Invite deep-link carrying room + PIN so the recipient doesn't retype them.
+  // App.tsx reads ?room=&pin= on open, prefills the login form, then strips them.
+  const inviteUrl = useMemo(() => {
+    const base = window.location.origin + window.location.pathname;
+    const p = new URLSearchParams({ room: config.roomName, pin: config.pin });
+    return `${base}?${p.toString()}`;
+  }, [config.roomName, config.pin]);
+  const qrDataUrl = useMemo(() => {
+    try { const qr = qrcode(0, 'M'); qr.addData(inviteUrl); qr.make(); return qr.createDataURL(6, 12); }
+    catch { return ''; }
+  }, [inviteUrl]);
   if (!show) return null;
 
   // Only treat a feature as locked once entitlements have resolved (ent present).
@@ -113,18 +127,19 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   // open a sub-screen: close this hub first so modals don't stack awkwardly
   const go = (fn: () => void) => { onClose(); setTimeout(fn, 0); };
 
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(inviteUrl); setCopied(true); setTimeout(() => setCopied(false), 1800); }
+    catch (err) { console.error('Copy failed:', err); }
+  };
+
   const handleShare = async () => {
-    // Build the invite link from origin + pathname only. The old
-    // href.split('?')[0] stripped the query string but NOT the hash fragment —
-    // so after a Google OAuth return (Supabase puts the session in the URL hash)
-    // the "invite" link became …/#access_token=…&refresh_token=…, which is both
-    // the wrong URL and a leak of the sharer's auth tokens. PIN-join sessions had
-    // no hash, which is why mobile looked fine.
-    const inviteUrl = window.location.origin + window.location.pathname;
-    const shareText = `🔒 Join my secure room on Incognito Chat!\n\n🏠 Room: ${config.roomName}\n🔑 PIN: ${config.pin}`;
+    // inviteUrl carries ?room=&pin= so the recipient lands on a prefilled login
+    // (App.tsx reads + strips the params). Room + PIN are ALSO included as plain
+    // text so a share target that drops the URL still lets them join manually.
+    const shareText = `🔒 Join "${config.roomName}" on Incognito Chat\nRoom: ${config.roomName}\nPIN: ${config.pin}`;
     try {
       if (navigator.share) await navigator.share({ title: 'Incognito Chat Invite', text: shareText, url: inviteUrl });
-      else { await navigator.clipboard.writeText(`${shareText}\n\n${inviteUrl}`); alert('Room details copied to clipboard!'); }
+      else { await navigator.clipboard.writeText(`${shareText}\n${inviteUrl}`); setShowQr(true); setCopied(true); setTimeout(() => setCopied(false), 1800); }
     } catch (err) { console.error('Error sharing:', err); }
   };
 
@@ -166,7 +181,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
             {total} participant{total === 1 ? '' : 's'}{onlineCount > 0 && <span className="text-green-500"> · {onlineCount} online</span>}
           </p>
           <div className="flex items-center gap-1.5 mt-2 text-[11px] font-medium text-slate-400 dark:text-slate-500">
-            <Lock size={12} /> Messages are encrypted
+            <Lock size={12} /> Locked with your room PIN
           </div>
           {expiryHint && (
             <div className="flex items-center gap-1.5 mt-1.5 text-[11px] font-semibold text-red-500 dark:text-red-400">
@@ -184,7 +199,25 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
               <span className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition group-active:scale-95"><Users size={20} /></span>
               <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Members</span>
             </button>
+            <button onClick={() => setShowQr((v) => !v)} aria-expanded={showQr} className="flex flex-col items-center gap-1.5 group">
+              <span className={`w-12 h-12 rounded-full flex items-center justify-center transition group-active:scale-95 ${showQr ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 group-hover:bg-slate-200 dark:group-hover:bg-slate-700'}`}><QrCode size={20} /></span>
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">QR code</span>
+            </button>
           </div>
+
+          {showQr && (
+            <div className="mt-5 flex flex-col items-center gap-3 animate-in fade-in zoom-in-95 duration-200">
+              <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200">
+                {qrDataUrl
+                  ? <img src={qrDataUrl} alt="Room invite QR code" className="block" style={{ width: 168, height: 168 }} />
+                  : <div className="flex items-center justify-center text-slate-400 text-xs" style={{ width: 168, height: 168 }}>QR unavailable</div>}
+              </div>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center max-w-[260px]">Scan to open the room with its name &amp; PIN prefilled.</p>
+              <button onClick={copyLink} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition active:scale-95">
+                {copied ? <><Check size={14} /> Copied!</> : <><Copy size={14} /> Copy invite link</>}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Conversation */}

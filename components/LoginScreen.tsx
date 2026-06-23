@@ -9,6 +9,8 @@ import InstallButton from './InstallButton';
 interface LoginScreenProps {
   onJoin: (config: ChatConfig) => void;
   onShowLanding: () => void;
+  // From an invite deep-link (?room=&pin=) — prefills the room + PIN fields.
+  prefill?: { roomName: string; pin: string } | null;
 }
 
 type NotificationType = 'error' | 'success' | 'info';
@@ -32,7 +34,7 @@ const isHttpsUrl = (value: string): boolean => {
 
 const LOGO = `${import.meta.env.BASE_URL}favicon-96x96.png`;
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
+const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding, prefill }) => {
   const [username, setUsername] = useState(localStorage.getItem('chatUsername') || '');
   const [avatar, setAvatar] = useState(localStorage.getItem('chatAvatarURL') || '');
   const [roomName, setRoomName] = useState(localStorage.getItem('chatRoomName') || '');
@@ -122,6 +124,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
       if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
       if (notificationTimeoutRef.current) clearTimeout(notificationTimeoutRef.current);
   }, []);
+
+  // Prefill room + PIN from an invite deep-link, then focus the username so the
+  // recipient just adds a name and taps Enter Room (no retyping name/PIN).
+  useEffect(() => {
+      if (!prefill) return;
+      setRoomName(prefill.roomName);
+      setPin(prefill.pin);
+      const t = setTimeout(() => document.getElementById('login-username')?.focus(), 50);
+      return () => clearTimeout(t);
+  }, [prefill]);
 
   // Esc closes the clear-history confirmation.
   useEffect(() => {
@@ -401,6 +413,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onJoin, onShowLanding }) => {
           <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">Incognito Chat</h1>
           <p className="text-slate-600 dark:text-slate-400 text-sm">Secure, anonymous, real-time.</p>
         </button>
+
+        {prefill && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/40 px-3 py-2.5 text-xs font-semibold text-blue-700 dark:text-blue-300">
+            <DoorOpen size={15} className="shrink-0" />
+            <span>You've been invited to “{prefill.roomName}” — pick a username to join.</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>

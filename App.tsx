@@ -23,6 +23,8 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'landing' | 'login' | 'dashboard' | 'chat'>('landing');
   const [chatConfig, setChatConfig] = useState<ChatConfig | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // Set from an invite deep-link (?room=&pin=) so LoginScreen prefills the room.
+  const [invitePrefill, setInvitePrefill] = useState<{ roomName: string; pin: string } | null>(null);
 
   // The popstate listener runs from a []-deps effect, so it can't read
   // currentView/currentUser directly without going stale. Mirror them into refs.
@@ -48,6 +50,21 @@ const App: React.FC = () => {
       const { supabase, startCheckout } = await import('./services/supabase');
       if (cancelled) return;
 
+      // Invite deep-link: ?room=&pin= prefills the login form and routes there
+      // (highest priority). Parsed + stripped up front so it survives even a
+      // session-restore error AND the PIN doesn't linger in the address bar/history.
+      const search = new URLSearchParams(window.location.search);
+      const inviteRoom = search.get('room');
+      const invitePin = search.get('pin');
+      const hasInvite = !!(inviteRoom && invitePin);
+      if (hasInvite) {
+        setInvitePrefill({ roomName: inviteRoom!, pin: invitePin! });
+        sessionStorage.setItem('hasSeenLanding', 'true');
+        search.delete('room'); search.delete('pin');
+        const qs = search.toString();
+        window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+      }
+
       // 1. Restore session (OAuth redirect or stored session) and route.
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -69,7 +86,11 @@ const App: React.FC = () => {
         const storedUsername = localStorage.getItem('chatUsername') || session?.user?.user_metadata?.full_name;
         const storedAvatar = localStorage.getItem('chatAvatarURL') || session?.user?.user_metadata?.custom_avatar || session?.user?.user_metadata?.avatar_url;
 
-        if (storedPin && storedRoomName && storedUsername) {
+        if (hasInvite) {
+            // An explicit invite wins over a restored room / dashboard: go to the
+            // prefilled login so the user confirms a username and joins THIS room.
+            setCurrentView('login');
+        } else if (storedPin && storedRoomName && storedUsername) {
             const roomKey = generateRoomKey(storedPin, storedRoomName);
             setChatConfig({
                 username: storedUsername,
@@ -95,7 +116,7 @@ const App: React.FC = () => {
         // getSession can reject (offline, CORS, corrupt stored session). Don't
         // hang on a blank screen — fall back to a usable entry point.
         console.error('Session restore failed', e);
-        if (!cancelled) setCurrentView(hasSeenLanding ? 'login' : 'landing');
+        if (!cancelled) setCurrentView(hasInvite || hasSeenLanding ? 'login' : 'landing');
       }
 
       if (cancelled) return;
@@ -292,7 +313,7 @@ const App: React.FC = () => {
           ) : currentView === 'dashboard' && currentUser ? (
             <DashboardScreen user={currentUser} onJoinRoom={handleJoin} onLogout={handleLogout} />
           ) : (
-            <LoginScreen onJoin={handleJoin} onShowLanding={goToLanding} />
+            <LoginScreen onJoin={handleJoin} onShowLanding={goToLanding} prefill={invitePrefill} />
           )}
         </Suspense>
       )}
