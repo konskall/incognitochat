@@ -861,7 +861,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           const fileExt = compressed.name.split('.').pop();
           const fileName = `avatar_${Date.now()}.${fileExt}`;
           const filePath = `profiles/${user.uid}/${fileName}`;
-          const { error: uploadError } = await supabase.storage.from('attachments').upload(filePath, compressed);
+          // Filename carries Date.now(), so every change is a NEW url → cache hard
+          // (1 year). Stops the avatar re-downloading every hour across rooms/sessions.
+          const { error: uploadError } = await supabase.storage.from('attachments').upload(filePath, compressed, { cacheControl: '31536000' });
           if (uploadError) throw uploadError;
           const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(filePath);
           setTempAvatarUrl(publicUrl);

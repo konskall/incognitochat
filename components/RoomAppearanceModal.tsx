@@ -62,7 +62,9 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
       const compressed = await compressImage(file);
       const fileName = `room_${kind}_${Date.now()}.${compressed.name.split('.').pop()}`;
       const filePath = `${roomKey}/${fileName}`;
-      const { error } = await supabase.storage.from('attachments').upload(filePath, compressed);
+      // Filename carries Date.now() → a change is a new url, so cache hard (1 year)
+      // instead of the 1-hour default; room avatar/wallpaper stop re-downloading hourly.
+      const { error } = await supabase.storage.from('attachments').upload(filePath, compressed, { cacheControl: '31536000' });
       if (error) throw error;
       const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(filePath);
       if (kind === 'avatar') setAvatarUrl(publicUrl);
