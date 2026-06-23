@@ -683,38 +683,36 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     initData();
   }, [user.uid, user.email, loadOverview]);
 
-  // Keep a live ref of rooms so the realtime handler always sees the current
-  // list WITHOUT re-subscribing the channel on every rooms change (drag/unread).
+  // Keep a live ref of rooms so the overview-refresh poll always sees the current
+  // list WITHOUT re-subscribing on every rooms change (drag/unread).
   const roomsRef = useRef(rooms);
   useEffect(() => { roomsRef.current = rooms; }, [rooms]);
 
+  // Keep per-room unread + last-message preview fresh WITHOUT a global realtime
+  // firehose. The previous approach subscribed to EVERY `messages` INSERT in the
+  // DB and discarded non-mine rows client-side — which forces an is_member() RLS
+  // eval per dashboard user per message (N×M), a scale cliff at a few hundred
+  // concurrent dashboards. Instead we re-run the room_overview RPC (one
+  // server-aggregated round-trip) when the tab becomes visible and on a gentle
+  // interval while visible. Trade-off: badges refresh on focus / every ~30s
+  // rather than instantly — which is fine for a dashboard (the in-room view is
+  // still live). The poll only runs while the dashboard is actually visible
+  // (it's cleaned up on unmount when the user opens a room).
   useEffect(() => {
-    const channel = supabase.channel('dashboard-notifications')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-                const newMsg = payload.new as { uid?: string; type?: string; room_key?: string; text?: string; username?: string; attachment?: unknown; location?: unknown; created_at?: string };
-                if (newMsg.uid === user.uid || newMsg.type === 'system' || !newMsg.room_key) return;
-                const room = roomsRef.current.find(r => r.room_key === newMsg.room_key);
-                if (!room) return;
-                let lastText = '';
-                if (newMsg.text) { try { lastText = decryptMessage(newMsg.text, room.pin, room.room_key).slice(0, 100); } catch { lastText = ''; } }
-                setOverview(prev => {
-                    const next = new Map(prev);
-                    const cur = next.get(newMsg.room_key!);
-                    next.set(newMsg.room_key!, {
-                        unread: (cur?.unread || 0) + 1,
-                        lastAt: newMsg.created_at || new Date().toISOString(),
-                        lastText,
-                        lastUser: newMsg.username || cur?.lastUser || null,
-                        lastType: newMsg.type || 'text',
-                        hasAttachment: !!newMsg.attachment,
-                        hasLocation: !!newMsg.location,
-                    });
-                    return next;
-                });
-            }
-        ).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [user.uid]);
+    let pollId: ReturnType<typeof setInterval> | null = null;
+    const refresh = () => { if (roomsRef.current.length) loadOverview(roomsRef.current); };
+    const stop = () => { if (pollId) { clearInterval(pollId); pollId = null; } };
+    const start = () => { stop(); pollId = setInterval(refresh, 30000); };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') { refresh(); start(); }
+      else stop();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    // Initial overview is already fetched by initData; just start the poll (don't
+    // double-fetch on mount). Refresh immediately only when returning to the tab.
+    if (document.visibilityState === 'visible') start();
+    return () => { document.removeEventListener('visibilitychange', onVisibility); stop(); };
+  }, [loadOverview]);
 
   // Read-only "who's online" per room. We subscribe to each room's presence
   // channel but never track() ourselves, so the dashboard is invisible to the
