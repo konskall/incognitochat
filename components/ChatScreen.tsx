@@ -46,7 +46,15 @@ const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 
 interface ChatScreenProps {
   config: ChatConfig;
+  // The identity App.tsx resolved (Google / anonymous / null). Source of truth:
+  // the room must never silently operate under an identity that contradicts it.
+  account: User | null;
   onExit: () => void;
+  // Fired when the auth session is gone but App still holds a signed-in
+  // (non-anonymous) account — App routes back to login instead of letting this
+  // screen demote the user to a fabricated anonymous identity (wrong tier / not
+  // owner). See the checkUser effect below.
+  onAuthLost: () => void;
 }
 
 // -- Custom Room Deleted Toast (Persistent) --
@@ -128,7 +136,7 @@ const QuotaNudgeToast: React.FC<{ left: number; onUpgrade: () => void; onClose: 
   );
 };
 
-const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
+const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuthLost }) => {
   const [user, setUser] = useState<User | null>(null);
   const [inputText, setInputText] = useState(() => localStorage.getItem(`draft_${config.roomKey}`) || '');
   // Persist a per-room draft so a half-typed message survives switching rooms or
@@ -574,7 +582,20 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
                  isAnonymous: session.user.is_anonymous ?? true,
                  email: session.user.email 
              });
+        } else if (account && !account.isAnonymous) {
+             // The auth session is gone (expired / cleared — e.g. this desktop tab
+             // went stale after signing in on another device) BUT App still holds a
+             // signed-in Google account. Do NOT mint an anonymous user here: that
+             // fresh uid would resolve to the FREE tier, lose room ownership, and
+             // post messages under a phantom identity while the surrounding UI still
+             // shows the real account — the "logged-off but the room still works"
+             // split-brain. Surface it so App clears the stale identity and re-routes
+             // to login. (account is captured at mount, which is the relevant state.)
+             onAuthLost();
         } else {
+             // No session AND no signed-in account to contradict (pure anonymous
+             // flow, or a returning user whose stored room outlived its anonymous
+             // session) → legitimately establish a fresh anonymous identity.
              const { data: anonData } = await supabase.auth.signInAnonymously();
              if (anonData.user) {
                  setUser({ uid: anonData.user.id, isAnonymous: true });

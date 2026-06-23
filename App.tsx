@@ -287,6 +287,19 @@ const App: React.FC = () => {
     setCurrentView('login');
   };
 
+  // ChatScreen reports the auth session vanished while we still hold a signed-in
+  // (non-anonymous) account — a stale tab after signing in on another device, or
+  // a refresh-token failure that didn't surface a clean SIGNED_OUT to this tab.
+  // Clear the stale identity and route to login rather than letting the room run
+  // under a fabricated anonymous user (the split-brain). Mirrors the SIGNED_OUT
+  // cleanup in the auth listener above.
+  const handleAuthLost = () => {
+    setChatConfig(null);
+    setCurrentUser(null);
+    setCurrentView('login');
+    flashToast('Your session expired. Please sign in again.');
+  };
+
   const handleExitChat = () => {
     setChatConfig(null);
     localStorage.removeItem("chatPin");
@@ -309,7 +322,7 @@ const App: React.FC = () => {
       ) : (
         <Suspense fallback={<ScreenLoader />}>
           {currentView === 'chat' && chatConfig ? (
-            <ChatScreen config={chatConfig} onExit={handleExitChat} />
+            <ChatScreen config={chatConfig} account={currentUser} onExit={handleExitChat} onAuthLost={handleAuthLost} />
           ) : currentView === 'dashboard' && currentUser ? (
             <DashboardScreen user={currentUser} onJoinRoom={handleJoin} onLogout={handleLogout} />
           ) : (
