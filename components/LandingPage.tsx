@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Shield, Lock, Zap, Smartphone, ArrowRight, Video, LogIn, KeyRound, Share2, MessagesSquare, ChevronDown, Sun, Moon, ArrowUp, Sparkles, Gem, Timer, Bell } from 'lucide-react';
 import InstallButton from './InstallButton';
 import PricingSection from './PricingSection';
+import LegalModal from './LegalModal';
 import { beginThemeTransition } from '../utils/helpers';
 
 interface LandingPageProps {
@@ -175,6 +176,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
 
   // Scroll-to-top affordance — appears once the user has scrolled past the hero.
   const [showTop, setShowTop] = useState(false);
+  const [showLegal, setShowLegal] = useState(false);
   useEffect(() => {
     const onScroll = () => setShowTop(window.scrollY > 500);
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -378,7 +380,25 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
           <span aria-hidden="true" className="hidden sm:inline text-slate-300 dark:text-slate-700">·</span>
           <span>Private, anonymous, ephemeral.</span>
         </p>
+        <p className="mt-2 flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowLegal(true)}
+            className={`text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 font-medium hover:underline transition-colors rounded ${focusRing}`}
+          >
+            Privacy &amp; Terms
+          </button>
+          <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">·</span>
+          <a
+            href="mailto:info@incognitochat.gr"
+            className={`text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 font-medium hover:underline transition-colors rounded ${focusRing}`}
+          >
+            Contact
+          </a>
+        </p>
       </footer>
+
+      <LegalModal show={showLegal} onClose={() => setShowLegal(false)} />
 
       {/* Scroll-to-top */}
       <button
