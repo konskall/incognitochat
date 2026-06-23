@@ -25,7 +25,7 @@ import MediaGalleryModal from './MediaGalleryModal';
 import RoomInfoModal from './RoomInfoModal';
 import MembersHistoryModal from './MembersHistoryModal';
 import { flashToast } from '../utils/toast';
-import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
+import { getRoomBackgroundStyle, readCachedAppearance, writeCachedAppearance } from '../utils/roomBackgrounds';
 import { expiryShortLabel } from '../utils/roomLifecycle';
 import { parseTierError } from '../utils/tierGatingErrors';
 import { canSendBatch } from '../utils/entitlements';
@@ -203,9 +203,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   // Room appearance (icon + wallpaper), owner-editable, propagated via realtime.
   const [roomAvatarUrl, setRoomAvatarUrl] = useState('');
-  const [bgType, setBgType] = useState('preset');
-  const [bgPreset, setBgPreset] = useState('dots');
-  const [bgUrl, setBgUrl] = useState('');
+  // Restore the last-known wallpaper for THIS room synchronously from localStorage
+  // so re-entering a configured room paints its real background on the first frame
+  // — instead of flashing the default 'dots' preset until the room row loads over
+  // the network. Never-visited rooms fall back to defaults; the live values from
+  // initRoom / realtime still override and refresh the cache (effect below).
+  const cachedBg = useMemo(() => readCachedAppearance(config.roomKey), [config.roomKey]);
+  const [bgType, setBgType] = useState(() => cachedBg?.type || 'preset');
+  const [bgPreset, setBgPreset] = useState(() => cachedBg?.preset || 'dots');
+  const [bgUrl, setBgUrl] = useState(() => cachedBg?.url || '');
   // Preload a room's custom background image so the chat area shows the room's
   // gradient preset (not a gray blank) until the image is decoded, then swaps to
   // it. onerror leaves the gradient up rather than a broken/gray image.
@@ -218,6 +224,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
     img.src = bgUrl;
     return () => { img.onload = null; };
   }, [bgType, bgUrl]);
+  // Mirror the live appearance into the per-room cache for the next visit. Gated
+  // on isRoomReady so the pre-load defaults can't clobber a good cached value
+  // before the room row arrives; read back by the lazy initializers above.
+  useEffect(() => {
+    if (!config.roomKey || !isRoomReady) return;
+    writeCachedAppearance(config.roomKey, { type: bgType, preset: bgPreset, url: bgUrl });
+  }, [config.roomKey, isRoomReady, bgType, bgPreset, bgUrl]);
   const [showRoomAppearance, setShowRoomAppearance] = useState(false);
 
   // Disappearing messages: per-room TTL in seconds (null = off).

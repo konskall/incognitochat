@@ -287,3 +287,35 @@ export function getRoomBackgroundStyle(appearance: RoomAppearance, isDark: boole
   const preset = ROOM_BG_PRESETS.find((p) => p.key === appearance.preset) ?? ROOM_BG_PRESETS[0];
   return preset.style(isDark);
 }
+
+// ── Per-room appearance cache ────────────────────────────────────────────────
+// The room's wallpaper lives in the `rooms` row, which only arrives after the
+// initRoom network round-trip — so on entry the chat area paints the default
+// 'dots' preset for a beat before swapping to the configured look. We mirror the
+// last-known appearance per room into localStorage so the NEXT visit can restore
+// it synchronously on the first frame (no default flash). The live values from
+// initRoom / realtime still override and refresh the cache.
+const BG_CACHE_PREFIX = 'roombg_';
+
+export function readCachedAppearance(roomKey: string): RoomAppearance | null {
+  if (!roomKey) return null;
+  try {
+    const raw = localStorage.getItem(BG_CACHE_PREFIX + roomKey);
+    if (!raw) return null;
+    const a = JSON.parse(raw);
+    if (a && typeof a === 'object') {
+      return { type: a.type ?? null, preset: a.preset ?? null, url: a.url ?? null };
+    }
+  } catch { /* corrupt/unavailable storage → fall back to defaults */ }
+  return null;
+}
+
+export function writeCachedAppearance(roomKey: string, a: RoomAppearance): void {
+  if (!roomKey) return;
+  try {
+    localStorage.setItem(
+      BG_CACHE_PREFIX + roomKey,
+      JSON.stringify({ type: a.type ?? null, preset: a.preset ?? null, url: a.url ?? null }),
+    );
+  } catch { /* private mode / quota → caching is best-effort */ }
+}
