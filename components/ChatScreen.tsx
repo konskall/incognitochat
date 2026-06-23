@@ -130,7 +130,15 @@ const QuotaNudgeToast: React.FC<{ left: number; onUpgrade: () => void; onClose: 
 
 const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [inputText, setInputText] = useState('');
+  const [inputText, setInputText] = useState(() => localStorage.getItem(`draft_${config.roomKey}`) || '');
+  // Persist a per-room draft so a half-typed message survives switching rooms or
+  // the iOS PWA being evicted from memory. Sending clears inputText (-> removes the
+  // draft); a failed send restores the text (-> re-persists). Loaded on open above.
+  useEffect(() => {
+    const k = `draft_${config.roomKey}`;
+    if (inputText) localStorage.setItem(k, inputText);
+    else localStorage.removeItem(k);
+  }, [inputText, config.roomKey]);
 
   // --- Monetization plumbing (Phase 3) ---
   // Resolve this member's effective tier + entitlements (DB-authoritative mirror).

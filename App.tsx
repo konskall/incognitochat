@@ -276,7 +276,7 @@ const App: React.FC = () => {
       Object.keys(localStorage).forEach((k) => {
         if (
           k === 'chatPin' || k === 'chatRoomName' || k === 'chatAvatarURL' || k === 'chatUsername' ||
-          k.startsWith('roomOrder_') || k.startsWith('lastRead_') || k.startsWith('joined_') || k.startsWith('roomFav_')
+          k.startsWith('roomOrder_') || k.startsWith('lastRead_') || k.startsWith('joined_') || k.startsWith('roomFav_') || k.startsWith('draft_')
         ) {
           localStorage.removeItem(k);
         }

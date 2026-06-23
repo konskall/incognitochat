@@ -7,6 +7,9 @@ import qrcode from 'qrcode-generator';
 import { ChatConfig, Presence } from '../types';
 import { useModalA11y } from '../hooks/useModalA11y';
 
+// App logo, base-path aware (works in dev, on GitHub Pages, behind a custom domain).
+const LOGO = `${import.meta.env.BASE_URL}favicon-96x96.png`;
+
 interface RoomInfoModalProps {
   show: boolean;
   onClose: () => void;
@@ -97,7 +100,8 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
     return `${base}?${p.toString()}`;
   }, [config.roomName, config.pin]);
   const qrDataUrl = useMemo(() => {
-    try { const qr = qrcode(0, 'M'); qr.addData(inviteUrl); qr.make(); return qr.createDataURL(6, 12); }
+    // Error-correction 'H' (~30% recoverable) so the centred logo doesn't break scanning.
+    try { const qr = qrcode(0, 'H'); qr.addData(inviteUrl); qr.make(); return qr.createDataURL(6, 12); }
     catch { return ''; }
   }, [inviteUrl]);
   if (!show) return null;
@@ -207,10 +211,17 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
 
           {showQr && (
             <div className="mt-5 flex flex-col items-center gap-3 animate-in fade-in zoom-in-95 duration-200">
-              <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200">
+              <div className="relative bg-white p-3 rounded-2xl shadow-sm border border-slate-200">
                 {qrDataUrl
                   ? <img src={qrDataUrl} alt="Room invite QR code" className="block" style={{ width: 168, height: 168 }} />
                   : <div className="flex items-center justify-center text-slate-400 text-xs" style={{ width: 168, height: 168 }}>QR unavailable</div>}
+                {qrDataUrl && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="bg-white rounded-xl p-1 shadow-md ring-1 ring-slate-200">
+                      <img src={LOGO} alt="" width={32} height={32} className="w-8 h-8 rounded-lg" />
+                    </div>
+                  </div>
+                )}
               </div>
               <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center max-w-[260px]">Scan to open the room with its name &amp; PIN prefilled.</p>
               <button onClick={copyLink} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition active:scale-95">
