@@ -7,6 +7,34 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@17?target=deno";
+import * as Sentry from "npm:@sentry/deno";
+
+// Public client DSN (same Sentry project as the web app, but environment="edge"
+// so backend errors are filterable separately). Init is DEFENSIVE: an SDK/init
+// failure must NEVER stop the webhook from processing Stripe events.
+const SENTRY_DSN = "https://9daec6985e7cf5c6cf727738ce780e11@o4511616170393600.ingest.de.sentry.io/4511616424018000";
+let sentryReady = false;
+try {
+  Sentry.init({ dsn: SENTRY_DSN, environment: "edge", tracesSampleRate: 0, sendDefaultPii: false });
+  sentryReady = true;
+} catch (e) {
+  console.error("Sentry init failed (continuing without it)", e);
+}
+
+// Report an UNEXPECTED webhook failure to Sentry, then flush — serverless isolates
+// can freeze right after the response and drop un-flushed events. Fully guarded so
+// reporting can never throw into the webhook path. No PII: only the Stripe event
+// type/id, a label, and (optionally) the Postgres error code.
+async function report(label: string, cause: unknown, ctx: Record<string, unknown> = {}) {
+  if (!sentryReady) return;
+  try {
+    Sentry.captureException(cause instanceof Error ? cause : new Error(label), {
+      tags: { fn: "stripe-webhook" },
+      extra: { label, ...ctx },
+    });
+    await Sentry.flush(2000);
+  } catch (_) { /* swallow — reporting must never break the webhook */ }
+}
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), { status, headers: { "Content-Type": "application/json" } });
@@ -53,6 +81,7 @@ Deno.serve(async (req: Request) => {
   if (insErr) {
     if ((insErr as { code?: string }).code === "23505") return json({ received: true, duplicate: true }, 200);
     console.error("stripe_events insert failed", insErr);
+    await report("stripe_events insert failed", insErr, { event_type: event.type, event_id: event.id, code: (insErr as { code?: string }).code });
     return json({ error: "DB_ERROR" }, 500);
   }
 
@@ -120,6 +149,7 @@ Deno.serve(async (req: Request) => {
       }
       // Retryable DB error: release the idempotency claim so Stripe's retry reprocesses.
       console.error("subscriptions upsert failed (will retry)", upErr);
+      await report("subscriptions upsert failed", upErr, { event_type: event.type, event_id: event.id, code: (upErr as { code?: string }).code });
       await admin.from("stripe_events").delete().eq("id", event.id);
       return json({ error: "DB_ERROR" }, 500);
     }
@@ -128,6 +158,7 @@ Deno.serve(async (req: Request) => {
       // Retryable: the subscription row is written but entitlements weren't
       // reconciled — release the idempotency claim so Stripe retries the sync.
       console.error("reconcile_entitlements failed (will retry)", rpcErr);
+      await report("reconcile_entitlements failed", rpcErr, { event_type: event.type, event_id: event.id });
       await admin.from("stripe_events").delete().eq("id", event.id);
       return json({ error: "RECONCILE_ERROR" }, 500);
     }
@@ -136,6 +167,7 @@ Deno.serve(async (req: Request) => {
     // Retryable failure (Stripe retrieve / reconcile / network): release the
     // idempotency claim so Stripe's automatic retry can reprocess this event.
     console.error("webhook sync error (will retry)", e);
+    await report("webhook sync error", e, { event_type: event.type, event_id: event.id });
     await admin.from("stripe_events").delete().eq("id", event.id);
     return json({ error: "SYNC_ERROR" }, 500);
   }
