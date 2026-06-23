@@ -53,7 +53,7 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onSelect, onClose }) => {
               aria-label={`Emoji ${emoji}`}
               className="flex items-center justify-center p-1.5 hover:bg-blue-50 dark:hover:bg-slate-700 hover:scale-110 transition rounded cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             >
-              <Emoji emoji={emoji} className="w-7 h-7" />
+              <Emoji emoji={emoji} size={28} />
             </button>
           ))}
         </div>

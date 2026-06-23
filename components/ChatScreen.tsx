@@ -1657,7 +1657,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
       {showScrollDown && !roomDeleted && !showQuotaNudge && (
         <button
           onClick={() => scrollToBottom()}
-          className="absolute bottom-24 right-4 z-30 flex items-center gap-1.5 pl-3 pr-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl shadow-blue-900/30 transition-all active:scale-95 animate-in fade-in slide-in-from-bottom-2"
+          className="absolute bottom-24 right-4 z-30 flex items-center gap-1.5 pl-3 pr-3 py-2 bg-white/90 text-slate-700 ring-1 ring-black/10 hover:bg-white dark:bg-slate-900/90 dark:text-white dark:ring-white/20 dark:hover:bg-slate-800 backdrop-blur-md rounded-full shadow-xl shadow-black/30 transition-all active:scale-95 animate-in fade-in slide-in-from-bottom-2"
           aria-label="Scroll to latest messages"
         >
           <ChevronDown size={18} />

@@ -103,7 +103,7 @@ const MessageActionMenu: React.FC<MessageActionMenuProps> = ({
         {/* Reaction row */}
         <div className="shrink-0 flex items-center gap-0.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full px-1.5 py-1 shadow-2xl">
           {QUICK_REACTIONS.map((e) => (
-            <button key={e} onClick={() => run(() => onReact(e))} aria-label={`React with ${e}`} className="p-1 rounded-full hover:scale-125 transition-transform"><Emoji emoji={e} className="w-7 h-7" /></button>
+            <button key={e} onClick={() => run(() => onReact(e))} aria-label={`React with ${e}`} className="p-1 rounded-full hover:scale-125 transition-transform"><Emoji emoji={e} size={28} /></button>
           ))}
           <button onClick={() => setShowPicker(true)} aria-label="More emojis" className="w-8 h-8 ml-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 flex items-center justify-center text-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition">＋</button>
         </div>
