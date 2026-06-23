@@ -5,6 +5,7 @@ import { compressImage } from '../utils/helpers';
 import { ROOM_BG_PRESETS, ROOM_BG_CATEGORIES, presetCategory, type RoomBgCategory } from '../utils/roomBackgrounds';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { parseTierError } from '../utils/tierGatingErrors';
+import { flashToast } from '../utils/toast';
 
 interface RoomAppearanceModalProps {
   show: boolean;
@@ -68,7 +69,7 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
       else { setBgUrl(publicUrl); setBgType('image'); }
     } catch (e) {
       console.error(e);
-      alert('Failed to upload image');
+      flashToast('Failed to upload image');
     } finally {
       setUploading(null);
     }
@@ -96,7 +97,7 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
         onClose();
         onUpgrade('Room appearance', tierErr.requiredTier);
       } else {
-        alert('Failed to save room appearance');
+        flashToast('Failed to save room appearance');
       }
     } finally {
       setIsSaving(false);
@@ -140,8 +141,8 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
                   const v = linkValue.trim();
                   try {
                     if (new URL(v).protocol === 'https:') { setAvatarUrl(v); setShowLink(false); setLinkValue(''); }
-                    else alert('Please use an https:// image URL.');
-                  } catch { alert('Please enter a valid image URL.'); }
+                    else flashToast('Please use an https:// image URL.');
+                  } catch { flashToast('Please enter a valid image URL.'); }
                 }} aria-label="Use icon URL" className="absolute right-1 top-1/2 -translate-y-1/2 p-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded"><Check size={14} /></button>
               </div>
             )}
@@ -220,8 +221,8 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
                   const v = bgLink.trim();
                   try {
                     if (new URL(v).protocol === 'https:') { setBgUrl(v); setBgType('image'); setBgLink(''); }
-                    else alert('Please use an https:// image URL.');
-                  } catch { alert('Please enter a valid image URL.'); }
+                    else flashToast('Please use an https:// image URL.');
+                  } catch { flashToast('Please enter a valid image URL.'); }
                 }}
                 aria-label="Use image URL"
                 className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded"

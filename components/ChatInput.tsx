@@ -5,6 +5,7 @@ import EmojiPicker from './EmojiPicker';
 import AttachmentSheet, { SheetAction } from './AttachmentSheet';
 import { compressImage } from '../utils/helpers';
 import { MAX_FILES_PER_SEND } from '../utils/entitlements';
+import { flashToast } from '../utils/toast';
 import { Message } from '../types';
 
 interface ChatInputProps {
@@ -152,7 +153,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       const parts: string[] = [];
       if (tooBig.length) parts.push(`${tooBig.length} file(s) over ${limitMb}MB were skipped.`);
       if (droppedForCap > 0) parts.push(`You can attach up to ${MAX_FILES_PER_SEND} files at once.`);
-      alert(parts.join(' '));
+      flashToast(parts.join(' '));
     }
   };
 

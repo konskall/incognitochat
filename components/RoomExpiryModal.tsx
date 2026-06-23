@@ -3,6 +3,7 @@ import { X, Trash2, Check, Loader2 } from 'lucide-react';
 import { setRoomAutoDelete } from '../services/supabase';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { parseTierError } from '../utils/tierGatingErrors';
+import { flashToast } from '../utils/toast';
 
 export const ROOM_EXPIRY_OPTIONS: { label: string; seconds: number | null }[] = [
   { label: 'Off', seconds: null },
@@ -52,7 +53,7 @@ const RoomExpiryModal: React.FC<RoomExpiryModalProps> = ({ show, onClose, roomKe
         onClose();
         onUpgrade('Auto-delete', tierErr.requiredTier);
       } else if (mountedRef.current && openRef.current) {
-        alert('Failed to update auto-delete');
+        flashToast('Failed to update auto-delete');
       }
     } finally {
       if (mountedRef.current) setSaving(undefined);

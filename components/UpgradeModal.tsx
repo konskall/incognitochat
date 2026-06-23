@@ -4,7 +4,7 @@ import { X, Sparkles, Lock, Loader2 } from 'lucide-react';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { usePrices, formatPrice } from '../hooks/usePrices';
 import { startCheckout } from '../services/supabase';
-import { flashToast } from './MessageActionMenu';
+import { flashToast } from '../utils/toast';
 
 interface UpgradeModalProps {
   open: boolean;

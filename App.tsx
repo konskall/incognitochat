@@ -4,7 +4,7 @@ import LandingPage from './components/LandingPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ChatConfig, User } from './types';
 import { generateRoomKey } from './utils/helpers';
-import { flashToast } from './components/MessageActionMenu';
+import { flashToast } from './utils/toast';
 
 // Route-level code splitting: each screen is its own chunk so a visitor landing
 // on the marketing/login view doesn't download the (heavy) chat + dashboard

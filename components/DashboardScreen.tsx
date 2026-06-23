@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom, startCheckout, openBillingPortal, setRoomAutoDelete, setMyAvatar, getOrCreateNotesRoom } from '../services/supabase';
-import { flashToast } from './MessageActionMenu';
+import { flashToast } from '../utils/toast';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { broadcastRoomDeleted, parseRoomDeletedPayload, expiryShortLabel, isExpired } from '../utils/roomLifecycle';
 import { readTombstones, upsertTombstone, removeTombstone, type RoomTombstone } from '../utils/roomTombstones';
@@ -790,7 +790,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   }, [presenceKeys]);
 
   const handleSaveProfile = async () => {
-      if (!displayName.trim()) { alert("Display name cannot be empty"); return; }
+      if (!displayName.trim()) { flashToast("Display name cannot be empty"); return; }
       setIsSavingProfile(true);
       try {
           const updates = { display_name: displayName, full_name: displayName, custom_avatar: tempAvatarUrl, avatar_url: tempAvatarUrl };
@@ -806,7 +806,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           setShowLinkInput(false);
       } catch (e: any) {
           setTempAvatarUrl(avatarUrl); // revert the unsaved preview on failure
-          alert("Failed to update profile: " + e.message);
+          flashToast("Failed to update profile: " + e.message);
       } finally {
           setIsSavingProfile(false);
       }
@@ -829,8 +829,8 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       const url = linkInput.trim();
       try {
           const u = new URL(url);
-          if (u.protocol !== 'https:') { alert('Please use an https:// image URL.'); return; }
-      } catch { alert('Please enter a valid image URL.'); return; }
+          if (u.protocol !== 'https:') { flashToast('Please use an https:// image URL.'); return; }
+      } catch { flashToast('Please enter a valid image URL.'); return; }
       setTempAvatarUrl(url);
       setShowLinkInput(false);
   };
@@ -864,7 +864,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(filePath);
           setTempAvatarUrl(publicUrl);
       } catch (err: any) {
-          alert("Failed to upload image.");
+          flashToast("Failed to upload image.");
       }
   };
 
@@ -915,7 +915,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           console.error('room_settings upsert failed', e);
           // Roll back the optimistic change.
           setSettings(prev => { const next = new Map(prev); next.set(key, cur); return next; });
-          alert('Could not save room setting: ' + (e.message || 'Unknown error'));
+          flashToast('Could not save room setting: ' + (e.message || 'Unknown error'));
       }
   }, [user.uid]);
 
@@ -928,12 +928,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
           setRooms(prev => prev.map(r => r.room_key === key ? { ...r, display_name: (data as string) } : r));
       } catch (e: any) {
           const msg = e?.message || '';
-          if (msg.includes('NOT_OWNER')) { alert('Only the room owner can rename it.'); return; }
+          if (msg.includes('NOT_OWNER')) { flashToast('Only the room owner can rename it.'); return; }
           // Custom room names are a Basic+ feature (enforce_room_tier raises QT004
           // for a free owner) — route to the upgrade prompt instead of a raw alert (CLC-1).
           const tierErr = parseTierError(e, tier);
           if (tierErr) { setUpgradePrompt({ featureLabel: 'Custom room names', requiredTier: tierErr.requiredTier }); return; }
-          alert('Rename failed: ' + (msg || 'Unknown error'));
+          flashToast('Rename failed: ' + (msg || 'Unknown error'));
       }
   }, [tier]);
 
@@ -1078,7 +1078,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         setUpgradePrompt({ featureLabel: 'Another room', requiredTier: tier === 'free' ? 'basic' : 'ultra' });
         return;
       }
-      if (error || !data) { alert('Could not re-create the room. Please try again.'); return; }
+      if (error || !data) { flashToast('Could not re-create the room. Please try again.'); return; }
       // Durable joined flag is localStorage now (see ChatScreen) — clear it so a
       // later in-room entry treats this as a fresh, existing room.
       localStorage.removeItem(`joined_${room.room_key}`);
@@ -1106,7 +1106,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
         }
       }
     } catch {
-      alert('Could not re-create the room. Please try again.');
+      flashToast('Could not re-create the room. Please try again.');
     }
   }, [displayName, tier, user.uid]);
 
@@ -1134,7 +1134,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     try {
         await deleteRoomByKey(roomToDelete.key, roomToDelete.isOwner);
     } catch (e: any) {
-        alert('Operation failed: ' + (e.message || "Unknown error"));
+        flashToast('Operation failed: ' + (e.message || "Unknown error"));
     } finally {
         setIsDeletingRoom(false);
         setRoomToDelete(null);
@@ -1172,7 +1172,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     setIsBulkDeleting(false);
     setConfirmBulkDelete(false);
     exitSelectMode();
-    if (failed > 0) alert(`${failed} room(s) could not be deleted.`);
+    if (failed > 0) flashToast(`${failed} room(s) could not be deleted.`);
   };
 
   const handleCreateOrJoinRoom = async (e: React.FormEvent) => {
@@ -1183,16 +1183,16 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       // Enforce the SAME rules as the login screen so a room created here can
       // always be joined from there (a name with characters login rejects would
       // be impossible for invitees to enter).
-      if (!ROOM_NAME_RE.test(roomName)) { alert(ROOM_NAME_RULE); return; }
-      if (!ROOM_PIN_RE.test(pin)) { alert(ROOM_PIN_RULE); return; }
+      if (!ROOM_NAME_RE.test(roomName)) { flashToast(ROOM_NAME_RULE); return; }
+      if (!ROOM_PIN_RE.test(pin)) { flashToast(ROOM_PIN_RULE); return; }
       setCreating(true);
       const roomKey = generateRoomKey(pin, roomName);
       try {
            const { data: room, error } = await joinOrCreateRoom({ roomKey, roomName, pin, username: displayName });
            if (error) {
                if (error.code === 'ROOM_LIMIT') setUpgradePrompt({ featureLabel: 'Another room', requiredTier: tier === 'free' ? 'basic' : 'ultra' });
-               else if (error.code === 'WRONG_PIN') alert('Wrong PIN for this room.');
-               else alert('Failed to enter room. Please try again.');
+               else if (error.code === 'WRONG_PIN') flashToast('Wrong PIN for this room.');
+               else flashToast('Failed to enter room. Please try again.');
                return;
            }
            if (room) {
@@ -1204,7 +1204,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                    const { error: ttlErr } = await setRoomAutoDelete(room.room_key, 86400);
                    // Surface the failure: the user expects a self-destructing room
                    // and would otherwise believe a permanent one is ephemeral.
-                   if (ttlErr) { console.warn('Could not set ephemeral TTL:', ttlErr); alert('Room created, but auto-delete could not be enabled — it will not self-destruct.'); }
+                   if (ttlErr) { console.warn('Could not set ephemeral TTL:', ttlErr); flashToast('Room created, but auto-delete could not be enabled — it will not self-destruct.'); }
                }
                // No client-time lastRead write here: ChatScreen records the newest
                // SERVER message time once in-room, and the dashboard baselines an
@@ -1216,7 +1216,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                onJoinRoom({ username: displayName, avatarURL: avatarUrl, roomName: room.room_name, pin, roomKey: room.room_key });
            }
       } catch (e: any) {
-          alert("Failed to create or join room: " + (e?.message || 'Unknown error'));
+          flashToast("Failed to create or join room: " + (e?.message || 'Unknown error'));
       } finally {
           setCreating(false);
       }
@@ -1232,12 +1232,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
       const { data, error } = await getOrCreateNotesRoom(displayName || 'Notes');
       if (error || !data) {
         if (error?.tierRequired) setUpgradePrompt({ featureLabel: 'Notes', requiredTier: 'basic' });
-        else alert('Could not open Notes. Please try again.');
+        else flashToast('Could not open Notes. Please try again.');
         return;
       }
       onJoinRoom({ username: displayName, avatarURL: avatarUrl, roomName: data.room_name, pin: data.pin, roomKey: data.room_key });
     } catch {
-      alert('Could not open Notes. Please try again.');
+      flashToast('Could not open Notes. Please try again.');
     } finally {
       setNotesBusy(false);
     }

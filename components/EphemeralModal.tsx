@@ -3,6 +3,7 @@ import { X, Timer, Check, Loader2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { parseTierError } from '../utils/tierGatingErrors';
+import { flashToast } from '../utils/toast';
 
 export const TTL_OPTIONS: { label: string; seconds: number | null }[] = [
   { label: 'Off', seconds: null },
@@ -59,7 +60,7 @@ const EphemeralModal: React.FC<EphemeralModalProps> = ({ show, onClose, roomKey,
         onClose();
         onUpgrade('Disappearing messages', tierErr.requiredTier);
       } else if (mountedRef.current && openRef.current) {
-        alert('Failed to update disappearing messages');
+        flashToast('Failed to update disappearing messages');
       }
     } finally {
       if (mountedRef.current) setSaving(undefined);

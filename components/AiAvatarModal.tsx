@@ -5,6 +5,7 @@ import { supabase } from '../services/supabase';
 import { compressImage } from '../utils/helpers';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { parseTierError } from '../utils/tierGatingErrors';
+import { flashToast } from '../utils/toast';
 
 const DEFAULT_BOT_AVATAR = 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1';
 
@@ -57,7 +58,7 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
       setTempUrl(publicUrl);
     } catch (err) {
       console.error(err);
-      alert("Failed to upload image");
+      flashToast("Failed to upload image");
     }
   };
 
@@ -79,7 +80,7 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
         onClose();
         onUpgrade('Inco AI', tierErr.requiredTier);
       } else {
-        alert("Failed to update AI avatar");
+        flashToast("Failed to update AI avatar");
       }
     } finally {
       setIsSaving(false);
@@ -138,8 +139,8 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
                     // for every member (http:// = mixed content / broken).
                     try {
                       if (new URL(linkValue).protocol === 'https:') { setTempUrl(linkValue); setShowLinkInput(false); }
-                      else alert('Please use an https:// image URL.');
-                    } catch { alert('Please enter a valid image URL.'); }
+                      else flashToast('Please use an https:// image URL.');
+                    } catch { flashToast('Please enter a valid image URL.'); }
                   }}
                   aria-label="Use this image URL"
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-purple-500 text-white rounded-lg"

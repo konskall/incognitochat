@@ -4,20 +4,14 @@ import { Reply, Copy, Edit2, Pin, PinOff, Trash2 } from 'lucide-react';
 import EmojiPicker from './EmojiPicker';
 import Emoji from './Emoji';
 import { useModalA11y } from '../hooks/useModalA11y';
+import { flashToast } from '../utils/toast';
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
-// Lightweight transient toast (e.g. "Copied"). Imperative so it needs no state
-// plumbing from the deeply-nested message tree.
-export function flashToast(text: string) {
-  const el = document.createElement('div');
-  el.textContent = text;
-  el.className = 'fixed left-1/2 bottom-6 -translate-x-1/2 z-[200] bg-slate-900 text-white text-sm font-semibold px-4 py-2 rounded-full shadow-2xl border border-white/10 pointer-events-none';
-  el.style.transition = 'opacity .2s';
-  document.body.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; }, 1200);
-  setTimeout(() => { el.remove(); }, 1450);
-}
+// flashToast now lives in utils/toast (so importing it elsewhere doesn't drag in
+// this action menu + the emoji picker). Re-exported here for existing call sites
+// that still do `import { flashToast } from './MessageActionMenu'`.
+export { flashToast };
 
 interface MessageActionMenuProps {
   anchorRect: DOMRect;

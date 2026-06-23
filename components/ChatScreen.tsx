@@ -24,7 +24,7 @@ import PollComposerModal from './PollComposerModal';
 import MediaGalleryModal from './MediaGalleryModal';
 import RoomInfoModal from './RoomInfoModal';
 import MembersHistoryModal from './MembersHistoryModal';
-import { flashToast } from './MessageActionMenu';
+import { flashToast } from '../utils/toast';
 import { getRoomBackgroundStyle } from '../utils/roomBackgrounds';
 import { expiryShortLabel } from '../utils/roomLifecycle';
 import { parseTierError } from '../utils/tierGatingErrors';
@@ -1282,7 +1282,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
            onExit();
       } catch(e) {
           console.error("Delete failed", e);
-          alert('Could not delete the room. Please try again.');
+          flashToast('Could not delete the room. Please try again.');
           setIsDeleting(false);
       }
   };
@@ -1370,7 +1370,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
 
   const saveEmailSubscription = async () => {
       if (!user || !config.roomKey || !emailAddress.includes('@')) {
-          alert("Please enter a valid email.");
+          flashToast("Please enter a valid email.");
           return;
       }
       setIsSavingEmail(true);
@@ -1394,7 +1394,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, onExit }) => {
           setShowSettingsMenu(false);
       } catch (e: any) {
           console.error("Error saving email:", e);
-          alert("Failed to subscribe.");
+          flashToast("Failed to subscribe.");
       } finally {
           setIsSavingEmail(false);
       }
