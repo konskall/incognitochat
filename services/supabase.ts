@@ -160,3 +160,13 @@ export async function openBillingPortal(): Promise<BillingResult> {
   window.location.href = url;
   return { ok: true };
 }
+
+// GDPR self-serve account deletion. The delete-account edge function (service role)
+// cancels the Stripe customer, deletes owned rooms + memberships + settings +
+// subscription + storage, then the auth user. IRREVERSIBLE.
+export async function deleteAccount(): Promise<BillingResult> {
+  const { data, error } = await supabase.functions.invoke('delete-account', { body: {} });
+  if (error) return { ok: false, error: await readFnError(error) };
+  if ((data as any)?.ok) return { ok: true };
+  return { ok: false, error: (data as any)?.error || 'DELETE_FAILED' };
+}

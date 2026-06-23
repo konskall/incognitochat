@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom, startCheckout, openBillingPortal, setRoomAutoDelete, setMyAvatar, getOrCreateNotesRoom } from '../services/supabase';
 import { flashToast } from '../utils/toast';
+import DeleteAccountModal from './DeleteAccountModal';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { broadcastRoomDeleted, parseRoomDeletedPayload, expiryShortLabel, isExpired } from '../utils/roomLifecycle';
 import { readTombstones, upsertTombstone, removeTombstone, type RoomTombstone } from '../utils/roomTombstones';
@@ -479,6 +480,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
 
   // Per-room overview (unread count + last-message preview) and user settings.
   const [overview, setOverview] = useState<Map<string, Overview>>(new Map());
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [settings, setSettings] = useState<Map<string, RoomSetting>>(new Map());
   const settingsRef = useRef(settings);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
@@ -1786,7 +1788,15 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                 ))}
                             </div>
                         )}
-                        <p className="text-center text-[10px] text-slate-300 dark:text-slate-700 mt-8 select-none" title="Service worker version on this device">
+                        <div className="mt-8 text-center">
+                            <button
+                                onClick={() => setShowDeleteAccount(true)}
+                                className="text-[11px] font-medium text-slate-400 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-colors rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                            >
+                                Delete account
+                            </button>
+                        </div>
+                        <p className="text-center text-[10px] text-slate-300 dark:text-slate-700 mt-3 select-none" title="Service worker version on this device">
                             SW {swVersion ?? 'unknown (stale or none)'}
                         </p>
                     </div>
@@ -1794,6 +1804,11 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
             </div>
         </div>
     </div>
+    <DeleteAccountModal
+        show={showDeleteAccount}
+        onClose={() => setShowDeleteAccount(false)}
+        onDeleted={() => { flashToast('Your account has been deleted.'); onLogout(); }}
+    />
     </>
   );
 };
