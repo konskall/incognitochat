@@ -12,7 +12,9 @@ interface LandingPageProps {
 
 // Public-dir asset, resolved under the Vite base (`/incognitochat/`) so it works
 // in dev, on GitHub Pages, and behind any custom domain — no hardcoded origin.
-const LOGO = `${import.meta.env.BASE_URL}favicon-96x96.png`;
+// The 192px PWA icon (not the 96px favicon) so the ~88px hero box stays crisp on
+// high-DPR screens — a 96px source is too small once devicePixelRatio ≥ 1.5.
+const LOGO = `${import.meta.env.BASE_URL}web-app-manifest-192x192.png`;
 
 // Shared focus ring so keyboard users get a visible affordance (tap-highlight is
 // disabled globally in index.css).
@@ -371,7 +373,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
       </main>
 
       <footer
-        className="py-12 px-6 border-t border-slate-200 dark:border-slate-900 text-center text-slate-600 dark:text-slate-500 text-sm"
+        className="py-12 px-6 border-t border-slate-200 dark:border-slate-900 text-center text-slate-600 dark:text-slate-400 text-sm"
         style={{ paddingBottom: 'max(3rem, env(safe-area-inset-bottom))' }}
       >
         {/* Stacks on phones (© line, then tagline); single line on ≥sm with a dot. */}

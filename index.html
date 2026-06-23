@@ -134,8 +134,9 @@
          avatars — doesn't open an unused connection. Previously these were
          trapped inside <noscript>, so they did nothing with JS enabled. -->
     <link rel="dns-prefetch" href="https://api.dicebear.com" />
-    <!-- Preload the landing hero logo (LCP element). -->
-    <link rel="preload" as="image" href="./favicon-96x96.png" fetchpriority="high" />
+    <!-- Preload the landing hero logo (LCP element). 192px to match the hero
+         <img> source — keeps it crisp on high-DPR screens. -->
+    <link rel="preload" as="image" href="./web-app-manifest-192x192.png" fetchpriority="high" />
         <!-- PWA Install Prompt Capture - Must be before React loads -->
     <script>
       window.deferredPrompt = null;
