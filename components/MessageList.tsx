@@ -632,7 +632,11 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
                         onToggleClosed={(closed) => onToggleClosedPoll?.(msg, closed)}
                     />
                 )}
-                {msg.text && <div className={`leading-relaxed whitespace-pre-wrap break-words ${(msg.attachment || msg.location) ? 'mt-2 pt-2 border-t ' + (isMe ? 'border-white/20' : 'border-slate-100 dark:border-slate-700') : ''}`}>{renderContent()}</div>}
+                {/* Location messages carry a generic "📍 Shared a location" text for
+                    reply-previews / notifications / search, but it's redundant under the
+                    map card (which already says "Shared location" + coords) — so hide it
+                    in the bubble. */}
+                {msg.text && !msg.location && <div className={`leading-relaxed whitespace-pre-wrap break-words ${msg.attachment ? 'mt-2 pt-2 border-t ' + (isMe ? 'border-white/20' : 'border-slate-100 dark:border-slate-700') : ''}`}>{renderContent()}</div>}
                 
                 {/* Grounding Sources UI */}
                 {msg.groundingMetadata && msg.groundingMetadata.length > 0 && (
@@ -674,7 +678,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
             bubbleHTML={menu.html}
             bubbleClass={menu.cls}
             isMe={isMe}
-            canEdit={isMe && !msg.poll && !!(msg.text && msg.text.trim())}
+            canEdit={isMe && !msg.poll && !msg.location && !!(msg.text && msg.text.trim())}
             canDelete={isMe || isBot}
             canPin={!!isOwner}
             isPinned={!!isPinned}
