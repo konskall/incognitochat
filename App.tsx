@@ -69,6 +69,16 @@ const App: React.FC = () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (cancelled) return;
+
+        // Strip the bare "#" that implicit-flow OAuth leaves behind: Google
+        // returns the tokens in the URL hash (#access_token=…), and once
+        // getSession() above consumes them Supabase clears the hash but a lone
+        // "#" lingers in the address bar (e.g. ".../incognitochat/#"). Cosmetic
+        // only, but tidy it. Guarded so a real (non-empty) hash is never touched.
+        if (window.location.hash === '' && window.location.href.endsWith('#')) {
+          window.history.replaceState({}, '', window.location.pathname + window.location.search);
+        }
+
         let isGoogleUser = false;
 
         if (session?.user) {
