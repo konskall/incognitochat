@@ -16,9 +16,11 @@ class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: unknown, info: unknown) {
-    // Console for now; a monitoring sink (Sentry / first-party edge fn) can hook
-    // in here later without touching call sites.
     console.error('Render error caught by ErrorBoundary:', error, info);
+    // Report to the monitoring sink. Dynamically imported so @sentry/react never
+    // enters the eager bundle (shares the chunk the entry point already loads).
+    const componentStack = (info as { componentStack?: string } | null)?.componentStack ?? null;
+    void import('../utils/sentry').then((m) => m.captureException(error, componentStack)).catch(() => {});
   }
 
   private handleReload = () => { window.location.reload(); };

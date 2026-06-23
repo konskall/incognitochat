@@ -6,6 +6,11 @@ import './index.css';
 // for a room you're already viewing stays silent (see utils/swBridge.ts).
 import './utils/swBridge';
 
+// Error monitoring (Sentry) — dynamically imported so the SDK lands in its OWN
+// chunk, off the critical first-paint path. No-op until a DSN is set in
+// utils/sentry.ts, and only active in production builds.
+void import('./utils/sentry').then((m) => m.initSentry()).catch(() => {});
+
 // Minimal, self-contained "new version" banner (no React dependency so it works
 // regardless of app state). Tapping Reload loads the fresh build.
 function showUpdatePrompt() {
