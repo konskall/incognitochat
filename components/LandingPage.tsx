@@ -201,7 +201,14 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
-  const scrollToPricing = () => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Ref (not getElementById) because PricingSection is lazy-mounted by
+  // DeferUntilVisible — its #pricing element isn't in the DOM until the user
+  // scrolls near it, so getElementById('pricing') was a silent no-op from the
+  // top of the page (the "View Plans" button appeared dead). The ref targets the
+  // always-present wrapper; scrolling to it brings the placeholder into view,
+  // which mounts PricingSection.
+  const pricingRef = useRef<HTMLDivElement>(null);
+  const scrollToPricing = () => pricingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   return (
     <div
@@ -336,9 +343,12 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
           </ol>
         </section>
 
-        <DeferUntilVisible minHeight={720}>
-          <PricingSection onStartFree={onStart} onChoosePlan={onChoosePlan} />
-        </DeferUntilVisible>
+        {/* scroll-mt-20 keeps the heading clear of the sticky glass header. */}
+        <div ref={pricingRef} className="scroll-mt-20">
+          <DeferUntilVisible minHeight={720}>
+            <PricingSection onStartFree={onStart} onChoosePlan={onChoosePlan} />
+          </DeferUntilVisible>
+        </div>
 
         {/* Trust Section */}
         <section aria-labelledby="trust-title" className="max-w-4xl mx-auto px-6 py-12 lg:py-20 text-center">
