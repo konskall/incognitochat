@@ -1,6 +1,18 @@
 
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { sentryVitePlugin } from '@sentry/vite-plugin';
+
+// vite.config runs in Node; we read build-time env without pulling in @types/node.
+declare const process: { env: Record<string, string | undefined> };
+
+// Source-map upload to Sentry runs ONLY when a build-time auth token is present
+// (set as the SENTRY_AUTH_TOKEN GitHub Actions secret). Without it — local builds
+// and any build before the secret is added — the plugin is skipped entirely and
+// source maps are NOT emitted, so nothing changes and no .map files leak to the
+// public GitHub Pages site. With it, maps are built ('hidden', not referenced in
+// the bundle), uploaded so Sentry stack traces are readable, then deleted.
+const SENTRY_UPLOAD = !!process.env.SENTRY_AUTH_TOKEN;
 
 // Inject a <link rel="preload"> for the hashed self-hosted Inter woff2 so the
 // hero/LCP text font is discovered immediately, instead of only after the
@@ -29,12 +41,30 @@ function preloadInterFont(): Plugin {
 // It now lives server-side as the GEMINI_API_KEY secret used by the
 // `inco-ai` Supabase Edge Function (supabase/functions/inco-ai).
 export default defineConfig({
-  plugins: [react(), preloadInterFont()],
+  plugins: [
+    react(),
+    preloadInterFont(),
+    // Must come last. Disabled unless SENTRY_AUTH_TOKEN is set (see above).
+    ...(SENTRY_UPLOAD
+      ? [sentryVitePlugin({
+          org: process.env.SENTRY_ORG,
+          project: process.env.SENTRY_PROJECT,
+          authToken: process.env.SENTRY_AUTH_TOKEN,
+          telemetry: false,
+          // Don't ship source maps to GitHub Pages — upload to Sentry then delete.
+          sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
+          // A Sentry/network hiccup must never fail the deploy — log and move on.
+          errorHandler: (err) => { console.warn('Sentry source-map upload failed (non-fatal):', err); },
+        })]
+      : []),
+  ],
   // Base path set to repository name for GitHub Pages
   base: '/incognitochat/',
   build: {
     outDir: 'dist',
-    sourcemap: false,
+    // 'hidden' = emit maps for upload but don't reference them in the bundle
+    // (so the browser never requests them). Only when we're actually uploading.
+    sourcemap: SENTRY_UPLOAD ? 'hidden' : false,
     minify: 'terser',
     terserOptions: {
       compress: {
