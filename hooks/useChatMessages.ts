@@ -156,7 +156,11 @@ export const useChatMessages = (
   // re-read the held ids and drop the gone ones + refresh changed fields.
   const reconcileHeld = useCallback(async () => {
     if (!roomKey || !enabled) return;
-    const ids = messagesRef.current.map((m) => m.id);
+    // Exclude not-yet-persisted optimistic messages: their temp ids are not
+    // valid uuids, so including them makes .in('id', …) raise 22P02 and abort
+    // the whole pass (a lingering 'failed' temp would break reconcile on every
+    // refocus). They have no server row to reconcile against anyway.
+    const ids = messagesRef.current.filter((m) => !m.status).map((m) => m.id);
     if (ids.length === 0) return;
     // Chunk the id list: a single .in('id', ids) with a few hundred 36-char UUIDs
     // can blow past PostgREST/proxy URL-length limits and fail silently, which
@@ -182,6 +186,7 @@ export const useChatMessages = (
       let changed = false;
       const next: Message[] = [];
       for (const m of prev) {
+        if (m.status) { next.push(m); continue; } // keep in-flight/failed optimistic messages
         const row = byId.get(m.id);
         if (!row) { changed = true; continue; } // deleted while away — drop it
         // Only re-map (re-decrypt + re-allocate) when a tracked field actually
@@ -211,7 +216,7 @@ export const useChatMessages = (
   // from the "Load earlier" button).
   const loadOlderMessages = useCallback(async () => {
     if (!roomKey || !enabled || isLoadingOlder) return;
-    const oldest = messagesRef.current[0]?.createdAt;
+    const oldest = messagesRef.current.find((m) => !m.status)?.createdAt;
     if (!oldest) return;
 
     setIsLoadingOlder(true);
@@ -252,7 +257,10 @@ export const useChatMessages = (
   // cheaper than the old full refetch of the whole history (PERF-4).
   const fetchNewer = useCallback(async () => {
     if (!roomKey || !enabled) return;
-    const latest = messagesRef.current[messagesRef.current.length - 1]?.createdAt;
+    // Persisted rows only — an optimistic temp at the tail carries a CLIENT
+    // timestamp that could skip a concurrent peer message under clock skew.
+    const persisted = messagesRef.current.filter((m) => !m.status);
+    const latest = persisted[persisted.length - 1]?.createdAt;
     if (!latest) {
       fetchInitial();
       return;

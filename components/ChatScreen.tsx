@@ -902,7 +902,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             // would otherwise auto-broadcast "read up to" a message it never saw
             // → a false "Seen" on the sender's side. Always advance for your OWN
             // message (you've necessarily seen what you just sent).
-            if (isMine || document.visibilityState === 'visible') setLastRead(last.createdAt);
+            // Don't advance the read pointer off a not-yet-persisted optimistic
+            // message — its createdAt is a CLIENT time and would pin lastRead
+            // ahead of real server times (false "Seen"). It re-fires post-reconcile
+            // with the server createdAt.
+            if (!last.status && (isMine || document.visibilityState === 'visible')) setLastRead(last.createdAt);
         } else {
             setShowScrollDown(true);
             setNewMessageCount((c) => c + 1);
@@ -1357,18 +1361,24 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       }
   };
 
+  // Keep a fresh ref so the memoized handleRetry (passed to the memoized
+  // MessageList) doesn't change identity every keystroke just to capture the
+  // non-memoized notifySubscribers — which would defeat the list's React.memo.
+  const notifySubscribersRef = useRef(notifySubscribers);
+  notifySubscribersRef.current = notifySubscribers;
+
   // Retry a failed optimistic text send (tapped from the inline failed bubble).
-  const handleRetry = async (msg: Message) => {
+  const handleRetry = useCallback(async (msg: Message) => {
       const outcome = await retryMessage(msg.id);
       if (outcome.ok) {
           setQuotaBump((n) => n + 1);
-          notifySubscribers('message', msg.text);
+          notifySubscribersRef.current('message', msg.text);
       } else {
           const tierErr = parseTierError(outcome.error, tier);
           if (tierErr?.code === 'QT002') promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
           else if (tierErr) flashToast(tierErr.message);
       }
-  };
+  }, [retryMessage, tier, promptUpgrade]);
 
   const handleSendLocation = async () => {
        if (!user || roomDeleted) return;

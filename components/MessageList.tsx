@@ -360,7 +360,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
     setSwipeX(Math.max(-90, Math.min(90, dx)));
   };
   const onTouchEnd = () => {
-    if (Math.abs(swipeX) > 55) onReply(msg);
+    if (Math.abs(swipeX) > 55 && !msg.status) onReply(msg); // no reply to a not-yet-persisted bubble (dead temp id)
     setSwipeX(0);
     touchStart.current = null;
     swiping.current = false;
@@ -612,8 +612,8 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
           onContextMenu={(e) => { e.preventDefault(); openActionMenu(); }}
           onClickCapture={(e) => { if (pressFired.current) { e.preventDefault(); e.stopPropagation(); pressFired.current = false; } }}
           tabIndex={0}
-          aria-haspopup="menu"
-          aria-keyshortcuts="Enter Space"
+          aria-haspopup={msg.status ? undefined : 'menu'}
+          aria-keyshortcuts={msg.status ? undefined : 'Enter Space'}
           onKeyDown={(e) => {
             // Only when the bubble itself is focused — let focused child links /
             // buttons handle their own Enter/Space.
@@ -675,7 +675,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
                   </div>
                 )}
 
-                <div className={`flex items-center justify-end gap-1 mt-1 select-none ${isMe ? 'text-blue-100' : isBot ? 'text-indigo-500 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400'}`}>{msg.isEdited && <span className="text-[10px] italic">(edited)</span>}<span className="text-[11px] font-medium">{timeString}</span>{isMe && msg.status === 'sending' && <Clock size={12} aria-label="Sending" className="opacity-80" />}{isMe && msg.status === 'failed' && (<button type="button" onClick={(e) => { e.stopPropagation(); onRetry?.(msg); }} aria-label="Message failed to send. Tap to retry." className="flex items-center gap-0.5 text-red-300 hover:text-red-100 transition-colors"><AlertCircle size={12} /><span className="text-[10px] font-semibold">Retry</span></button>)}{isMe && showSeen && <span className="flex items-center gap-0.5 text-[10px] font-semibold" title="Seen"><CheckCheck size={12} /></span>}</div>
+                <div className={`flex items-center justify-end gap-1 mt-1 select-none ${isMe ? 'text-blue-100' : isBot ? 'text-indigo-500 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400'}`}>{msg.isEdited && <span className="text-[10px] italic">(edited)</span>}<span className="text-[11px] font-medium">{timeString}</span>{isMe && msg.status === 'sending' && <Clock size={12} aria-label="Sending" className="opacity-80" />}{isMe && msg.status === 'failed' && (<button type="button" onClick={(e) => { e.stopPropagation(); onRetry?.(msg); }} aria-label="Message failed to send. Tap to retry." className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-red-600 text-white hover:bg-red-700 transition-colors"><AlertCircle size={12} /><span className="text-[11px] font-semibold">Retry</span></button>)}{isMe && showSeen && <span className="flex items-center gap-0.5 text-[10px] font-semibold" title="Seen"><CheckCheck size={12} /></span>}</div>
             </div>
             {msg.reactions && Object.keys(msg.reactions).length > 0 && <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>{Object.entries(msg.reactions).map(([emoji, uids]) => { if (uids.length === 0) return null; const iReacted = uids.includes(currentUid); return (<button key={emoji} onClick={() => onReact(msg, emoji)} aria-pressed={iReacted} aria-label={`React with ${emoji}, ${uids.length} ${uids.length === 1 ? 'reaction' : 'reactions'}${iReacted ? ', you reacted' : ''}`} className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs shadow-sm border transition-all hover:scale-105 ${iReacted ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-slate-800 dark:text-blue-100' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}><Emoji emoji={emoji} size={18} /><span className={`font-semibold text-[11px] ${iReacted ? 'text-blue-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>{uids.length}</span></button>);})}</div>}
         </div>
