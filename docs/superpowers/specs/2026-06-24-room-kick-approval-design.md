@@ -263,6 +263,106 @@ CREATE POLICY rar_select_owner_or_self ON public.room_access_requests
 ALTER PUBLICATION supabase_realtime ADD TABLE public.room_access_requests;
 ```
 
+### Task 3 — join_gate_on_approval
+
+Migration name: `join_gate_on_approval` — applied 2026-06-24 via Supabase MCP `apply_migration`.
+
+```sql
+CREATE OR REPLACE FUNCTION public.join_or_create_room(p_room_key text, p_room_name text, p_pin text, p_username text, p_create_if_missing boolean DEFAULT true)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_room public.rooms%rowtype;
+  v_uid  text := (select auth.uid())::text;
+  v_is_new boolean := false;
+  v_tier text;
+  v_limit int;
+  v_count int;
+  v_expires timestamptz;
+begin
+  if v_uid is null then
+    raise exception 'AUTH_REQUIRED';
+  end if;
+
+  select * into v_room from public.rooms where room_key = p_room_key;
+
+  if not found then
+    if not p_create_if_missing then
+      raise exception 'ROOM_DELETED';
+    end if;
+
+    v_tier  := public.effective_tier((select auth.uid()));
+    v_limit := case v_tier when 'ultra' then null when 'basic' then 10 else 1 end;
+    if v_limit is not null then
+      select count(*) into v_count
+      from public.rooms
+      where created_by = (select auth.uid())
+        and (expires_at is null or expires_at > now())
+        and is_notes = false;
+      if v_count >= v_limit then
+        raise exception 'ROOM_LIMIT:%', v_tier using errcode = 'QT003';
+      end if;
+    end if;
+    if v_tier = 'free' then
+      v_expires := now() + interval '24 hours';
+    else
+      v_expires := null;
+    end if;
+
+    insert into public.rooms (room_key, room_name, pin, created_by, expires_at)
+    values (p_room_key, p_room_name, p_pin, (select auth.uid()), v_expires)
+    returning * into v_room;
+    v_is_new := true;
+  else
+    if v_room.pin is distinct from p_pin then
+      raise exception 'WRONG_PIN';
+    end if;
+
+    -- Approval gate: while locked, a non-owner who is NOT already a member is not
+    -- admitted — record a pending request and return early. Owner + existing
+    -- members fall through and (re)subscribe normally.
+    if coalesce(v_room.approval_required, false)
+       and v_room.created_by is distinct from (select auth.uid())
+       and not exists (
+         select 1 from public.subscribers s
+         where s.room_key = p_room_key and s.uid = v_uid
+       )
+    then
+      insert into public.room_access_requests (room_key, uid, username)
+      values (p_room_key, v_uid, p_username)
+      on conflict (room_key, uid)
+        do update set username = excluded.username, requested_at = timezone('utc', now());
+      return jsonb_build_object('pending', true, 'room_name', v_room.room_name);
+    end if;
+  end if;
+
+  insert into public.subscribers (room_key, uid, username)
+  values (p_room_key, v_uid, p_username)
+  on conflict (room_key, uid) do update set username = excluded.username;
+
+  return jsonb_build_object(
+    'room_key', v_room.room_key,
+    'room_name', v_room.room_name,
+    'created_by', v_room.created_by,
+    'ai_enabled', coalesce(v_room.ai_enabled, false),
+    'ai_avatar_url', v_room.ai_avatar_url,
+    'avatar_url', v_room.avatar_url,
+    'background_url', v_room.background_url,
+    'background_type', v_room.background_type,
+    'background_preset', v_room.background_preset,
+    'message_ttl_seconds', v_room.message_ttl_seconds,
+    'auto_delete_seconds', v_room.auto_delete_seconds,
+    'pinned_message_id', v_room.pinned_message_id,
+    'approval_required', coalesce(v_room.approval_required, false),
+    'is_new', v_is_new
+  );
+end;
+$function$;
+```
+
 ### Task 2 — lockdown_on_remove_clear
 
 Migration name: `lockdown_on_remove_clear` — applied 2026-06-24 via Supabase MCP `apply_migration`.
