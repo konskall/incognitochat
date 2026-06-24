@@ -363,6 +363,85 @@ end;
 $function$;
 ```
 
+### Task 4 — access_request_rpcs
+
+Migration name: `access_request_rpcs` — applied 2026-06-24 via Supabase MCP `apply_migration`.
+
+```sql
+CREATE OR REPLACE FUNCTION public.approve_access_request(p_room_key text, p_uid text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare v_username text;
+begin
+  if not exists (
+    select 1 from public.rooms r
+    where r.room_key = p_room_key and r.created_by = (select auth.uid())
+  ) then
+    raise exception 'NOT_OWNER' using errcode = 'P0001';
+  end if;
+
+  select username into v_username
+  from public.room_access_requests
+  where room_key = p_room_key and uid = p_uid;
+
+  if v_username is null then
+    return jsonb_build_object('approved', false);  -- no pending request (idempotent)
+  end if;
+
+  insert into public.subscribers (room_key, uid, username)
+  values (p_room_key, p_uid, v_username)
+  on conflict (room_key, uid) do update set username = excluded.username;
+
+  delete from public.room_access_requests where room_key = p_room_key and uid = p_uid;
+
+  return jsonb_build_object('approved', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.deny_access_request(p_room_key text, p_uid text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+begin
+  if not exists (
+    select 1 from public.rooms r
+    where r.room_key = p_room_key and r.created_by = (select auth.uid())
+  ) then
+    raise exception 'NOT_OWNER' using errcode = 'P0001';
+  end if;
+  delete from public.room_access_requests where room_key = p_room_key and uid = p_uid;
+  return jsonb_build_object('denied', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.set_room_approval(p_room_key text, p_required boolean)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+begin
+  if not exists (
+    select 1 from public.rooms r
+    where r.room_key = p_room_key and r.created_by = (select auth.uid())
+  ) then
+    raise exception 'NOT_OWNER' using errcode = 'P0001';
+  end if;
+  update public.rooms set approval_required = p_required where room_key = p_room_key;
+  return jsonb_build_object('approval_required', p_required);
+end;
+$function$;
+
+GRANT EXECUTE ON FUNCTION public.approve_access_request(text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.deny_access_request(text, text)    TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.set_room_approval(text, boolean)   TO anon, authenticated;
+```
+
 ### Task 2 — lockdown_on_remove_clear
 
 Migration name: `lockdown_on_remove_clear` — applied 2026-06-24 via Supabase MCP `apply_migration`.
