@@ -350,6 +350,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     hasMoreOlder,
     loadOlderMessages,
     sendMessage,
+    retryMessage,
     editMessage,
     deleteMessage,
     reactToMessage,
@@ -1286,10 +1287,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
               await editMessage(editingId, textToSend);
               setEditingMessageId(null);
           } else if (filesToSend.length === 0) {
-              // Plain text message (no attachments) — unchanged single-send path.
-              await sendMessage(textToSend, config, null, replyToSend, null, 'text');
-              setQuotaBump((n) => n + 1);
-              notifySubscribers('message', textToSend || 'Sent a file');
+              // Plain text — OPTIMISTIC: the bubble already rendered. sendMessage
+              // does NOT throw here; it resolves with the outcome. On failure the
+              // inline "failed + retry" bubble is the cue (no composer restore).
+              const outcome = await sendMessage(textToSend, config, null, replyToSend, null, 'text');
+              if (outcome.ok) {
+                  setQuotaBump((n) => n + 1);
+                  notifySubscribers('message', textToSend);
+              } else {
+                  const tierErr = parseTierError(outcome.error, tier);
+                  if (tierErr?.code === 'QT002') promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
+                  else if (tierErr) flashToast(tierErr.message);
+              }
           } else {
               // Multi-file: client-side gate first (the DB also enforces the
               // daily quota and raises QT002 on the over-limit insert).
@@ -1345,6 +1354,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
               flashToast(tierErr.message);
             }
           }
+      }
+  };
+
+  // Retry a failed optimistic text send (tapped from the inline failed bubble).
+  const handleRetry = async (msg: Message) => {
+      const outcome = await retryMessage(msg.id);
+      if (outcome.ok) {
+          setQuotaBump((n) => n + 1);
+          notifySubscribers('message', msg.text);
+      } else {
+          const tierErr = parseTierError(outcome.error, tier);
+          if (tierErr?.code === 'QT002') promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
+          else if (tierErr) flashToast(tierErr.message);
       }
   };
 
@@ -1817,6 +1839,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             onDelete={deleteMessage}
             onReply={handleReply}
             onReact={reactToMessage}
+            onRetry={handleRetry}
             onUserClick={handleUserClick}
             liveAvatars={liveAvatars}
             hasMoreOlder={hasMoreOlder}
