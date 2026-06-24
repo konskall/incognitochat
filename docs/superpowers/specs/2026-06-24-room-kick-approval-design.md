@@ -262,3 +262,62 @@ CREATE POLICY rar_select_owner_or_self ON public.room_access_requests
 
 ALTER PUBLICATION supabase_realtime ADD TABLE public.room_access_requests;
 ```
+
+### Task 2 — lockdown_on_remove_clear
+
+Migration name: `lockdown_on_remove_clear` — applied 2026-06-24 via Supabase MCP `apply_migration`.
+
+```sql
+CREATE OR REPLACE FUNCTION public.remove_room_member(p_room_key text, p_uid text)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare deleted integer;
+begin
+  if not exists (
+    select 1 from public.rooms r
+    where r.room_key = p_room_key and r.created_by = (select auth.uid())
+  ) then
+    raise exception 'NOT_OWNER' using errcode = 'P0001';
+  end if;
+
+  if p_uid = (select auth.uid())::text then
+    raise exception 'CANNOT_REMOVE_SELF' using errcode = 'P0001';
+  end if;
+
+  delete from public.subscribers where room_key = p_room_key and uid = p_uid;
+  get diagnostics deleted = row_count;
+
+  -- Lock the room: any non-member re-entry now needs owner approval.
+  update public.rooms set approval_required = true where room_key = p_room_key;
+
+  return deleted;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.clear_room_members(p_room_key text)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare deleted integer;
+begin
+  if not exists (
+    select 1 from public.rooms r
+    where r.room_key = p_room_key and r.created_by = (select auth.uid())
+  ) then
+    raise exception 'NOT_OWNER' using errcode = 'P0001';
+  end if;
+  delete from public.subscribers where room_key = p_room_key;
+  get diagnostics deleted = row_count;
+
+  -- Lock the room (owner re-subscribes via join_or_create_room, which exempts the owner).
+  update public.rooms set approval_required = true where room_key = p_room_key;
+
+  return deleted;
+end;
+$function$;
+```
