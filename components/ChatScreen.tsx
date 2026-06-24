@@ -666,13 +666,19 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         .select('room_key')
         .eq('room_key', config.roomKey)
         .maybeSingle();
-
     // Only treat as deleted when the row is CONFIRMED absent (no error).
-    // A transient network/RLS error must not kick the user out of the room.
-    if (!error && !data) {
-        setRoomDeleted(true);
+    if (!error && !data) { setRoomDeleted(true); return; }
+
+    // Backstop for a kick whose broadcast we missed (tab was backgrounded): if the
+    // room exists but we are no longer a member, eject. Only on a CONFIRMED false
+    // (no error) so a transient network/RLS blip never kicks the user.
+    if (!error && data && user?.uid) {
+      const { data: mem, error: memErr } = await supabase.rpc('is_member', { p_room_key: config.roomKey });
+      if (!memErr && mem === false) {
+        setAccessError('You were removed from this room by the owner.');
+      }
     }
-  }, [config.roomKey]);
+  }, [config.roomKey, user?.uid]);
 
   const initRoom = useCallback(async () => {
     if (!user || !config.roomKey) return;
@@ -1013,6 +1019,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       .on('broadcast', { event: 'room_deleted' }, () => {
         setRoomDeleted(true);
       })
+      .on('broadcast', { event: 'member_removed' }, ({ payload }) => {
+        if (payload?.uid && user?.uid && payload.uid === user.uid) {
+          setAccessError('You were removed from this room by the owner.');
+        }
+      })
+      .on('broadcast', { event: 'members_cleared' }, () => {
+        // Everyone except the owner is removed; the owner re-subscribes itself.
+        if (user?.uid && roomCreatorId && user.uid !== roomCreatorId) {
+          setAccessError('You were removed from this room by the owner.');
+        }
+      })
       .on('postgres_changes', {
         event: 'DELETE',
         schema: 'public',
@@ -1044,7 +1061,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       .subscribe();
     roomStatusChannelRef.current = roomStatusChannel;
     return () => { roomStatusChannelRef.current = null; supabase.removeChannel(roomStatusChannel); };
-  }, [config.roomKey, isRoomReady, roomDeleted]);
+  }, [config.roomKey, isRoomReady, roomDeleted, user?.uid, roomCreatorId]);
 
   // The free-tier 24h auto-delete timestamp isn't in the join RPC payload; read
   // it directly once the room is ready (members can SELECT room columns under
@@ -1078,6 +1095,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         roomKey: config.roomKey, roomName: config.roomName, pin: config.pin,
         username: config.username, createIfMissing: false,
       });
+      roomStatusChannelRef.current?.send({ type: 'broadcast', event: 'members_cleared', payload: {} });
       return true;
     } catch (e) {
       console.error('clear_room_members failed', e);
@@ -1094,6 +1112,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     try {
       const { error } = await supabase.rpc('remove_room_member', { p_room_key: config.roomKey, p_uid: uid });
       if (error) throw error;
+      roomStatusChannelRef.current?.send({ type: 'broadcast', event: 'member_removed', payload: { uid } });
       flashToast(`Removed ${username}.`);
       return true;
     } catch (e) {
