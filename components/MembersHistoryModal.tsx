@@ -62,6 +62,7 @@ const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose
     setConfirming(false);
     setPendingRemove(null);
     setFailed(new Set());
+    setDecidingUid(null);
     supabase.rpc('room_members', { p_room_key: roomKey }).then(({ data, error: err }) => {
       if (!alive) return;
       if (err) { console.error('room_members failed', err); setError(true); return; }
