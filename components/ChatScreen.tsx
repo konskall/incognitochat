@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase, joinOrCreateRoom, setMyAvatar } from '../services/supabase';
+import { supabase, joinOrCreateRoom, setMyAvatar, listAccessRequests, approveAccessRequest, denyAccessRequest, type PendingRequest } from '../services/supabase';
 import { ChatConfig, Message, User, Subscriber, Presence } from '../types';
 import MessageList from './MessageList';
 // WebRTC call logic is the heaviest component in the app (~43KB); load it
@@ -42,6 +42,7 @@ import { useMessageQuota } from '../hooks/useMessageQuota';
 import { useModalA11y } from '../hooks/useModalA11y';
 import UpgradeModal from './UpgradeModal';
 import WaitingApprovalScreen from './WaitingApprovalScreen';
+import AccessRequestPrompt from './AccessRequestPrompt';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -204,7 +205,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const [roomDeleted, setRoomDeleted] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState(false);
-  
+  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
+  const [decidingUid, setDecidingUid] = useState<string | null>(null);
+
   // Room & Creator State
   const [isRoomReady, setIsRoomReady] = useState(false);
   const [roomCreatorId, setRoomCreatorId] = useState<string | null>(null);
@@ -913,6 +916,42 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   }, [messages, readReceipts, user]);
 
   const isOwner = user?.uid === roomCreatorId;
+
+  // Owner only: load existing pending knocks and listen for new ones live.
+  useEffect(() => {
+    if (!isOwner || !isRoomReady || !config.roomKey) return;
+    let alive = true;
+    listAccessRequests(config.roomKey).then((rows) => { if (alive) setPendingRequests(rows); });
+    const ch = supabase.channel(`access_requests:${config.roomKey}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'room_access_requests', filter: `room_key=eq.${config.roomKey}` },
+        ({ new: row }: { new: PendingRequest }) => {
+          setPendingRequests((prev) => prev.some((r) => r.uid === row.uid) ? prev : [...prev, row]);
+        })
+      .subscribe();
+    return () => { alive = false; supabase.removeChannel(ch); };
+  }, [isOwner, isRoomReady, config.roomKey]);
+
+  const handleApprove = useCallback(async (uid: string): Promise<boolean> => {
+    setDecidingUid(uid);
+    const ok = await approveAccessRequest(config.roomKey, uid);
+    setDecidingUid(null);
+    if (ok) {
+      roomStatusChannelRef.current?.send({ type: 'broadcast', event: 'access_granted', payload: { uid } });
+      setPendingRequests((prev) => prev.filter((r) => r.uid !== uid));
+    } else { flashToast('Could not approve. Please try again.'); }
+    return ok;
+  }, [config.roomKey]);
+
+  const handleDeny = useCallback(async (uid: string): Promise<boolean> => {
+    setDecidingUid(uid);
+    const ok = await denyAccessRequest(config.roomKey, uid);
+    setDecidingUid(null);
+    if (ok) {
+      roomStatusChannelRef.current?.send({ type: 'broadcast', event: 'access_denied', payload: { uid } });
+      setPendingRequests((prev) => prev.filter((r) => r.uid !== uid));
+    } else { flashToast('Could not deny. Please try again.'); }
+    return ok;
+  }, [config.roomKey]);
 
   // --- Pinned message ---
   const pinnedMessage = useMemo(
@@ -1623,6 +1662,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         <WaitingApprovalScreen roomName={config.roomName} onCancel={onExit} />
       )}
 
+      {isOwner && pendingRequests.length > 0 && (
+        <AccessRequestPrompt
+          username={pendingRequests[0].username}
+          busy={decidingUid === pendingRequests[0].uid}
+          onApprove={() => handleApprove(pendingRequests[0].uid)}
+          onDeny={() => handleDeny(pendingRequests[0].uid)}
+        />
+      )}
+
       {accessError && createPortal(
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
           <div ref={accessErrorDialogRef} role="dialog" aria-modal="true" aria-labelledby="access-error-title" tabIndex={-1} className="outline-none bg-slate-900/90 backdrop-blur-2xl border border-white/10 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center ring-1 ring-white/10">
@@ -1929,6 +1977,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         canClear={user?.uid === roomCreatorId}
         onClearMembers={handleClearMembers}
         onRemoveMember={handleRemoveMember}
+        pendingRequests={isOwner ? pendingRequests : undefined}
+        onApprove={handleApprove}
+        onDeny={handleDeny}
       />
 
       <MediaGalleryModal

@@ -16,6 +16,9 @@ interface MembersHistoryModalProps {
   canClear?: boolean;                       // owner-only: show the Clear button + per-member remove
   onClearMembers?: () => Promise<boolean>;  // wipes membership (owner re-subscribed by caller)
   onRemoveMember?: (uid: string, username: string) => Promise<boolean>; // owner-only: remove one member
+  pendingRequests?: { uid: string; username: string; requested_at: string }[];
+  onApprove?: (uid: string) => Promise<boolean>;
+  onDeny?: (uid: string) => Promise<boolean>;
 }
 
 // Compact relative time, e.g. "5m ago", "3d ago". App code (Date.now allowed).
@@ -38,7 +41,7 @@ function timeAgo(iso: string): string {
 // History of everyone who has joined this room (the `subscribers` membership
 // records). The subscribers SELECT RLS is self-only, so the list comes from the
 // `room_members` SECURITY DEFINER RPC (gated to current members; excludes email).
-const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose, roomKey, onlineUids, selfUid, canClear, onClearMembers, onRemoveMember }) => {
+const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose, roomKey, onlineUids, selfUid, canClear, onClearMembers, onRemoveMember, pendingRequests, onApprove, onDeny }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
   const [members, setMembers] = useState<MemberRow[] | null>(null);
@@ -49,6 +52,7 @@ const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose
   const [clearing, setClearing] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<MemberRow | null>(null); // row awaiting remove confirm
   const [removingUid, setRemovingUid] = useState<string | null>(null);        // remove in flight
+  const [decidingUid, setDecidingUid] = useState<string | null>(null);
 
   useEffect(() => {
     if (!show || !roomKey) return;
@@ -112,6 +116,34 @@ const MembersHistoryModal: React.FC<MembersHistoryModalProps> = ({ show, onClose
         </div>
 
         <p className="px-4 pt-3 pb-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">Everyone who has joined this room</p>
+
+        {pendingRequests && pendingRequests.length > 0 && (
+          <div className="px-2 pt-1 pb-2 border-b border-slate-100 dark:border-slate-800">
+            <p className="px-2 pt-1 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-blue-500">Pending requests · {pendingRequests.length}</p>
+            <ul>
+              {pendingRequests.map((p) => (
+                <li key={p.uid} className="flex items-center gap-3 px-2 py-2.5">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                    {p.username.substring(0, 2).toUpperCase()}
+                  </div>
+                  <p className="flex-1 min-w-0 text-sm font-semibold text-slate-800 dark:text-white truncate">{p.username}</p>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={async () => { setDecidingUid(p.uid); await onDeny?.(p.uid); setDecidingUid(null); }}
+                      disabled={decidingUid === p.uid}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition disabled:opacity-50"
+                    >Deny</button>
+                    <button
+                      onClick={async () => { setDecidingUid(p.uid); await onApprove?.(p.uid); setDecidingUid(null); }}
+                      disabled={decidingUid === p.uid}
+                      className="px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition active:scale-95 disabled:opacity-60"
+                    >{decidingUid === p.uid ? '…' : 'Approve'}</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Loading skeleton */}
         {members === null && !error && (
