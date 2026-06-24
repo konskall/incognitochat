@@ -1,7 +1,7 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, Search, Image as ImageIcon, Users, Wand2, Sparkles, Palette, Timer, Mail, Share2, Trash2, ChevronRight, Lock, ChevronLeft, Clock, Eraser, QrCode, Copy, Check,
+  X, Search, Image as ImageIcon, Users, Wand2, Sparkles, Palette, Timer, Mail, Share2, Trash2, ChevronRight, Lock, ChevronLeft, Clock, Eraser, QrCode, Copy, Check, ShieldCheck,
 } from 'lucide-react';
 import qrcode from 'qrcode-generator';
 import { ChatConfig, Presence } from '../types';
@@ -36,6 +36,9 @@ interface RoomInfoModalProps {
   onClearMessages: () => void; // wipe all messages in the room (Basic+)
   onOpenEmail: () => void;
   onDeleteRoom: () => void;
+  approvalRequired?: boolean;
+  onToggleApproval?: () => void;
+  pendingCount?: number;
   // Tier plumbing (Phase 3): entitlements + upgrade prompt; gates the
   // appearance / disappearing / auto-delete / AI rows by tier.
   ent?: import('../utils/entitlements').TierEntitlements;
@@ -85,6 +88,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   onToggleSearch, onOpenGallery, onOpenParticipants, onOpenMembers, onToggleAI, onOpenAiAvatar,
   onOpenRoomAppearance, onOpenEphemeral, onOpenRoomExpiry, onClearMessages, onOpenEmail, onDeleteRoom,
   ent, entLoading, onUpgrade,
+  approvalRequired, onToggleApproval, pendingCount,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
@@ -200,7 +204,12 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
               <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Share</span>
             </button>
             <button onClick={() => go(onOpenMembers ?? onOpenParticipants)} className="flex flex-col items-center gap-1.5 group">
-              <span className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition group-active:scale-95"><Users size={20} /></span>
+              <span className="relative w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition group-active:scale-95">
+                <Users size={20} />
+                {!!pendingCount && pendingCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-900">{pendingCount}</span>
+                )}
+              </span>
               <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Members</span>
             </button>
             <button onClick={() => setShowQr((v) => !v)} aria-expanded={showQr} className="flex flex-col items-center gap-1.5 group">
@@ -274,6 +283,19 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
             for everyone (incl. anonymous free joiners). Free -> locked -> Basic.
             Paid editing stays manager-only (owner or any logged-in member). */}
         <SectionLabel>Room</SectionLabel>
+        {isOwner && (
+          <Row
+            icon={<ShieldCheck size={18} />}
+            label="Approval to join"
+            onClick={() => onToggleApproval?.()}
+            tint="bg-emerald-500/10 text-emerald-500"
+            trailing={
+              <span role="switch" aria-checked={!!approvalRequired} className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${approvalRequired ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${approvalRequired ? 'translate-x-4' : ''}`} />
+              </span>
+            }
+          />
+        )}
         {!entLoading && ent && !ent.canRoomAppearance ? (
           <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => { onClose(); onUpgrade?.('Room appearance', 'basic'); }} tint="bg-blue-500/10 text-blue-500" trailing={lockedTrailing} />
         ) : canManage ? (

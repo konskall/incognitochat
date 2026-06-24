@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase, joinOrCreateRoom, setMyAvatar, listAccessRequests, approveAccessRequest, denyAccessRequest, type PendingRequest } from '../services/supabase';
+import { supabase, joinOrCreateRoom, setMyAvatar, listAccessRequests, approveAccessRequest, denyAccessRequest, setRoomApproval, type PendingRequest } from '../services/supabase';
 import { ChatConfig, Message, User, Subscriber, Presence } from '../types';
 import MessageList from './MessageList';
 // WebRTC call logic is the heaviest component in the app (~43KB); load it
@@ -211,6 +211,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   // Room & Creator State
   const [isRoomReady, setIsRoomReady] = useState(false);
   const [roomCreatorId, setRoomCreatorId] = useState<string | null>(null);
+  const [approvalRequired, setApprovalRequired] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiAvatarUrl, setAiAvatarUrl] = useState('');
 
@@ -731,6 +732,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
 
       if (room) {
         setRoomCreatorId(room.created_by);
+        setApprovalRequired(!!room.approval_required);
         setAiEnabled(!!room.ai_enabled);
         setAiAvatarUrl(room.ai_avatar_url || '');
         setRoomAvatarUrl(room.avatar_url || '');
@@ -1119,6 +1121,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             if (payload.new.auto_delete_seconds !== undefined) setRoomExpiry(payload.new.auto_delete_seconds ?? null);
             if (payload.new.expires_at !== undefined) setRoomExpiresAt(payload.new.expires_at ?? null);
             if (payload.new.pinned_message_id !== undefined) setPinnedMessageId(payload.new.pinned_message_id ?? null);
+            if (payload.new.approval_required !== undefined) setApprovalRequired(payload.new.approval_required);
         }
       })
       .subscribe();
@@ -1159,6 +1162,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         username: config.username, createIfMissing: false,
       });
       roomStatusChannelRef.current?.send({ type: 'broadcast', event: 'members_cleared', payload: {} });
+      setApprovalRequired(true);
       return true;
     } catch (e) {
       console.error('clear_room_members failed', e);
@@ -1166,6 +1170,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       return false;
     }
   }, [config]);
+
+  // Owner-only: toggle the "Approval to join" flag. Optimistic update with revert.
+  const handleToggleApproval = useCallback(async () => {
+    const next = !approvalRequired;
+    setApprovalRequired(next); // optimistic; room_status echo keeps members in sync
+    const ok = await setRoomApproval(config.roomKey, next);
+    if (!ok) { setApprovalRequired(!next); flashToast('Could not change the approval setting.'); }
+  }, [approvalRequired, config.roomKey]);
 
   // Owner-only: remove a SINGLE member (kick, not ban). The server RPC re-checks
   // ownership and refuses self-removal; messages stay and the user can rejoin
@@ -1176,6 +1188,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       const { error } = await supabase.rpc('remove_room_member', { p_room_key: config.roomKey, p_uid: uid });
       if (error) throw error;
       roomStatusChannelRef.current?.send({ type: 'broadcast', event: 'member_removed', payload: { uid } });
+      setApprovalRequired(true);
       flashToast(`Removed ${username}.`);
       return true;
     } catch (e) {
@@ -1966,6 +1979,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         ent={ent}
         entLoading={entLoading}
         onUpgrade={promptUpgrade}
+        approvalRequired={approvalRequired}
+        onToggleApproval={handleToggleApproval}
+        pendingCount={isOwner ? pendingRequests.length : 0}
       />
 
       <MembersHistoryModal
