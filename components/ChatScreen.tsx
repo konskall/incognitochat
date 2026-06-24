@@ -565,7 +565,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
                   roomName: config.roomName,
                   title: pushTitle,
                   body: action === 'deleted' ? details : `${config.username}: ${details}`,
-                  url: window.location.href,
+                  // Deep-link to THIS room so tapping the push opens the room the
+                  // notification is about — not whatever room the recipient last had
+                  // open. window.location.href is just the app root here (the SPA uses
+                  // state routing, so the URL carries no room while in a chat). `via=push`
+                  // tells App.tsx to drop a returning member straight in (vs the
+                  // login-prefill an invite link gets). The recipient already holds this
+                  // name+pin; it travels only in the encrypted Web Push payload.
+                  url: `${window.location.origin}${import.meta.env.BASE_URL}?room=${encodeURIComponent(config.roomName)}&pin=${encodeURIComponent(config.pin)}&via=push`,
                   // Deliberately NO presence-based excludeUids for push (the
                   // server still excludes the sender). Presence lags: a member
                   // who just closed/backgrounded the app can still read as

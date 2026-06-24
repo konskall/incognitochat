@@ -57,10 +57,14 @@ const App: React.FC = () => {
       const inviteRoom = search.get('room');
       const invitePin = search.get('pin');
       const hasInvite = !!(inviteRoom && invitePin);
+      // A push-notification deep-link (`via=push`) means "open THIS exact room"
+      // for a returning member — distinct from a plain invite link, which routes
+      // to the prefilled login so a new person can pick a username.
+      const fromPush = search.get('via') === 'push';
       if (hasInvite) {
         setInvitePrefill({ roomName: inviteRoom!, pin: invitePin! });
         sessionStorage.setItem('hasSeenLanding', 'true');
-        search.delete('room'); search.delete('pin');
+        search.delete('room'); search.delete('pin'); search.delete('via');
         const qs = search.toString();
         window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
       }
@@ -96,7 +100,22 @@ const App: React.FC = () => {
         const storedUsername = localStorage.getItem('chatUsername') || session?.user?.user_metadata?.full_name;
         const storedAvatar = localStorage.getItem('chatAvatarURL') || session?.user?.user_metadata?.custom_avatar || session?.user?.user_metadata?.avatar_url;
 
-        if (hasInvite) {
+        if (hasInvite && fromPush && storedUsername) {
+            // Push deep-link for a returning member: open the room the notification
+            // is about DIRECTLY, overriding the stored last-room — no login round-trip.
+            // Persist it as the current room so a later refresh stays coherent.
+            localStorage.setItem('chatPin', invitePin!);
+            localStorage.setItem('chatRoomName', inviteRoom!);
+            setChatConfig({
+                username: storedUsername,
+                avatarURL: storedAvatar || '',
+                roomName: inviteRoom!,
+                pin: invitePin!,
+                roomKey: generateRoomKey(invitePin!, inviteRoom!),
+            });
+            window.history.pushState({ icView: 'chat' }, '');
+            setCurrentView('chat');
+        } else if (hasInvite) {
             // An explicit invite wins over a restored room / dashboard: go to the
             // prefilled login so the user confirms a username and joins THIS room.
             setCurrentView('login');
