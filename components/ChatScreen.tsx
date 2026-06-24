@@ -679,17 +679,21 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         .select('room_key')
         .eq('room_key', config.roomKey)
         .maybeSingle();
-    // Only treat as deleted when the row is CONFIRMED absent (no error).
-    if (!error && !data) { setRoomDeleted(true); return; }
+    if (error) return;   // transient network/RLS error — never eject on it
+    if (data) return;    // room row visible → we're still a member/owner; all good
 
-    // Backstop for a kick whose broadcast we missed (tab was backgrounded): if the
-    // room exists but we are no longer a member, eject. Only on a CONFIRMED false
-    // (no error) so a transient network/RLS blip never kicks the user.
-    if (!error && data && user?.uid) {
-      const { data: mem, error: memErr } = await supabase.rpc('is_member', { p_room_key: config.roomKey });
-      if (!memErr && mem === false) {
-        setAccessError('You were removed from this room by the owner.');
-      }
+    // The room row is NOT visible to us. This is AMBIGUOUS: the room may have been
+    // deleted, OR we were removed and RLS (rooms = members-or-owner) now hides a room
+    // that still EXISTS for others. A non-member can't tell these apart from its own
+    // reads. A genuine deletion is surfaced elsewhere — the room_deleted broadcast
+    // (live) or a fresh join returning ROOM_DELETED (on reopen). So here we confirm we
+    // lost membership and show the "removed" message, instead of falsely setting
+    // roomDeleted — which made a kick flash "You were removed" then wrongly switch to
+    // "The room was deleted".
+    if (!user?.uid) return;
+    const { data: mem, error: memErr } = await supabase.rpc('is_member', { p_room_key: config.roomKey });
+    if (!memErr && mem === false) {
+      setAccessError('You were removed from this room by the owner.');
     }
   }, [config.roomKey, user?.uid]);
 
