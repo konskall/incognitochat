@@ -41,6 +41,7 @@ import { useEntitlements } from '../hooks/useEntitlements';
 import { useMessageQuota } from '../hooks/useMessageQuota';
 import { useModalA11y } from '../hooks/useModalA11y';
 import UpgradeModal from './UpgradeModal';
+import WaitingApprovalScreen from './WaitingApprovalScreen';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -202,6 +203,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   // Room Status
   const [roomDeleted, setRoomDeleted] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
+  const [pendingApproval, setPendingApproval] = useState(false);
   
   // Room & Creator State
   const [isRoomReady, setIsRoomReady] = useState(false);
@@ -700,7 +702,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         username: config.username,
         createIfMissing: !alreadyJoined,
       });
-      void pending;
+      if (pending) {
+        setPendingApproval(true);
+        setIsRoomReady(false);
+        return;
+      }
 
       if (error) {
         if (error.code === 'ROOM_DELETED') {
@@ -734,6 +740,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         setIsRoomReady(true);
         setRoomDeleted(false);
         setAccessError(null);
+        setPendingApproval(false);
         // Mirror our current avatar onto this room's membership row so other
         // members resolve it live (covers every room entry — the self-healing
         // path for anyone who changed their photo before this shipped).
@@ -764,6 +771,23 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         window.removeEventListener('focus', checkRoomStatus);
     };
   }, [user, config.roomKey, config.roomName, config.pin, checkRoomStatus, initRoom]);
+
+  // While waiting for approval (knocker): listen for the owner's decision and
+  // poll as a backstop. On grant, re-run initRoom — membership now exists so it
+  // resolves into the room. On deny, surface it and bail to Home.
+  useEffect(() => {
+    if (!pendingApproval || !config.roomKey || !user?.uid) return;
+    const ch = supabase.channel(`room_status:${config.roomKey}`)
+      .on('broadcast', { event: 'access_granted' }, ({ payload }) => {
+        if (payload?.uid === user.uid) { setPendingApproval(false); initRoom(); }
+      })
+      .on('broadcast', { event: 'access_denied' }, ({ payload }) => {
+        if (payload?.uid === user.uid) { setPendingApproval(false); setAccessError('The owner denied your request to join.'); }
+      })
+      .subscribe();
+    const poll = setInterval(() => { initRoom(); }, 5000);
+    return () => { clearInterval(poll); supabase.removeChannel(ch); };
+  }, [pendingApproval, config.roomKey, user?.uid, initRoom]);
 
   const handleRecreate = () => {
       // Clear the durable flag so initRoom knows this is an intentional new creation
@@ -1593,6 +1617,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
           onUpgrade={() => { setShowQuotaNudge(false); promptUpgrade('Unlimited messaging', 'basic', "You're halfway through today's free messages in this room."); }}
           onClose={() => setShowQuotaNudge(false)}
         />
+      )}
+
+      {pendingApproval && !accessError && (
+        <WaitingApprovalScreen roomName={config.roomName} onCancel={onExit} />
       )}
 
       {accessError && createPortal(
