@@ -3,6 +3,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { Message, Attachment, Poll, ReplyInfo, GroundingSource } from '../types';
 import { decryptMessage, encryptMessage } from '../utils/crypto';
+import { makeTempId, buildTempMessage, reconcileTemp, markMessageStatus } from '../utils/optimisticSend';
+
+// Result of a send/retry. The optimistic typed-text path NEVER throws and
+// resolves with this; ChatScreen parses `error` with parseTierError (which
+// needs `tier`, a ChatScreen concern — the hook stays tier-agnostic).
+export type SendOutcome = { ok: true } | { ok: false; error: unknown };
 
 // Shape of a raw `messages` row as it comes back from Postgres / realtime
 // (snake_case, encrypted text, jsonb columns) before `mapRow` decrypts + maps it.
@@ -66,6 +72,10 @@ export const useChatMessages = (
   // full row but never changes `text`, so this lets the UPDATE handler skip the
   // AES decrypt and reuse the already-decrypted plaintext.
   const cipherCacheRef = useRef<Map<string, string>>(new Map());
+  // ciphertext (exact bytes sent) -> tempId, so the realtime echo of OUR OWN
+  // message can be matched back to its temp bubble (random IV means we cannot
+  // re-derive the ciphertext, so we record it at send time).
+  const pendingSendsRef = useRef<Map<string, string>>(new Map());
   // Throttle the refocus resync: visibilitychange and window 'focus' fire
   // back-to-back on tab return, which used to issue two identical round-trips.
   const lastResyncRef = useRef(0);
@@ -310,6 +320,17 @@ export const useChatMessages = (
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
+            const raw = payload.new as MessageRow;
+            // Path A: our own optimistic send echoing back. Replace its temp
+            // bubble in place instead of appending a duplicate. Matched on the
+            // exact ciphertext we recorded at send time (random IV ⇒ can't re-derive).
+            if (raw.uid === userUid && pendingSendsRef.current.has(raw.text || '')) {
+              const tempId = pendingSendsRef.current.get(raw.text || '')!;
+              pendingSendsRef.current.delete(raw.text || '');
+              const matchedReal = mapRow(raw);
+              setMessages((prev) => reconcileTemp(prev, tempId, matchedReal));
+              return;
+            }
             const newMsg = mapRow(payload.new as MessageRow);
 
             setMessages((prev) => {
@@ -391,8 +412,9 @@ export const useChatMessages = (
       // Per-room ciphertext cache: drop it on room switch so it can't grow
       // unbounded across rooms over a long-lived PWA session.
       cipherCacheRef.current.clear();
+      pendingSendsRef.current.clear();
     };
-  }, [roomKey, pin, enabled, mapRow, mapPoll, fetchInitial, fetchNewer, resync]);
+  }, [roomKey, pin, enabled, userUid, mapRow, mapPoll, fetchInitial, fetchNewer, resync]);
 
   const sendMessage = useCallback(
     async (
@@ -402,45 +424,157 @@ export const useChatMessages = (
       replyTo: Message | null = null,
       location: { lat: number; lng: number } | null = null,
       type: 'text' | 'system' = 'text'
-    ) => {
-      if (!userUid || !roomKey) return;
-      
-      if(attachment) setIsUploading(true);
+    ): Promise<SendOutcome> => {
+      if (!userUid || !roomKey) return { ok: false, error: new Error('Not ready') };
 
-      try {
-        const encryptedText = encryptMessage(text, pin, roomKey);
+      // Optimistic only for a plain typed text message. Attachments (own upload
+      // progress UI), location and system messages keep the original behavior.
+      const optimistic = type === 'text' && !attachment && !location;
 
-        const { error } = await supabase.from('messages').insert({
+      if (!optimistic) {
+        if (attachment) setIsUploading(true);
+        try {
+          const encryptedText = encryptMessage(text, pin, roomKey);
+          const { error } = await supabase.from('messages').insert({
+            room_key: roomKey,
+            uid: userUid,
+            username: config.username,
+            avatar_url: config.avatarURL,
+            text: encryptedText,
+            type: type,
+            attachment: attachment,
+            reactions: {},
+            location: location,
+            reply_to: replyTo
+              ? {
+                  id: replyTo.id,
+                  username: replyTo.username,
+                  // Encrypt the quoted excerpt too — otherwise a verbatim plaintext
+                  // copy of the replied-to message would persist in reply_to.text
+                  // even though the original row's text column is encrypted.
+                  text: encryptMessage(replyTo.text || 'Attachment', pin, roomKey),
+                  isAttachment: !!replyTo.attachment,
+                }
+              : null,
+          });
+          if (error) throw error;
+          return { ok: true };
+        } catch (e) {
+          console.error('Send message failed', e);
+          throw e; // unchanged contract for attachment/location/system callers
+        } finally {
+          if (attachment) setIsUploading(false);
+        }
+      }
+
+      // --- optimistic typed-text path (never throws) ---
+      const encryptedText = encryptMessage(text, pin, roomKey);
+      const tempId = makeTempId();
+      const replyInfo = replyTo
+        ? { id: replyTo.id, username: replyTo.username, text: replyTo.text || 'Attachment', isAttachment: !!replyTo.attachment }
+        : null;
+      const temp = buildTempMessage({
+        tempId,
+        text,
+        uid: userUid,
+        username: config.username,
+        avatarURL: config.avatarURL,
+        createdAt: new Date().toISOString(),
+        replyTo: replyInfo,
+      });
+      pendingSendsRef.current.set(encryptedText, tempId);
+      setMessages((prev) => [...prev, temp]);
+
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
           room_key: roomKey,
           uid: userUid,
           username: config.username,
           avatar_url: config.avatarURL,
           text: encryptedText,
-          type: type,
-          attachment: attachment,
+          type: 'text',
+          attachment: null,
           reactions: {},
-          location: location,
+          location: null,
           reply_to: replyTo
             ? {
                 id: replyTo.id,
                 username: replyTo.username,
-                // Encrypt the quoted excerpt too — otherwise a verbatim plaintext
-                // copy of the replied-to message would persist in reply_to.text
-                // even though the original row's text column is encrypted.
                 text: encryptMessage(replyTo.text || 'Attachment', pin, roomKey),
                 isAttachment: !!replyTo.attachment,
               }
             : null,
-        });
+        })
+        .select('id, created_at')
+        .single();
 
-        if (error) throw error;
-
-      } catch (e) {
-        console.error('Send message failed', e);
-        throw e;
-      } finally {
-        if(attachment) setIsUploading(false);
+      if (error || !data) {
+        pendingSendsRef.current.delete(encryptedText);
+        setMessages((prev) => markMessageStatus(prev, tempId, 'failed'));
+        return { ok: false, error: error ?? new Error('Insert returned no row') };
       }
+
+      // Path B: reconcile temp -> real (idempotent vs the echo path above).
+      cipherCacheRef.current.set(data.id, encryptedText);
+      const realMsg: Message = { ...temp, id: data.id, createdAt: data.created_at, status: undefined };
+      pendingSendsRef.current.delete(encryptedText);
+      setMessages((prev) => reconcileTemp(prev, tempId, realMsg));
+      return { ok: true };
+    },
+    [roomKey, pin, userUid]
+  );
+
+  // Retry a failed typed-text message in place (reuses its tempId). Re-encrypts
+  // (new IV ⇒ new ciphertext; refresh the pending map), flips status back to
+  // 'sending', re-inserts, reconciles. Never throws; resolves with the outcome.
+  const retryMessage = useCallback(
+    async (tempId: string): Promise<SendOutcome> => {
+      if (!userUid || !roomKey) return { ok: false, error: new Error('Not ready') };
+      const msg = messagesRef.current.find((m) => m.id === tempId);
+      if (!msg) return { ok: false, error: new Error('Message not found') };
+
+      const encryptedText = encryptMessage(msg.text, pin, roomKey);
+      // Drop any stale pending entry pointing at this temp, then record the new one.
+      for (const [c, t] of pendingSendsRef.current) if (t === tempId) pendingSendsRef.current.delete(c);
+      pendingSendsRef.current.set(encryptedText, tempId);
+      setMessages((prev) => markMessageStatus(prev, tempId, 'sending'));
+
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          room_key: roomKey,
+          uid: userUid,
+          username: msg.username,
+          avatar_url: msg.avatarURL,
+          text: encryptedText,
+          type: 'text',
+          attachment: null,
+          reactions: {},
+          location: null,
+          reply_to: msg.replyTo
+            ? {
+                id: msg.replyTo.id,
+                username: msg.replyTo.username,
+                text: encryptMessage(msg.replyTo.text || 'Attachment', pin, roomKey),
+                isAttachment: !!msg.replyTo.isAttachment,
+              }
+            : null,
+        })
+        .select('id, created_at')
+        .single();
+
+      if (error || !data) {
+        pendingSendsRef.current.delete(encryptedText);
+        setMessages((prev) => markMessageStatus(prev, tempId, 'failed'));
+        return { ok: false, error: error ?? new Error('Insert returned no row') };
+      }
+
+      cipherCacheRef.current.set(data.id, encryptedText);
+      const realMsg: Message = { ...msg, id: data.id, createdAt: data.created_at, status: undefined };
+      pendingSendsRef.current.delete(encryptedText);
+      setMessages((prev) => reconcileTemp(prev, tempId, realMsg));
+      return { ok: true };
     },
     [roomKey, pin, userUid]
   );
@@ -688,6 +822,7 @@ export const useChatMessages = (
     isLoadingOlder,
     loadOlderMessages,
     sendMessage,
+    retryMessage,
     editMessage,
     deleteMessage,
     reactToMessage,
