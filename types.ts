@@ -56,6 +56,9 @@ export interface Message {
   type?: 'text' | 'system' | 'poll';
   groundingMetadata?: GroundingSource[];
   poll?: Poll | null;
+  // Optimistic-send lifecycle for a typed text message the local user sent.
+  // undefined = persisted/normal; 'sending' = awaiting server; 'failed' = retryable.
+  status?: 'sending' | 'failed';
 }
 
 export interface ChatConfig {
