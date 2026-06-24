@@ -26,6 +26,7 @@ export interface JoinRoomResult {
   message_ttl_seconds: number | null;
   auto_delete_seconds: number | null;
   pinned_message_id: string | null;
+  approval_required: boolean;
   is_new: boolean;
 }
 
@@ -37,7 +38,7 @@ export async function joinOrCreateRoom(params: {
   pin: string;
   username: string;
   createIfMissing?: boolean;
-}): Promise<{ data: JoinRoomResult | null; error: { code: JoinRoomErrorCode; message: string } | null }> {
+}): Promise<{ data: JoinRoomResult | null; pending: boolean; error: { code: JoinRoomErrorCode; message: string } | null }> {
   const { data, error } = await supabase.rpc('join_or_create_room', {
     p_room_key: params.roomKey,
     p_room_name: params.roomName,
@@ -53,9 +54,13 @@ export async function joinOrCreateRoom(params: {
     else if (msg.includes('ROOM_DELETED')) code = 'ROOM_DELETED';
     else if (msg.includes('AUTH_REQUIRED')) code = 'AUTH_REQUIRED';
     else if (msg.includes('ROOM_LIMIT')) code = 'ROOM_LIMIT';
-    return { data: null, error: { code, message: msg } };
+    return { data: null, pending: false, error: { code, message: msg } };
   }
-  return { data: data as JoinRoomResult, error: null };
+  // A locked room returns { pending: true } instead of a membership row.
+  if (data && (data as { pending?: boolean }).pending) {
+    return { data: null, pending: true, error: null };
+  }
+  return { data: data as JoinRoomResult, pending: false, error: null };
 }
 
 // The user's permanent personal "Notes" room (Basic+). Idempotent server-side:
@@ -169,4 +174,37 @@ export async function deleteAccount(): Promise<BillingResult> {
   if (error) return { ok: false, error: await readFnError(error) };
   if ((data as any)?.ok) return { ok: true };
   return { ok: false, error: (data as any)?.error || 'DELETE_FAILED' };
+}
+
+// --- Re-entry approval (room lockdown) ---
+export interface PendingRequest { uid: string; username: string; requested_at: string; }
+
+// Owner reads pending knocks for their room. RLS (rar_select_owner_or_self)
+// returns only this owner's room requests.
+export async function listAccessRequests(roomKey: string): Promise<PendingRequest[]> {
+  const { data, error } = await supabase
+    .from('room_access_requests')
+    .select('uid, username, requested_at')
+    .eq('room_key', roomKey)
+    .order('requested_at', { ascending: true });
+  if (error) { console.error('listAccessRequests failed', error); return []; }
+  return (data as PendingRequest[]) ?? [];
+}
+
+export async function approveAccessRequest(roomKey: string, uid: string): Promise<boolean> {
+  const { error } = await supabase.rpc('approve_access_request', { p_room_key: roomKey, p_uid: uid });
+  if (error) { console.error('approve_access_request failed', error); return false; }
+  return true;
+}
+
+export async function denyAccessRequest(roomKey: string, uid: string): Promise<boolean> {
+  const { error } = await supabase.rpc('deny_access_request', { p_room_key: roomKey, p_uid: uid });
+  if (error) { console.error('deny_access_request failed', error); return false; }
+  return true;
+}
+
+export async function setRoomApproval(roomKey: string, required: boolean): Promise<boolean> {
+  const { error } = await supabase.rpc('set_room_approval', { p_room_key: roomKey, p_required: required });
+  if (error) { console.error('set_room_approval failed', error); return false; }
+  return true;
 }

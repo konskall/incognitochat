@@ -687,13 +687,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       // sweep + dashboard dismiss, which already target localStorage joined_ keys.
       const alreadyJoined = !!localStorage.getItem(`joined_${config.roomKey}`);
 
-      const { data: room, error } = await joinOrCreateRoom({
+      const { data: room, pending, error } = await joinOrCreateRoom({
         roomKey: config.roomKey,
         roomName: config.roomName,
         pin: config.pin,
         username: config.username,
         createIfMissing: !alreadyJoined,
       });
+      void pending;
 
       if (error) {
         if (error.code === 'ROOM_DELETED') {
