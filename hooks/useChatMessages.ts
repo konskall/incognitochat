@@ -262,7 +262,11 @@ export const useChatMessages = (
     const persisted = messagesRef.current.filter((m) => !m.status);
     const latest = persisted[persisted.length - 1]?.createdAt;
     if (!latest) {
-      fetchInitial();
+      // Full (re)load ONLY when nothing is held. If we hold only optimistic
+      // temps (no persisted row yet — e.g. first message in a fresh room),
+      // fetchInitial would REPLACE messages and wipe the temp (losing a
+      // 'failed' bubble's Retry); skip — Path A/B will surface the real row.
+      if (messagesRef.current.length === 0) fetchInitial();
       return;
     }
     const { data, error } = await supabase
