@@ -230,3 +230,35 @@ Pending users are not members → `room_members` does not list them; they appear
 - RPC changes via `CREATE OR REPLACE FUNCTION` preserving signatures, owner-gates, and grants.
 - `verify_jwt` and edge functions are untouched (no edge work in v1).
 - Push-to-main only after browser + SQL verification and explicit user confirmation (live deploy).
+
+---
+
+## Appendix A — applied DDL
+
+Migration name: `add_room_approval_and_requests` — applied 2026-06-24 via Supabase MCP `apply_migration`.
+
+```sql
+ALTER TABLE public.rooms
+  ADD COLUMN IF NOT EXISTS approval_required boolean NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS public.room_access_requests (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_key     text NOT NULL REFERENCES public.rooms(room_key) ON DELETE CASCADE,
+  uid          text NOT NULL,
+  username     text NOT NULL,
+  requested_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
+  UNIQUE (room_key, uid)
+);
+
+ALTER TABLE public.room_access_requests ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY rar_select_owner_or_self ON public.room_access_requests
+  FOR SELECT USING (
+    EXISTS (SELECT 1 FROM public.rooms r
+            WHERE r.room_key = room_access_requests.room_key
+              AND r.created_by = (SELECT auth.uid()))
+    OR uid = (SELECT auth.uid())::text
+  );
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.room_access_requests;
+```
