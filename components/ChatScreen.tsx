@@ -31,6 +31,7 @@ import { expiryShortLabel } from '../utils/roomLifecycle';
 import { parseTierError } from '../utils/tierGatingErrors';
 import { canSendBatch } from '../utils/entitlements';
 import { buildLiveAvatars } from '../utils/avatars';
+import { computeSeenBy } from '../utils/readReceipts';
 import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin, Sparkles, MicOff, MapPinOff } from 'lucide-react';
 
 // Hooks
@@ -966,11 +967,21 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     // lastReadAt) instead of presence meta, which didn't propagate. Both
     // timestamps are server message times, so the >= comparison is skew-free.
     let seen = false;
-    for (const [uid, lastReadAt] of readReceipts) {
-      if (uid !== user.uid && new Date(lastReadAt) >= new Date(myLast.createdAt)) { seen = true; break; }
+    for (const [uid, r] of readReceipts) {
+      if (uid !== user.uid && new Date(r.pos) >= new Date(myLast.createdAt)) { seen = true; break; }
     }
     return seen ? myLast.id : null;
   }, [messages, readReceipts, user]);
+
+  // "Seen by" for a message's long-press menu, computed lazily (on open) from
+  // refs so it never re-renders the message list when receipts advance. Mirrors
+  // readReceipts into a ref; participantsRef already tracks the live roster.
+  const readReceiptsRef = useRef(readReceipts);
+  useEffect(() => { readReceiptsRef.current = readReceipts; }, [readReceipts]);
+  const getSeenBy = useCallback(
+    (m: Message) => computeSeenBy(m, readReceiptsRef.current, participantsRef.current, user?.uid),
+    [user?.uid],
+  );
 
   const isOwner = user?.uid === roomCreatorId;
 
@@ -1920,6 +1931,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             onRetry={handleRetry}
             onUserClick={handleUserClick}
             onIncoClick={handleIncoClick}
+            getSeenBy={getSeenBy}
             liveAvatars={liveAvatars}
             hasMoreOlder={hasMoreOlder}
             onLoadEarlier={loadOlderMessages}

@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { Presence, ChatConfig, User } from '../types';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { ReadReceipt } from '../utils/readReceipts';
 
 // Typing is delivered over Realtime BROADCAST, NOT presence meta. Presence
 // reliably propagates membership (join/leave) and the INITIAL meta, but a
@@ -43,14 +44,18 @@ export function liveTypers(records: Map<string, TypingRecord>, now: number): str
 // is stale/equal so the caller can skip a re-render. lastReadAt is a server
 // message timestamp, so the >= comparison is skew-free.
 export function applyReadReceipt(
-  records: Map<string, string>,
+  records: Map<string, ReadReceipt>,
   uid: string,
-  lastReadAt: string,
-): Map<string, string> {
+  pos: string,
+  at: string,
+): Map<string, ReadReceipt> {
   const prev = records.get(uid);
-  if (prev !== undefined && prev >= lastReadAt) return records;
+  // Monotonic on the READ POSITION (server message ts, skew-free). When it
+  // advances we also refresh `at` (the wall-clock "seen at"); an older/equal
+  // position returns the same ref so callers skip a re-render.
+  if (prev !== undefined && prev.pos >= pos) return records;
   const next = new Map(records);
-  next.set(uid, lastReadAt);
+  next.set(uid, { pos, at });
   return next;
 }
 
@@ -62,8 +67,8 @@ export const useRoomPresence = (
   const [participants, setParticipants] = useState<Presence[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   // Per-uid highest lastReadAt, fed by 'read' broadcasts (see applyReadReceipt).
-  const [readReceipts, setReadReceipts] = useState<Map<string, string>>(new Map());
-  const readReceiptsRef = useRef<Map<string, string>>(new Map());
+  const [readReceipts, setReadReceipts] = useState<Map<string, ReadReceipt>>(new Map());
+  const readReceiptsRef = useRef<Map<string, ReadReceipt>>(new Map());
   // Peer uids seen in the last presence sync — so we can re-announce our read
   // position to someone who JUST joined (they missed our earlier 'read' broadcast).
   const prevPeerUidsRef = useRef<Set<string>>(new Set());
@@ -77,6 +82,9 @@ export const useRoomPresence = (
   // others can show a "seen" receipt. track() replaces the whole payload, so we
   // keep it in a ref and include it on every track call.
   const lastReadRef = useRef<string>('');
+  // Wall-clock time of our latest read advance, broadcast alongside lastReadRef
+  // so peers can show an approximate "seen at" time (not just the read position).
+  const lastReadClockRef = useRef<string>('');
   // Mirror config into a ref. The visibilitychange handler and the subscribe-
   // time track()/sendTyping are bound ONCE inside the [user, roomKey] effect, so
   // they'd otherwise capture the config from the effect-run render — a mid-session
@@ -125,12 +133,17 @@ export const useRoomPresence = (
         let hasNewPeer = false;
         for (const u of curPeers) { if (!prevPeerUidsRef.current.has(u)) { hasNewPeer = true; break; } }
         prevPeerUidsRef.current = curPeers;
-        if (hasNewPeer && lastReadRef.current) sendRead(lastReadRef.current);
+        if (hasNewPeer && lastReadRef.current) sendRead(lastReadRef.current, lastReadClockRef.current || lastReadRef.current);
       })
       .on('broadcast', { event: 'read' }, ({ payload }) => {
-        const p = payload as { uid?: string; lastReadAt?: string } | null;
+        const p = payload as { uid?: string; lastReadAt?: string; readAt?: string } | null;
         if (!p || typeof p.uid !== 'string' || p.uid === user.uid || typeof p.lastReadAt !== 'string') return;
-        const updated = applyReadReceipt(readReceiptsRef.current, p.uid, p.lastReadAt);
+        // readAt (wall-clock) is optional for backward-compat with pre-upgrade
+        // clients. A stale client sends none → leave `at` empty so the menu shows
+        // the reader's NAME without a misleading time (the message position would
+        // read as "seen 2h ago" for old backlog). Self-heals once that peer upgrades.
+        const at = typeof p.readAt === 'string' ? p.readAt : '';
+        const updated = applyReadReceipt(readReceiptsRef.current, p.uid, p.lastReadAt, at);
         if (updated === readReceiptsRef.current) return; // stale/equal — no change
         readReceiptsRef.current = updated;
         setReadReceipts(updated);
@@ -210,20 +223,23 @@ export const useRoomPresence = (
   // Broadcast our "read up to <server message timestamp>" position. Over the
   // BROADCAST bus, not presence meta (which doesn't propagate same-key updates —
   // that's why the "Seen" receipt never updated for peers).
-  const sendRead = (ts: string) => {
+  const sendRead = (ts: string, at: string) => {
     if (!channelRef.current || !user) return;
     channelRef.current.send({
       type: 'broadcast',
       event: 'read',
-      payload: { uid: user.uid, lastReadAt: ts },
+      payload: { uid: user.uid, lastReadAt: ts, readAt: at },
     });
   };
 
   // Mark messages up to `ts` as seen and broadcast it (only when it advances).
+  // Stamps the wall-clock read time so peers can show an approximate "seen at".
   const setLastRead = (ts?: string) => {
     if (!ts || ts <= lastReadRef.current) return;
     lastReadRef.current = ts;
-    sendRead(ts);
+    const now = new Date().toISOString();
+    lastReadClockRef.current = now;
+    sendRead(ts, now);
   };
 
   // Broadcast a typing state to the room over the channel's broadcast bus (NOT

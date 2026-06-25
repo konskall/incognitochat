@@ -5,6 +5,7 @@ import { Message } from '../types';
 import { getYouTubeId, cleanUrl } from '../utils/helpers';
 import { resolveDisplayAvatar } from '../utils/avatars';
 import { sameLocalDay, dayLabel, fullDateTime } from '../utils/dateSeparators';
+import { SeenEntry } from '../utils/readReceipts';
 import Emoji from './Emoji';
 import { supabase } from '../services/supabase';
 import MediaPreviewModal, { MediaItem } from './MediaPreviewModal';
@@ -32,6 +33,8 @@ interface MessageListProps {
   // Tapping the inco bot's avatar/name opens its info modal (the bot has no
   // user profile). Receives the avatar shown in chat so the modal matches it.
   onIncoClick?: (avatar: string) => void;
+  // Resolves "Seen by" for a message's long-press menu (computed lazily on open).
+  getSeenBy?: (msg: Message) => SeenEntry[];
   // uid -> current avatar (presence/roster), overlaid onto each message's baked
   // avatar so a profile-photo change shows on old messages too. See utils/avatars.
   liveAvatars?: Map<string, string>;
@@ -293,8 +296,8 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
     );
 };
 
-const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, onRequestDelete, onReact, onReply, onRetry, onPreview, onUserClick, onIncoClick, displayAvatar, searchQuery, showSeen, isOwner, isPinned, onPin, onUnpin, onVotePoll, onToggleClosedPoll, isFirstOfGroup = true, isLastOfGroup = true }: {
-    msg: Message; isMe: boolean; currentUid: string; roomOwnerUid?: string; onEdit: (msg: Message) => void; onRequestDelete: (msgId: string) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; onRetry?: (msg: Message) => void; onPreview: (url: string, name: string, type: string) => void; onUserClick?: (uid: string, username: string, avatar: string) => void; onIncoClick?: (avatar: string) => void; displayAvatar: string; searchQuery?: string; showSeen?: boolean; isOwner?: boolean; isPinned?: boolean; onPin?: (msg: Message) => void; onUnpin?: () => void; onVotePoll?: (msg: Message, optionId: string) => void; onToggleClosedPoll?: (msg: Message, closed: boolean) => void; isFirstOfGroup?: boolean; isLastOfGroup?: boolean;
+const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, onRequestDelete, onReact, onReply, onRetry, onPreview, onUserClick, onIncoClick, getSeenBy, displayAvatar, searchQuery, showSeen, isOwner, isPinned, onPin, onUnpin, onVotePoll, onToggleClosedPoll, isFirstOfGroup = true, isLastOfGroup = true }: {
+    msg: Message; isMe: boolean; currentUid: string; roomOwnerUid?: string; onEdit: (msg: Message) => void; onRequestDelete: (msgId: string) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; onRetry?: (msg: Message) => void; onPreview: (url: string, name: string, type: string) => void; onUserClick?: (uid: string, username: string, avatar: string) => void; onIncoClick?: (avatar: string) => void; getSeenBy?: (msg: Message) => SeenEntry[]; displayAvatar: string; searchQuery?: string; showSeen?: boolean; isOwner?: boolean; isPinned?: boolean; onPin?: (msg: Message) => void; onUnpin?: () => void; onVotePoll?: (msg: Message, optionId: string) => void; onToggleClosedPoll?: (msg: Message, closed: boolean) => void; isFirstOfGroup?: boolean; isLastOfGroup?: boolean;
 }) => {
   // Long-press / right-click opens the action menu (replaces the inline button column).
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -716,6 +719,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
             canPin={!!isOwner}
             isPinned={!!isPinned}
             canCopy={!!(msg.text && msg.text.trim())}
+            seenBy={getSeenBy ? getSeenBy(msg) : []}
             onClose={() => setMenu(null)}
             onReact={(e) => onReact(msg, e)}
             onReply={() => onReply(msg)}
@@ -748,7 +752,7 @@ const DayDivider = ({ label }: { label: string }) => (
 // by browsers that don't support it (older Safari) — graceful, no behavior change.
 const CV_STYLE = { contentVisibility: 'auto', containIntrinsicSize: 'auto 72px' } as React.CSSProperties;
 
-const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onRetry, onUserClick, onIncoClick, liveAvatars, hasMoreOlder, onLoadEarlier, searchQuery, seenMessageId, messageTtlSeconds, roomOwnerUid, isOwner, pinnedMessageId, onPin, onUnpin, onVotePoll, onToggleClosedPoll }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onRetry, onUserClick, onIncoClick, getSeenBy, liveAvatars, hasMoreOlder, onLoadEarlier, searchQuery, seenMessageId, messageTtlSeconds, roomOwnerUid, isOwner, pinnedMessageId, onPin, onUnpin, onVotePoll, onToggleClosedPoll }) => {
   const avatars = liveAvatars ?? EMPTY_AVATARS;
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
@@ -858,7 +862,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
                   return (
                   <React.Fragment key={msg.id}>
                     {showDivider && <DayDivider label={lbl} />}
-                    <MessageItem msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onRetry={onRetry} onPreview={handleMediaPreview} onUserClick={onUserClick} onIncoClick={onIncoClick} displayAvatar={resolveDisplayAvatar(msg.uid, msg.avatarURL, avatars)} searchQuery={searchQuery} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
+                    <MessageItem msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onRetry={onRetry} onPreview={handleMediaPreview} onUserClick={onUserClick} onIncoClick={onIncoClick} getSeenBy={getSeenBy} displayAvatar={resolveDisplayAvatar(msg.uid, msg.avatarURL, avatars)} searchQuery={searchQuery} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
                   </React.Fragment>
                   );
                 })}
@@ -889,7 +893,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
                 return (
                 <React.Fragment key={msg.id}>
                   {showDivider && <DayDivider label={lbl} />}
-                  <MessageItem msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onRetry={onRetry} onPreview={handleMediaPreview} onUserClick={onUserClick} onIncoClick={onIncoClick} displayAvatar={resolveDisplayAvatar(msg.uid, msg.avatarURL, avatars)} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
+                  <MessageItem msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onRetry={onRetry} onPreview={handleMediaPreview} onUserClick={onUserClick} onIncoClick={onIncoClick} getSeenBy={getSeenBy} displayAvatar={resolveDisplayAvatar(msg.uid, msg.avatarURL, avatars)} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
                 </React.Fragment>
                 );
               })

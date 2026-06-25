@@ -1,10 +1,18 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Reply, Copy, Edit2, Pin, PinOff, Trash2 } from 'lucide-react';
+import { Reply, Copy, Edit2, Pin, PinOff, Trash2, CheckCheck } from 'lucide-react';
 import EmojiPicker from './EmojiPicker';
 import Emoji from './Emoji';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { flashToast } from '../utils/toast';
+import { safeAvatarUrl } from '../utils/helpers';
+import { SeenEntry } from '../utils/readReceipts';
+
+// Short HH:MM for a "seen at" time (24h, viewer's locale). Empty on a bad value.
+const seenTime = (iso: string): string => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+};
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
@@ -23,6 +31,7 @@ interface MessageActionMenuProps {
   canPin: boolean;
   isPinned: boolean;
   canCopy: boolean;
+  seenBy?: SeenEntry[];
   onClose: () => void;
   onReact: (emoji: string) => void;
   onReply: () => void;
@@ -38,7 +47,7 @@ interface MessageActionMenuProps {
  * action list below. Replaces the always-visible per-message button column.
  */
 const MessageActionMenu: React.FC<MessageActionMenuProps> = ({
-  anchorRect, bubbleHTML, bubbleClass, isMe, canEdit, canDelete, canPin, isPinned, canCopy,
+  anchorRect, bubbleHTML, bubbleClass, isMe, canEdit, canDelete, canPin, isPinned, canCopy, seenBy,
   onClose, onReact, onReply, onCopy, onEdit, onPin, onDelete,
 }) => {
   const liftRef = useRef<HTMLDivElement>(null);
@@ -113,6 +122,20 @@ const MessageActionMenu: React.FC<MessageActionMenuProps> = ({
 
         {/* Action list */}
         <div className="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-2xl min-w-[212px] divide-y divide-slate-100 dark:divide-slate-700/60">
+          {seenBy && seenBy.length > 0 && (
+            <div className="px-4 py-2.5">
+              <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5"><CheckCheck size={12} /> Seen by</p>
+              <div className="flex flex-col gap-1.5 max-h-32 overflow-y-auto">
+                {seenBy.map((s) => (
+                  <div key={s.uid} className="flex items-center gap-2">
+                    <img src={safeAvatarUrl(s.avatar)} alt="" className="w-5 h-5 rounded-full object-cover bg-slate-200 dark:bg-slate-700 shrink-0" />
+                    <span className="flex-1 text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{s.username}</span>
+                    {seenTime(s.at) && <span className="text-[10px] text-slate-400 tabular-nums shrink-0">{seenTime(s.at)}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <button onClick={() => run(onReply)} className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition text-left">
             <Reply size={18} /> Reply
           </button>
