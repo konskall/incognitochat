@@ -46,6 +46,13 @@ import AccessRequestPrompt from './AccessRequestPrompt';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 
+// Best-effort localStorage writes. Persistence (drafts, lastRead, joined flags,
+// prefs) is a nicety — a QuotaExceededError/SecurityError thrown synchronously
+// from a render-path effect (e.g. the per-keystroke draft save) would otherwise
+// bubble to the app-wide ErrorBoundary and hard-crash the chat. Degrade silently.
+const safeSetItem = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* best-effort */ } };
+const safeRemoveItem = (k: string) => { try { localStorage.removeItem(k); } catch { /* best-effort */ } };
+
 interface ChatScreenProps {
   config: ChatConfig;
   // The identity App.tsx resolved (Google / anonymous / null). Source of truth:
@@ -146,8 +153,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   // draft); a failed send restores the text (-> re-persists). Loaded on open above.
   useEffect(() => {
     const k = `draft_${config.roomKey}`;
-    if (inputText) localStorage.setItem(k, inputText);
-    else localStorage.removeItem(k);
+    if (inputText) safeSetItem(k, inputText);
+    else safeRemoveItem(k);
   }, [inputText, config.roomKey]);
 
   // --- Monetization plumbing (Phase 3) ---
@@ -183,7 +190,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     if (quotaLeft > 5 || quotaLeft <= 0) return;
     const key = `quotaNudge_${config.roomKey}_${new Date().toISOString().slice(0, 10)}`;
     if (localStorage.getItem(key)) return;
-    localStorage.setItem(key, '1');
+    safeSetItem(key, '1');
     setShowQuotaNudge(true);
   }, [entLoading, tier, quotaLeft, config.roomKey]);
 
@@ -301,6 +308,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   // File & Location handling state
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
+  // Persistent marker for a multi-file batch that failed partway, so a missed
+  // (transient) toast doesn't hide that the leftover tray chips are a remainder.
+  const [partialBatch, setPartialBatch] = useState<{ sent: number; total: number } | null>(null);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -385,7 +395,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     // (they are now looking at the room).
     const write = () => {
       if (document.visibilityState === 'visible') {
-        localStorage.setItem(`lastRead_${config.roomKey}`, String(maxTs));
+        safeSetItem(`lastRead_${config.roomKey}`, String(maxTs));
       }
     };
     write();
@@ -502,13 +512,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     beginThemeTransition();
     const newTheme = !isDarkMode;
     setIsDarkMode(newTheme);
-    localStorage.setItem('theme', newTheme ? 'dark' : 'light');
+    safeSetItem('theme', newTheme ? 'dark' : 'light');
     setShowSettingsMenu(false);
   };
 
   // Persist audio/haptic preferences whenever they change.
-  useEffect(() => { localStorage.setItem('soundEnabled', String(soundEnabled)); }, [soundEnabled]);
-  useEffect(() => { localStorage.setItem('vibrationEnabled', String(vibrationEnabled)); }, [vibrationEnabled]);
+  useEffect(() => { safeSetItem('soundEnabled', String(soundEnabled)); }, [soundEnabled]);
+  useEffect(() => { safeSetItem('vibrationEnabled', String(vibrationEnabled)); }, [vibrationEnabled]);
 
   // Unlock the Web Audio context on the first user gesture inside the chat. iOS
   // keeps the AudioContext suspended until a gesture creates/resumes it, and the
@@ -610,10 +620,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
              // No session AND no signed-in account to contradict (pure anonymous
              // flow, or a returning user whose stored room outlived its anonymous
              // session) → legitimately establish a fresh anonymous identity.
-             const { data: anonData } = await supabase.auth.signInAnonymously();
-             if (anonData.user) {
-                 setUser({ uid: anonData.user.id, isAnonymous: true });
+             const { data: anonData, error: anonErr } = await supabase.auth.signInAnonymously();
+             if (anonErr || !anonData.user) {
+                 // Couldn't establish an identity (offline, Supabase down, or anon
+                 // sign-ins disabled). Without surfacing this the room sits in a
+                 // perpetual "connecting" state with a null user and no way out.
+                 setAccessError('Could not connect. Please check your connection and try again.');
+                 return;
              }
+             setUser({ uid: anonData.user.id, isAnonymous: true });
         }
     };
     checkUser();
@@ -736,8 +751,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         // re-route straight back into the failing room (the wrong PIN would
         // otherwise loop). Username is kept so the login form stays prefilled.
         if (error.code !== 'ROOM_DELETED') {
-          localStorage.removeItem('chatPin');
-          localStorage.removeItem('chatRoomName');
+          safeRemoveItem('chatPin');
+          safeRemoveItem('chatRoomName');
         }
         return;
       }
@@ -808,7 +823,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
 
   const handleRecreate = () => {
       // Clear the durable flag so initRoom knows this is an intentional new creation
-      localStorage.removeItem(`joined_${config.roomKey}`);
+      safeRemoveItem(`joined_${config.roomKey}`);
       // Re-run initialization
       initRoom();
   };
@@ -842,7 +857,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       if (isRoomReady && user && config.roomKey && !roomDeleted) {
           const joinedKey = `joined_${config.roomKey}`;
           if (!localStorage.getItem(joinedKey)) {
-              localStorage.setItem(joinedKey, 'true');
+              safeSetItem(joinedKey, 'true');
           }
       }
   }, [isRoomReady, user, config.roomKey, roomDeleted]);
@@ -1329,6 +1344,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
               }
               // Send each file as its own message, in order. Caption + reply
               // attach to the FIRST message only; the rest are bare.
+              setPartialBatch(null);
               for (let i = 0; i < filesToSend.length; i++) {
                   setUploadProgress({ current: i + 1, total: filesToSend.length });
                   try {
@@ -1341,6 +1357,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
                       setUploadProgress(null);
                       setSelectedFiles(filesToSend.slice(i));
                       if (i === 0) { setInputText(textToSend); setReplyingTo(replyToSend); }
+                      // Persistent marker (survives the transient toast) so the user
+                      // sees the leftover chips are a partial-send remainder.
+                      if (i > 0) setPartialBatch({ sent: i, total: filesToSend.length });
                       const tierErr = parseTierError(err, tier);
                       if (tierErr?.code === 'QT002') promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
                       else if (tierErr) flashToast(tierErr.message);
@@ -1349,6 +1368,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
                   }
               }
               setUploadProgress(null);
+              setPartialBatch(null);
               setQuotaBump((n) => n + 1);
               notifySubscribers('message', textToSend || `Sent ${filesToSend.length} files`);
           }
@@ -1493,7 +1513,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
            // Clear the durable "joined" flag: the owner just deleted the room, so
            // a later re-entry with the same name+PIN should create a fresh room
            // instead of being told the (now-gone) room was deleted.
-           localStorage.removeItem(`joined_${config.roomKey}`);
+           safeRemoveItem(`joined_${config.roomKey}`);
            onExit();
       } catch(e) {
           console.error("Delete failed", e);
@@ -1584,7 +1604,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   };
 
   const saveEmailSubscription = async () => {
-      if (!user || !config.roomKey || !emailAddress.includes('@')) {
+      // Require a real local@domain.tld shape, not just an '@' (which let 'a@' /
+      // '@b' / 'a@b' persist and silently never receive alerts).
+      const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress.trim());
+      if (!user || !config.roomKey || !emailOk) {
           flashToast("Please enter a valid email.");
           return;
       }
@@ -1738,6 +1761,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       {isOwner && pendingRequests.length > 0 && (
         <AccessRequestPrompt
           username={pendingRequests[0].username}
+          waitingCount={pendingRequests.length}
           busy={decidingUid === pendingRequests[0].uid}
           onApprove={() => handleApprove(pendingRequests[0].uid)}
           onDeny={() => handleDeny(pendingRequests[0].uid)}
@@ -1900,6 +1924,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       )}
 
       {!roomDeleted && (
+        <>
+        {partialBatch && selectedFiles.length > 0 && (
+          <div className="px-4 pb-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 select-none">
+            {partialBatch.sent} of {partialBatch.total} files sent — tap Send to finish the rest.
+          </div>
+        )}
         <ChatInput
             inputText={inputText}
             setInputText={setInputText}
@@ -1929,6 +1959,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             uploadProgress={uploadProgress}
             quotaLeft={quotaLeft}
         />
+        </>
       )}
 
       <DeleteChatModal

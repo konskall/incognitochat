@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://konskall.github.io/incognitochat/sitemap.xml

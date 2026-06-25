@@ -158,7 +158,11 @@ const RoomActionsSheet: React.FC<{
       await navigator.clipboard.writeText(room.pin);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch { /* clipboard unavailable (insecure context / denied) — no-op */ }
+    } catch {
+      // Clipboard unavailable (insecure context / denied / old webview) — don't
+      // leave the user with zero feedback assuming the copy worked; reveal the PIN.
+      flashToast(`Couldn’t copy automatically — PIN is ${room.pin}`);
+    }
   };
   const save = async () => {
     if (!name.trim()) return;

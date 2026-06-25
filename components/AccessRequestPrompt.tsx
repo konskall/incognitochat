@@ -7,11 +7,12 @@ interface Props {
   onApprove: () => void;
   onDeny: () => void;
   busy?: boolean;
+  waitingCount?: number; // total pending knockers; shows "+N more waiting" when >1
 }
 
 // Owner-facing pop-up: a user is knocking on a locked room. Sits above the chat
 // (z-[115]) but below the toast (z-[200]).
-const AccessRequestPrompt: React.FC<Props> = ({ username, onApprove, onDeny, busy }) => createPortal(
+const AccessRequestPrompt: React.FC<Props> = ({ username, onApprove, onDeny, busy, waitingCount }) => createPortal(
   <div className="fixed inset-x-0 top-0 z-[115] flex justify-center px-4 pt-[calc(0.75rem+env(safe-area-inset-top))] animate-in slide-in-from-top-4 fade-in duration-200">
     <div role="dialog" aria-modal="false" aria-label="Access request" className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-4">
       <div className="flex items-center gap-3">
@@ -19,6 +20,9 @@ const AccessRequestPrompt: React.FC<Props> = ({ username, onApprove, onDeny, bus
         <p className="flex-1 text-sm text-slate-700 dark:text-slate-200">
           <span className="font-bold">{username}</span> wants to join this room.
         </p>
+        {!!waitingCount && waitingCount > 1 && (
+          <span className="shrink-0 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/10 rounded-full px-2 py-0.5">+{waitingCount - 1} more</span>
+        )}
       </div>
       <div className="mt-3 flex gap-2">
         <button onClick={onDeny} disabled={busy} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition disabled:opacity-50">Deny</button>

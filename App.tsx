@@ -330,6 +330,15 @@ const App: React.FC = () => {
   };
 
   const handleExitChat = () => {
+    // If we entered the room via a pushed history entry, POP it (history.back)
+    // rather than just swapping the view: leaving the stale 'chat' entry on the
+    // stack means a later browser-Back pops it and the popstate handler — now
+    // seeing a non-chat view — dumps the user to the marketing landing. The
+    // popstate handler performs the same cleanup + dashboard/login transition.
+    if (window.history.state?.icView === 'chat') {
+        window.history.back();
+        return;
+    }
     setChatConfig(null);
     localStorage.removeItem("chatPin");
     // Was "roomName" (wrong key) — the value is stored under "chatRoomName",

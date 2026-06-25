@@ -145,25 +145,26 @@ export const EmailAlertModal: React.FC<EmailModalProps> = ({
                           </button>
                       </div>
                   ) : (
-                      <div className="space-y-3">
+                      <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onSave(); }}>
                           <p className="text-sm text-slate-500 dark:text-slate-400">
                               Get notified when someone sends a message or deletes this room.
                           </p>
-                          <input 
-                              type="email" 
+                          <input
+                              type="email"
+                              required
                               value={emailAddress}
                               onChange={(e) => setEmailAddress(e.target.value)}
                               placeholder="your@email.com"
                               className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 focus:border-blue-500 outline-none text-slate-900 dark:text-slate-100"
                           />
-                          <button 
-                              onClick={onSave}
+                          <button
+                              type="submit"
                               disabled={isSaving}
                               className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 transition disabled:opacity-50"
                           >
                               {isSaving ? 'Saving...' : 'Subscribe'}
                           </button>
-                      </div>
+                      </form>
                   )}
               </div>
           </div>
