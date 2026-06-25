@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../services/supabase';
 import { Message, ChatConfig, GroundingSource } from '../types';
 import { encryptMessage } from '../utils/crypto';
+import { buildIncoTurns } from '../utils/incoContext';
+import { reverseGeocodeCity } from '../utils/geocode';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 const DEFAULT_BOT_AVATAR = 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1';
@@ -81,30 +83,50 @@ export const useIncoAI = (
       // enforce the same https-only policy safeAvatarUrl applies elsewhere —
       // falling back to the bot's own default rather than the generic person.
       const safeAiAvatar = aiAvatarUrl && /^https:\/\//i.test(aiAvatarUrl) ? aiAvatarUrl : DEFAULT_BOT_AVATAR;
-      const context = chatHistory
-        .slice(-10)
-        .filter(m => m.type !== 'system' && m.text)
-        .map(m => `${m.username}: ${m.text.substring(0, 300)}`)
-        .join('\n');
-
-      // Gemini is called server-side (Edge Function `inco-ai`) so the API key is
-      // never shipped to the browser. The function verifies room membership and
-      // returns plaintext + grounding sources; we encrypt + insert client-side so
-      // the room PIN / encryption key never leaves the device.
-      const { data, error } = await supabase.functions.invoke('inco-ai', {
-        body: {
-          roomKey,
-          roomName: config.roomName,
-          context,
-          triggerText: triggerMsg.text,
-          triggerUsername: triggerMsg.username,
-        },
+      // Conversation as proper turns (the bot's own msgs as 'model'), so inco
+      // follows the thread on follow-ups. The trigger is the last user turn.
+      const history = buildIncoTurns(chatHistory, INCO_BOT_UUID);
+      // The user's LOCAL date/time, formatted on-device (the edge runs in UTC).
+      const clientDateTime = new Date().toLocaleString(undefined, {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
       });
 
-      if (error) {
-        // 403 (not a member) / 503 (AI not configured) / 5xx — stay silent.
-        console.error('Inco AI proxy error:', error);
-        return;
+      const baseBody = {
+        roomKey,
+        roomName: config.roomName,
+        history,
+        triggerText: triggerMsg.text,
+        triggerUsername: triggerMsg.username,
+        clientDateTime,
+      };
+
+      // Gemini is called server-side (Edge Function `inco-ai`) so the API key is
+      // never shipped to the browser. We encrypt + insert the reply client-side so
+      // the room PIN / encryption key never leaves the device.
+      let { data, error } = await supabase.functions.invoke('inco-ai', { body: baseBody });
+      if (error) { console.error('Inco AI proxy error:', error); return; }
+
+      // Location protocol: the model asked for the user's location. Request GPS
+      // ONCE (on-demand consent), reverse-geocode to a CITY NAME client-side, and
+      // re-invoke. Denial / unavailable / geocode-fail → re-invoke with a denied
+      // flag so inco asks for the city instead of stalling. (Coords never leave the
+      // device except to OSM Nominatim for the lookup; only the city is sent on.)
+      if ((data as { needLocation?: boolean })?.needLocation) {
+        let city: string | null = null;
+        if (navigator.geolocation) {
+          try {
+            const pos = await new Promise<GeolocationPosition>((res, rej) =>
+              navigator.geolocation.getCurrentPosition(res, rej, { timeout: 15000, maximumAge: 600000 }),
+            );
+            city = await reverseGeocodeCity(pos.coords.latitude, pos.coords.longitude);
+          } catch { city = null; }
+        }
+        const second = await supabase.functions.invoke('inco-ai', {
+          body: city ? { ...baseBody, locationCity: city } : { ...baseBody, locationDenied: true },
+        });
+        if (second.error) { console.error('Inco AI proxy error (loc):', second.error); return; }
+        data = second.data;
       }
 
       if (data?.quota) {
