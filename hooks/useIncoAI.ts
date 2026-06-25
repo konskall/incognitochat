@@ -4,6 +4,7 @@ import { Message, ChatConfig, GroundingSource } from '../types';
 import { encryptMessage } from '../utils/crypto';
 import { buildIncoTurns } from '../utils/incoContext';
 import { reverseGeocodeCity } from '../utils/geocode';
+import { stripIncoMarkdown } from '../utils/incoFormat';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 const DEFAULT_BOT_AVATAR = 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1';
@@ -147,8 +148,12 @@ export const useIncoAI = (
         return;
       }
 
-      const botText: string | undefined = data?.text;
-      if (!botText) return;
+      const rawBotText: string | undefined = data?.text;
+      if (!rawBotText) return;
+      // Defensively strip any markdown the model emitted despite the plain-text
+      // prompt (the bubble renders raw text, so **bold**/`code`/"* " would show
+      // literally). If stripping somehow empties it, fall back to the raw text.
+      const botText = stripIncoMarkdown(rawBotText) || rawBotText;
       const sources: GroundingSource[] = data?.sources || [];
 
       const encryptedBotText = encryptMessage(botText, pin, roomKey);

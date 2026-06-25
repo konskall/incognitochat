@@ -662,8 +662,8 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
                 
                 {/* Grounding Sources UI */}
                 {msg.groundingMetadata && msg.groundingMetadata.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-indigo-100 dark:border-indigo-900/30">
-                    <div className="flex items-center gap-1.5 mb-2 text-indigo-500 dark:text-indigo-400">
+                  <div className="mt-3 pt-3 border-t border-indigo-300/60 dark:border-white/15">
+                    <div className="flex items-center gap-1.5 mb-2 text-indigo-600 dark:text-indigo-200">
                       <Search size={12} />
                       <span className="text-[10px] font-bold uppercase tracking-wider">Search Sources</span>
                     </div>
@@ -674,7 +674,10 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
                         // so a javascript:/data: scheme can't execute on click.
                         let safeHref: string | null = null;
                         try { if (source.uri) { const u = new URL(source.uri); if (u.protocol === 'http:' || u.protocol === 'https:') safeHref = u.href; } } catch { /* not a valid URL */ }
-                        const chipClass = "inline-flex items-center gap-1.5 px-2 py-1 bg-white/50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-lg text-[10px] font-medium text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition-colors max-w-[200px]";
+                        // Solid pill + clearly lighter border so chips stand out
+                        // against the bot bubble (indigo-100 light / indigo-800 dark)
+                        // instead of blending into it.
+                        const chipClass = "inline-flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-indigo-950/70 border border-indigo-300 dark:border-indigo-400/50 rounded-lg text-[10px] font-medium text-indigo-700 dark:text-indigo-100 shadow-sm hover:bg-indigo-50 dark:hover:bg-indigo-900 hover:border-indigo-400 dark:hover:border-indigo-300/70 transition-colors max-w-[200px]";
                         return safeHref ? (
                           <a key={idx} href={safeHref} target="_blank" rel="noopener noreferrer" className={chipClass}>
                             <span className="truncate">{source.title || 'Link'}</span>
