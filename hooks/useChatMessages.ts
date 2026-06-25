@@ -269,6 +269,10 @@ export const useChatMessages = (
     const { data, error } = await supabase
       .from('messages')
       .select('*')
+      // Scope to THIS room — without it the query returns newer rows from every
+      // room the user is a member of (RLS allows them), leaking foreign-room
+      // messages into this room and skewing the large-gap heuristic.
+      .eq('room_key', roomKey)
       // gte (not gt): two rows can share the same created_at (a user msg + the
       // Inco reply, or same-ms inserts). A strict gt would permanently drop a
       // same-timestamp row whose INSERT was missed while the socket slept; the
@@ -353,19 +357,19 @@ export const useChatMessages = (
         (payload) => {
           if (payload.eventType === 'INSERT') {
             const raw = payload.new as MessageRow;
-            // Path A: our own optimistic send echoing back. Replace its temp
-            // bubble in place instead of appending a duplicate. Matched on the
-            // stable client_msg_id (= the temp id we sent) — survives a retry's new
-            // IV, unlike a ciphertext match, and is how a lost-response retry's
-            // original row reconciles instead of duplicating.
-            if (raw.uid === userUid && raw.client_msg_id && raw.client_msg_id.startsWith('temp_')) {
-              const matchedReal = mapRow(raw);
-              setMessages((prev) => reconcileTemp(prev, raw.client_msg_id!, matchedReal));
-              return;
-            }
-            const newMsg = mapRow(payload.new as MessageRow);
+            const newMsg = mapRow(raw);
 
             setMessages((prev) => {
+              // Our own optimistic echo that THIS client still holds as a temp →
+              // replace it in place. Matched on the stable client_msg_id (= the
+              // temp id we sent), so it survives a retry's new IV — and a
+              // lost-response retry's original row reconciles instead of
+              // duplicating. Checked against `prev`, so it's race-free; the same
+              // uid echoing from ANOTHER tab/device (where we hold no such temp)
+              // falls through to the normal append below instead of being dropped.
+              if (raw.uid === userUid && raw.client_msg_id && prev.some((m) => m.id === raw.client_msg_id)) {
+                return reconcileTemp(prev, raw.client_msg_id, newMsg);
+              }
               if (prev.some((m) => m.id === newMsg.id)) return prev;
               // Insert at the correct chronological position (created_at, then id)
               // rather than always appending: two near-simultaneous inserts (a user
@@ -607,6 +611,7 @@ export const useChatMessages = (
             .from('messages')
             .select('*')
             .eq('room_key', roomKey)
+            .eq('uid', userUid)
             .eq('client_msg_id', tempId)
             .maybeSingle();
           if (existing) {

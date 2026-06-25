@@ -358,7 +358,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                      ) : (
                          <button
                             onClick={() => handleSend()}
-                            disabled={isOffline || isUploading || !isRoomReady || !!uploadProgress || quotaLeft === 0}
+                            disabled={isOffline || isUploading || !isRoomReady || !!uploadProgress || (quotaLeft === 0 && !editingMessageId)}
                             aria-label="Send message"
                             className="w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
                          >

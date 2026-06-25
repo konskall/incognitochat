@@ -435,6 +435,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const liveAvatars = useMemo(() => buildLiveAvatars(memberAvatarRows, participants), [liveAvatarsSig]);
 
   const handleRecordingComplete = async (blob: Blob, mimeType: string) => {
+      // Covers the manual Stop (also gated in ChatInput) AND the recorder's
+      // max-duration auto-stop, which bypasses the button: never fire a doomed
+      // upload while offline.
+      if (isOffline) {
+          flashToast('You’re offline — voice message not sent.');
+          return;
+      }
       try {
            const ext = mimeType.includes('mp4') || mimeType.includes('aac') ? 'mp4' : 'webm';
            const file = new File([blob], `voice_${Date.now()}.${ext}`, { type: mimeType });
@@ -1942,7 +1949,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             stopRecording={stopRecording}
             cancelRecording={cancelRecording}
             selectedFiles={selectedFiles}
-            setSelectedFiles={setSelectedFiles}
+            setSelectedFiles={(f) => { setSelectedFiles(f); setPartialBatch(null); }}
             isUploading={isUploading}
             isGettingLocation={isGettingLocation}
             handleSendLocation={handleSendLocation}
