@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { Message } from '../types';
 import { getYouTubeId, cleanUrl } from '../utils/helpers';
 import { resolveDisplayAvatar } from '../utils/avatars';
+import { sameLocalDay, dayLabel, fullDateTime } from '../utils/dateSeparators';
 import Emoji from './Emoji';
 import { supabase } from '../services/supabase';
 import MediaPreviewModal, { MediaItem } from './MediaPreviewModal';
@@ -427,6 +428,9 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
     } catch (e) { return ''; }
   };
   const timeString = formatTime(msg.createdAt);
+  // Exact date+time for the hover tooltip; memoized so a reaction/seen/group
+  // re-render of this bubble doesn't re-run the Intl formatter.
+  const fullDate = useMemo(() => fullDateTime(msg.createdAt), [msg.createdAt]);
   const isBot = msg.uid === INCO_BOT_UUID;
 
   if (msg.type === 'system') {
@@ -696,7 +700,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
                   </div>
                 )}
 
-                <div className={`flex items-center justify-end gap-1 mt-1 select-none ${isMe ? 'text-blue-100' : isBot ? 'text-indigo-500 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400'}`}>{msg.isEdited && <span className="text-[10px] italic">(edited)</span>}<span className="text-[11px] font-medium">{timeString}</span>{isMe && msg.status === 'sending' && <Clock size={12} aria-label="Sending" className="opacity-80" />}{isMe && msg.status === 'failed' && (<button type="button" onClick={(e) => { e.stopPropagation(); onRetry?.(msg); }} aria-label="Message failed to send. Tap to retry." className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-red-600 text-white hover:bg-red-700 transition-colors"><AlertCircle size={12} /><span className="text-[11px] font-semibold">Retry</span></button>)}{isMe && showSeen && <span className="flex items-center gap-0.5 text-[10px] font-semibold" title="Seen"><CheckCheck size={12} /></span>}</div>
+                <div className={`flex items-center justify-end gap-1 mt-1 select-none ${isMe ? 'text-blue-100' : isBot ? 'text-indigo-500 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400'}`}>{msg.isEdited && <span className="text-[10px] italic">(edited)</span>}<span className="text-[11px] font-medium" title={fullDate}>{timeString}</span>{isMe && msg.status === 'sending' && <Clock size={12} aria-label="Sending" className="opacity-80" />}{isMe && msg.status === 'failed' && (<button type="button" onClick={(e) => { e.stopPropagation(); onRetry?.(msg); }} aria-label="Message failed to send. Tap to retry." className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-red-600 text-white hover:bg-red-700 transition-colors"><AlertCircle size={12} /><span className="text-[11px] font-semibold">Retry</span></button>)}{isMe && showSeen && <span className="flex items-center gap-0.5 text-[10px] font-semibold" title="Seen"><CheckCheck size={12} /></span>}</div>
             </div>
             {msg.reactions && Object.keys(msg.reactions).length > 0 && <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>{Object.entries(msg.reactions).map(([emoji, uids]) => { if (uids.length === 0) return null; const iReacted = uids.includes(currentUid); return (<button key={emoji} onClick={() => onReact(msg, emoji)} aria-pressed={iReacted} aria-label={`React with ${emoji}, ${uids.length} ${uids.length === 1 ? 'reaction' : 'reactions'}${iReacted ? ', you reacted' : ''}`} className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs shadow-sm border transition-all hover:scale-105 ${iReacted ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800 text-slate-800 dark:text-blue-100' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}><Emoji emoji={emoji} size={18} /><span className={`font-semibold text-[11px] ${iReacted ? 'text-blue-600 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>{uids.length}</span></button>);})}</div>}
         </div>
@@ -726,6 +730,15 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
 });
 
 const EMPTY_AVATARS = new Map<string, string>();
+
+// Centered day chip ("Today" / "Yesterday" / a date) inserted between messages
+// when the local calendar day changes — same pill style as the results/load-earlier
+// chips. Anchors which date a run of (time-only) messages belongs to.
+const DayDivider = ({ label }: { label: string }) => (
+  <div className="flex justify-center py-3 select-none" role="separator" aria-label={`Messages from ${label}`}>
+    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1 shadow-sm backdrop-blur-sm">{label}</span>
+  </div>
+);
 
 // Virtualization-lite: let the browser skip rendering/layout/paint of off-screen
 // message rows. `auto` remembers each row's last-rendered height (so on-screen
@@ -815,6 +828,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
   // message and spacing tightens between the rest.
   const sameGroup = (a?: Message, b?: Message) =>
     !!a && !!b && a.uid === b.uid && a.type !== 'system' && b.type !== 'system' &&
+    sameLocalDay(a.createdAt, b.createdAt) &&
     Math.abs(new Date(a.createdAt as any).getTime() - new Date(b.createdAt as any).getTime()) < 5 * 60 * 1000;
 
   return (
@@ -838,9 +852,16 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
             ) : (
               <>
                 <div className="flex justify-center py-3"><span className="text-xs font-semibold text-slate-500 dark:text-slate-400 bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1">{visibleMessages.length} result{visibleMessages.length === 1 ? '' : 's'}</span></div>
-                {visibleMessages.map((msg, i, arr) => (
-                  <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onRetry={onRetry} onPreview={handleMediaPreview} onUserClick={onUserClick} onIncoClick={onIncoClick} displayAvatar={resolveDisplayAvatar(msg.uid, msg.avatarURL, avatars)} searchQuery={searchQuery} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
-                ))}
+                {visibleMessages.map((msg, i, arr) => {
+                  const lbl = dayLabel(msg.createdAt);
+                  const showDivider = !!lbl && (i === 0 || !sameLocalDay(arr[i - 1].createdAt, msg.createdAt));
+                  return (
+                  <React.Fragment key={msg.id}>
+                    {showDivider && <DayDivider label={lbl} />}
+                    <MessageItem msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onRetry={onRetry} onPreview={handleMediaPreview} onUserClick={onUserClick} onIncoClick={onIncoClick} displayAvatar={resolveDisplayAvatar(msg.uid, msg.avatarURL, avatars)} searchQuery={searchQuery} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
+                  </React.Fragment>
+                  );
+                })}
               </>
             )}
           </>
@@ -862,9 +883,16 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
             {liveMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60">{messages.length > 0 ? (<><p>Messages here have expired.</p><p className="text-xs">Load earlier to see older ones.</p></>) : (<><p>No messages yet.</p><p className="text-xs">Say hello! 👋</p></>)}</div>
             ) : (
-              liveMessages.map((msg, i, arr) => (
-                <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onRetry={onRetry} onPreview={handleMediaPreview} onUserClick={onUserClick} onIncoClick={onIncoClick} displayAvatar={resolveDisplayAvatar(msg.uid, msg.avatarURL, avatars)} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
-              ))
+              liveMessages.map((msg, i, arr) => {
+                const lbl = dayLabel(msg.createdAt);
+                const showDivider = !!lbl && (i === 0 || !sameLocalDay(arr[i - 1].createdAt, msg.createdAt));
+                return (
+                <React.Fragment key={msg.id}>
+                  {showDivider && <DayDivider label={lbl} />}
+                  <MessageItem msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onRetry={onRetry} onPreview={handleMediaPreview} onUserClick={onUserClick} onIncoClick={onIncoClick} displayAvatar={resolveDisplayAvatar(msg.uid, msg.avatarURL, avatars)} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
+                </React.Fragment>
+                );
+              })
             )}
           </>
         )}
