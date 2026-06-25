@@ -73,7 +73,7 @@ Deno.serve(async (req: Request) => {
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
     const {
-      roomKey, roomName, history, triggerText, triggerUsername,
+      roomKey, roomName, history, context, triggerText, triggerUsername,
       clientDateTime, locationCity, locationDenied,
     } = await req.json().catch(() => ({}));
 
@@ -118,10 +118,16 @@ GUIDELINES:
 - Don't volunteer the date, time, or location unless it's relevant to the user's message.
 - LOCATION: if answering well REQUIRES the user's physical location (e.g. "best pizza near me", "weather here", nearby places) and no USER LOCATION is given above, reply with EXACTLY ${SENTINEL} and nothing else — do not guess a city and do not search. If USER LOCATION is given, use it. If the user already named a place, just use that.${deniedNote}`;
 
-    // Conversation as proper turns; fall back to a single user turn if no history.
+    // Conversation as proper turns; fall back if no structured history.
     let contents = toContents(history);
     if (contents.length === 0) {
-      contents = [{ role: "user", parts: [{ text: `${triggerUsername ?? "user"}: ${triggerText}` }] }];
+      // Backward-compat: a stale (pre-upgrade) client sends a flattened `context`
+      // string instead of `history`. Use it so inco isn't context-blind in the
+      // window before the new client is deployed.
+      const blob = (typeof context === "string" && context)
+        ? `${context}\n\n${triggerUsername ?? "user"}: ${triggerText}`
+        : `${triggerUsername ?? "user"}: ${triggerText}`;
+      contents = [{ role: "user", parts: [{ text: blob }] }];
     }
 
     const geminiBody = {
