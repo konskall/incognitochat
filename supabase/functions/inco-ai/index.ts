@@ -184,13 +184,15 @@ GUIDELINES:
       return json({ needLocation: true }, 200);
     }
     const cleaned = rawText.split(SENTINEL).join("").trim();
-    // The "ask for a city" fallback applies ONLY on a location second pass (model
-    // was told to ask for the city but came back blank). For every other empty
-    // reply (safety/recitation/MAX_TOKENS/empty candidate) keep text empty so the
-    // client's `if (!botText) return` stays silent (don't post an off-topic line).
-    // Cap the reply at 4000 chars (a crafted prompt could coax a huge response
-    // that inflates the encrypted row broadcast to every member).
-    const text = (cleaned || (secondPass ? "Which city or area should I look in?" : "")).slice(0, 4000);
+    // The "ask for a city" fallback applies ONLY when the user DECLINED location
+    // (the model was told to ask for the city but came back blank). When a city is
+    // actually present (fresh OR a session-cached one supplied on the first call),
+    // an empty reply is NOT a missing-location case — keep it empty so the client's
+    // `if (!botText) return` stays silent (don't post an off-topic line). Same for
+    // every other empty reply (safety/recitation/MAX_TOKENS/empty candidate). Cap
+    // the reply at 4000 chars (a crafted prompt could coax a huge response that
+    // inflates the encrypted row broadcast to every member).
+    const text = (cleaned || (locationDenied ? "Which city or area should I look in?" : "")).slice(0, 4000);
 
     const chunks = cand?.groundingMetadata?.groundingChunks ?? [];
     const sources = chunks

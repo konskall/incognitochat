@@ -8,6 +8,9 @@ import { stripIncoMarkdown } from '../utils/incoFormat';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
 const DEFAULT_BOT_AVATAR = 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1';
+// How long a GPS-resolved city stays usable before a location query re-resolves
+// (guards against a mobile user moving mid-session answering for a stale city).
+const CITY_TTL_MS = 45 * 60_000;
 
 export const useIncoAI = (
   roomKey: string,
@@ -21,6 +24,11 @@ export const useIncoAI = (
   const lastProcessedId = useRef<string | null>(null);
   const isBusy = useRef<boolean>(false);
   const seeded = useRef<boolean>(false);
+  // A city resolved via GPS+geocode is remembered so later location-aware
+  // questions are answered in ONE call (no repeat GPS prompt, no second
+  // round-trip). Expires after CITY_TTL_MS so a user who physically moves
+  // mid-session re-resolves once; resets fully on unmount / room change.
+  const cachedCity = useRef<{ city: string; ts: number } | null>(null);
   const [isResponding, setIsResponding] = useState(false);
   const [isQuotaExhausted, setIsQuotaExhausted] = useState(false);
 
@@ -93,6 +101,11 @@ export const useIncoAI = (
         hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
       });
 
+      // Use the cached city only while still fresh (see CITY_TTL_MS); a stale
+      // entry is ignored so the next location query re-resolves via GPS.
+      const c = cachedCity.current;
+      const freshCity = c && Date.now() - c.ts < CITY_TTL_MS ? c.city : null;
+
       const baseBody = {
         roomKey,
         roomName: config.roomName,
@@ -100,6 +113,9 @@ export const useIncoAI = (
         triggerText: triggerMsg.text,
         triggerUsername: triggerMsg.username,
         clientDateTime,
+        // If we already know the user's city this session, supply it up front so
+        // the edge never needs to ask — collapsing a location query to one call.
+        ...(freshCity ? { locationCity: freshCity } : {}),
       };
 
       // Gemini is called server-side (Edge Function `inco-ai`) so the API key is
@@ -123,6 +139,8 @@ export const useIncoAI = (
             city = await reverseGeocodeCity(pos.coords.latitude, pos.coords.longitude);
           } catch { city = null; }
         }
+        // Remember a resolved city (with its timestamp) for the session (see cachedCity).
+        if (city) cachedCity.current = { city, ts: Date.now() };
         const second = await supabase.functions.invoke('inco-ai', {
           body: city ? { ...baseBody, locationCity: city } : { ...baseBody, locationDenied: true },
         });
