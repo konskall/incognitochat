@@ -7,7 +7,7 @@ import MessageList from './MessageList';
 // WebRTC call logic is the heaviest component in the app (~43KB); load it
 // lazily so entering a room paints the message list first.
 const CallManager = lazy(() => import('./CallManager'));
-import { initAudio, playBeep, cleanUrl, beginThemeTransition } from '../utils/helpers';
+import { initAudio, playBeep, cleanUrl, beginThemeTransition, INCO_BOT_AVATAR } from '../utils/helpers';
 import { decryptMessage } from '../utils/crypto';
 import { subscribeToPushNotifications, unsubscribeFromPushNotifications } from '../utils/pushService';
 import { setActiveRoom, onPushSubscriptionChanged } from '../utils/swBridge';
@@ -16,6 +16,7 @@ import ChatInput from './ChatInput';
 import { DeleteChatModal, ClearMessagesModal, EmailAlertModal } from './ChatModals';
 import AiAvatarModal from './AiAvatarModal';
 import UserProfileModal from './UserProfileModal';
+import IncoInfoModal from './IncoInfoModal';
 import RoomAppearanceModal from './RoomAppearanceModal';
 import EphemeralModal, { formatTtl } from './EphemeralModal';
 import RoomExpiryModal from './RoomExpiryModal';
@@ -221,6 +222,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const [approvalRequired, setApprovalRequired] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiAvatarUrl, setAiAvatarUrl] = useState('');
+  // Non-null = the inco info modal is open, showing this avatar (the one tapped).
+  const [incoInfoAvatar, setIncoInfoAvatar] = useState<string | null>(null);
 
   // Room appearance (icon + wallpaper), owner-editable, propagated via realtime.
   const [roomAvatarUrl, setRoomAvatarUrl] = useState('');
@@ -431,8 +434,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     for (const p of participants) if (p.avatar) parts.push(`${p.uid}=${p.avatar}`);
     return parts.sort().join('|');
   }, [memberAvatarRows, participants]);
+  // Overlay the inco bot's CURRENT avatar (room's custom AI avatar if https,
+  // else the self-hosted default) onto every bot message — old + new — so the
+  // assistant shows one consistent face, the same way user avatars resolve live.
+  const botAvatar = aiAvatarUrl && /^https:\/\//i.test(aiAvatarUrl) ? aiAvatarUrl : INCO_BOT_AVATAR;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const liveAvatars = useMemo(() => buildLiveAvatars(memberAvatarRows, participants), [liveAvatarsSig]);
+  const liveAvatars = useMemo(() => {
+    const map = buildLiveAvatars(memberAvatarRows, participants);
+    map.set(INCO_BOT_UUID, botAvatar);
+    return map;
+  }, [liveAvatarsSig, botAvatar]);
 
   const handleRecordingComplete = async (blob: Blob, mimeType: string) => {
       // Covers the manual Stop (also gated in ChatInput) AND the recorder's
@@ -1706,6 +1717,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     };
   }, []);
 
+  // Tapping the inco bot's avatar/name opens its info modal (it has no user
+  // profile). Show whatever avatar was on screen, falling back to the default.
+  const handleIncoClick = useCallback((avatar: string) => {
+      setIncoInfoAvatar(avatar || INCO_BOT_AVATAR);
+  }, []);
+
   const handleUserClick = useCallback(async (uid: string, username: string, avatar: string) => {
       if (uid === INCO_BOT_UUID) return;
 
@@ -1900,6 +1917,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             onReact={reactToMessage}
             onRetry={handleRetry}
             onUserClick={handleUserClick}
+            onIncoClick={handleIncoClick}
             liveAvatars={liveAvatars}
             hasMoreOlder={hasMoreOlder}
             onLoadEarlier={loadOlderMessages}
@@ -2122,6 +2140,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             onClose={handleCloseUserModal}
           />
       )}
+
+      <IncoInfoModal avatar={incoInfoAvatar} onClose={() => setIncoInfoAvatar(null)} />
     </div>
   );
 };

@@ -5,9 +5,10 @@ import { encryptMessage } from '../utils/crypto';
 import { buildIncoTurns } from '../utils/incoContext';
 import { reverseGeocodeCity } from '../utils/geocode';
 import { stripIncoMarkdown } from '../utils/incoFormat';
+import { INCO_BOT_AVATAR } from '../utils/helpers';
 
 const INCO_BOT_UUID = '00000000-0000-0000-0000-000000000000';
-const DEFAULT_BOT_AVATAR = 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1';
+const DEFAULT_BOT_AVATAR = INCO_BOT_AVATAR;
 // How long a GPS-resolved city stays usable before a location query re-resolves
 // (guards against a mobile user moving mid-session answering for a stale city).
 const CITY_TTL_MS = 45 * 60_000;

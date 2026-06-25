@@ -2,12 +2,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, RefreshCw, Upload, Link as LinkIcon, Save, Loader2, Wand2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { compressImage } from '../utils/helpers';
+import { compressImage, INCO_BOT_AVATAR } from '../utils/helpers';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { parseTierError } from '../utils/tierGatingErrors';
 import { flashToast } from '../utils/toast';
 
-const DEFAULT_BOT_AVATAR = 'https://api.dicebear.com/9.x/bottts/svg?seed=inco&backgroundColor=6366f1';
+const DEFAULT_BOT_AVATAR = INCO_BOT_AVATAR;
 
 interface AiAvatarModalProps {
   show: boolean;

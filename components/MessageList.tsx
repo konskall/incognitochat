@@ -28,6 +28,9 @@ interface MessageListProps {
   onReply: (msg: Message) => void;
   onRetry?: (msg: Message) => void;
   onUserClick?: (uid: string, username: string, avatar: string) => void;
+  // Tapping the inco bot's avatar/name opens its info modal (the bot has no
+  // user profile). Receives the avatar shown in chat so the modal matches it.
+  onIncoClick?: (avatar: string) => void;
   // uid -> current avatar (presence/roster), overlaid onto each message's baked
   // avatar so a profile-photo change shows on old messages too. See utils/avatars.
   liveAvatars?: Map<string, string>;
@@ -289,8 +292,8 @@ const LinkPreview: React.FC<{ url: string }> = ({ url }) => {
     );
 };
 
-const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, onRequestDelete, onReact, onReply, onRetry, onPreview, onUserClick, displayAvatar, searchQuery, showSeen, isOwner, isPinned, onPin, onUnpin, onVotePoll, onToggleClosedPoll, isFirstOfGroup = true, isLastOfGroup = true }: {
-    msg: Message; isMe: boolean; currentUid: string; roomOwnerUid?: string; onEdit: (msg: Message) => void; onRequestDelete: (msgId: string) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; onRetry?: (msg: Message) => void; onPreview: (url: string, name: string, type: string) => void; onUserClick?: (uid: string, username: string, avatar: string) => void; displayAvatar: string; searchQuery?: string; showSeen?: boolean; isOwner?: boolean; isPinned?: boolean; onPin?: (msg: Message) => void; onUnpin?: () => void; onVotePoll?: (msg: Message, optionId: string) => void; onToggleClosedPoll?: (msg: Message, closed: boolean) => void; isFirstOfGroup?: boolean; isLastOfGroup?: boolean;
+const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, onRequestDelete, onReact, onReply, onRetry, onPreview, onUserClick, onIncoClick, displayAvatar, searchQuery, showSeen, isOwner, isPinned, onPin, onUnpin, onVotePoll, onToggleClosedPoll, isFirstOfGroup = true, isLastOfGroup = true }: {
+    msg: Message; isMe: boolean; currentUid: string; roomOwnerUid?: string; onEdit: (msg: Message) => void; onRequestDelete: (msgId: string) => void; onReact: (msg: Message, emoji: string) => void; onReply: (msg: Message) => void; onRetry?: (msg: Message) => void; onPreview: (url: string, name: string, type: string) => void; onUserClick?: (uid: string, username: string, avatar: string) => void; onIncoClick?: (avatar: string) => void; displayAvatar: string; searchQuery?: string; showSeen?: boolean; isOwner?: boolean; isPinned?: boolean; onPin?: (msg: Message) => void; onUnpin?: () => void; onVotePoll?: (msg: Message, optionId: string) => void; onToggleClosedPoll?: (msg: Message, closed: boolean) => void; isFirstOfGroup?: boolean; isLastOfGroup?: boolean;
 }) => {
   // Long-press / right-click opens the action menu (replaces the inline button column).
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -599,12 +602,12 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
                 const fb = `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=64748b&color=fff&rounded=true`;
                 if (img.src !== fb) { img.onerror = null; img.src = fb; }
               }}
-              onClick={() => !isBot && onUserClick?.(msg.uid, msg.username, displayAvatar)}
-              role={!isBot ? 'button' : undefined}
-              tabIndex={!isBot ? 0 : undefined}
-              aria-label={!isBot ? `View ${msg.username}'s profile` : undefined}
-              onKeyDown={!isBot ? onActivate(() => onUserClick?.(msg.uid, msg.username, displayAvatar)) : undefined}
-              className={`w-8 h-8 rounded-full shadow-sm object-cover border-2 border-white dark:border-slate-700 select-none bg-slate-200 dark:bg-slate-700 self-start focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${!isBot ? 'cursor-pointer hover:scale-110 transition-transform active:scale-95' : ''}`}
+              onClick={() => isBot ? onIncoClick?.(displayAvatar) : onUserClick?.(msg.uid, msg.username, displayAvatar)}
+              role="button"
+              tabIndex={0}
+              aria-label={isBot ? 'About inco' : `View ${msg.username}'s profile`}
+              onKeyDown={onActivate(() => isBot ? onIncoClick?.(displayAvatar) : onUserClick?.(msg.uid, msg.username, displayAvatar))}
+              className="w-8 h-8 rounded-full shadow-sm object-cover border-2 border-white dark:border-slate-700 select-none bg-slate-200 dark:bg-slate-700 self-start focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 cursor-pointer hover:scale-110 transition-transform active:scale-95"
             />
           ) : (
             <div className="w-8 shrink-0" aria-hidden="true" />
@@ -640,7 +643,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
           }}
           style={{ WebkitTouchCallout: 'none' }}
           className={`chat-bubble relative px-4 py-2.5 rounded-2xl text-sm md:text-base min-w-0 transition-all select-none cursor-default border shadow-[0_4px_14px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.18)] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 ${isMe ? 'bg-blue-600/90 text-white border-white/25 rounded-br-none' : isBot ? 'bg-indigo-100/90 dark:bg-indigo-800/90 text-indigo-900 dark:text-white border-indigo-300/50 dark:border-indigo-400/30 rounded-bl-none' : 'bg-white/90 dark:bg-slate-900/85 text-slate-800 dark:text-slate-50 border-black/5 dark:border-white/12 rounded-bl-none'} ${isMe && msg.status === 'sending' ? 'opacity-70' : ''}`}>
-                {!isMe && isFirstOfGroup && <p className={`text-[10px] font-bold ${isBot ? 'text-indigo-600 dark:text-indigo-200' : 'text-slate-400'} mb-0.5 tracking-wide select-none flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded ${!isBot ? 'cursor-pointer hover:text-blue-500 transition-colors' : ''}`} onClick={() => !isBot && onUserClick?.(msg.uid, msg.username, displayAvatar)} role={!isBot ? 'button' : undefined} tabIndex={!isBot ? 0 : undefined} aria-label={!isBot ? `View ${msg.username}'s profile` : undefined} onKeyDown={!isBot ? onActivate(() => onUserClick?.(msg.uid, msg.username, displayAvatar)) : undefined}>{msg.username} {isBot && <Wand2 size={10} className="text-indigo-500 dark:text-indigo-300 animate-pulse" />}</p>}
+                {!isMe && isFirstOfGroup && <p className={`text-[10px] font-bold ${isBot ? 'text-indigo-600 dark:text-indigo-200' : 'text-slate-400'} mb-0.5 tracking-wide select-none flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded cursor-pointer transition-colors ${isBot ? 'hover:text-indigo-500' : 'hover:text-blue-500'}`} onClick={() => isBot ? onIncoClick?.(displayAvatar) : onUserClick?.(msg.uid, msg.username, displayAvatar)} role="button" tabIndex={0} aria-label={isBot ? 'About inco' : `View ${msg.username}'s profile`} onKeyDown={onActivate(() => isBot ? onIncoClick?.(displayAvatar) : onUserClick?.(msg.uid, msg.username, displayAvatar))}>{msg.username} {isBot && <Wand2 size={10} className="text-indigo-500 dark:text-indigo-300 animate-pulse" />}</p>}
                 {msg.replyTo && <div onClick={jumpToReply} role="button" tabIndex={0} aria-label={`Go to message replied to from ${msg.replyTo.username}`} onKeyDown={onActivate(jumpToReply)} className={`mb-2 p-2 rounded cursor-pointer opacity-90 hover:opacity-100 transition border-l-[3px] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${isMe ? 'bg-black/10 border-white/40' : 'bg-slate-100 dark:bg-slate-700 border-blue-400'}`}><span className={`text-xs font-bold block mb-0.5 ${isMe ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'}`}>{msg.replyTo.username}</span><p className="text-xs truncate max-w-[200px] opacity-80">{msg.replyTo.isAttachment ? '📎 Attachment' : msg.replyTo.text}</p></div>}
                 {renderAttachment()}
                 {renderLocation()}
@@ -732,7 +735,7 @@ const EMPTY_AVATARS = new Map<string, string>();
 // by browsers that don't support it (older Safari) — graceful, no behavior change.
 const CV_STYLE = { contentVisibility: 'auto', containIntrinsicSize: 'auto 72px' } as React.CSSProperties;
 
-const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onRetry, onUserClick, liveAvatars, hasMoreOlder, onLoadEarlier, searchQuery, seenMessageId, messageTtlSeconds, roomOwnerUid, isOwner, pinnedMessageId, onPin, onUnpin, onVotePoll, onToggleClosedPoll }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onRetry, onUserClick, onIncoClick, liveAvatars, hasMoreOlder, onLoadEarlier, searchQuery, seenMessageId, messageTtlSeconds, roomOwnerUid, isOwner, pinnedMessageId, onPin, onUnpin, onVotePoll, onToggleClosedPoll }) => {
   const avatars = liveAvatars ?? EMPTY_AVATARS;
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
@@ -836,7 +839,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
               <>
                 <div className="flex justify-center py-3"><span className="text-xs font-semibold text-slate-500 dark:text-slate-400 bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1">{visibleMessages.length} result{visibleMessages.length === 1 ? '' : 's'}</span></div>
                 {visibleMessages.map((msg, i, arr) => (
-                  <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onRetry={onRetry} onPreview={handleMediaPreview} onUserClick={onUserClick} displayAvatar={resolveDisplayAvatar(msg.uid, msg.avatarURL, avatars)} searchQuery={searchQuery} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
+                  <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onRetry={onRetry} onPreview={handleMediaPreview} onUserClick={onUserClick} onIncoClick={onIncoClick} displayAvatar={resolveDisplayAvatar(msg.uid, msg.avatarURL, avatars)} searchQuery={searchQuery} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
                 ))}
               </>
             )}
@@ -860,7 +863,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
               <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60">{messages.length > 0 ? (<><p>Messages here have expired.</p><p className="text-xs">Load earlier to see older ones.</p></>) : (<><p>No messages yet.</p><p className="text-xs">Say hello! 👋</p></>)}</div>
             ) : (
               liveMessages.map((msg, i, arr) => (
-                <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onRetry={onRetry} onPreview={handleMediaPreview} onUserClick={onUserClick} displayAvatar={resolveDisplayAvatar(msg.uid, msg.avatarURL, avatars)} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
+                <MessageItem key={msg.id} msg={msg} isMe={msg.uid === currentUserUid} currentUid={currentUserUid} roomOwnerUid={roomOwnerUid} onEdit={onEdit} onRequestDelete={handleRequestDelete} onReact={onReact} onReply={onReply} onRetry={onRetry} onPreview={handleMediaPreview} onUserClick={onUserClick} onIncoClick={onIncoClick} displayAvatar={resolveDisplayAvatar(msg.uid, msg.avatarURL, avatars)} showSeen={msg.id === seenMessageId} isOwner={isOwner} isPinned={msg.id === pinnedMessageId} onPin={onPin} onUnpin={onUnpin} onVotePoll={onVotePoll} onToggleClosedPoll={onToggleClosedPoll} isFirstOfGroup={!sameGroup(arr[i - 1], msg)} isLastOfGroup={!sameGroup(msg, arr[i + 1])} />
               ))
             )}
           </>

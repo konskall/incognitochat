@@ -167,6 +167,14 @@ export function safeAvatarUrl(url: string | undefined | null): string {
   }
 }
 
+// The inco assistant's default avatar (self-hosted in /public). Resolved to an
+// ABSOLUTE https URL at runtime so it satisfies the https-only avatar policy
+// (safeAvatarUrl + the message-list <img> guard) and works on any deploy origin.
+// Guarded for non-browser (test) environments where `window` is undefined.
+export const INCO_BOT_AVATAR =
+  (typeof window !== 'undefined' ? window.location.origin : '') +
+  import.meta.env.BASE_URL + 'inco-avatar.png';
+
 // Strip trailing punctuation that the greedy URL regex (matches up to
 // whitespace) sucks in — e.g. "see https://example.com." → "https://example.com".
 // Used for link previews, the rendered anchor, and the room "Links" gallery so a
