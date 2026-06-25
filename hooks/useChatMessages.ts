@@ -31,6 +31,7 @@ interface MessageRow {
   location?: { lat: number; lng: number } | null;
   is_edited?: boolean | null;
   reactions?: { [emoji: string]: string[] } | null;
+  client_msg_id?: string | null;
   reply_to?: ReplyInfo | null;
   type?: string | null;
   grounding_metadata?: GroundingSource[] | null;
@@ -72,10 +73,6 @@ export const useChatMessages = (
   // full row but never changes `text`, so this lets the UPDATE handler skip the
   // AES decrypt and reuse the already-decrypted plaintext.
   const cipherCacheRef = useRef<Map<string, string>>(new Map());
-  // ciphertext (exact bytes sent) -> tempId, so the realtime echo of OUR OWN
-  // message can be matched back to its temp bubble (random IV means we cannot
-  // re-derive the ciphertext, so we record it at send time).
-  const pendingSendsRef = useRef<Map<string, string>>(new Map());
   // Throttle the refocus resync: visibilitychange and window 'focus' fire
   // back-to-back on tab return, which used to issue two identical round-trips.
   const lastResyncRef = useRef(0);
@@ -358,12 +355,12 @@ export const useChatMessages = (
             const raw = payload.new as MessageRow;
             // Path A: our own optimistic send echoing back. Replace its temp
             // bubble in place instead of appending a duplicate. Matched on the
-            // exact ciphertext we recorded at send time (random IV ⇒ can't re-derive).
-            if (raw.uid === userUid && pendingSendsRef.current.has(raw.text || '')) {
-              const tempId = pendingSendsRef.current.get(raw.text || '')!;
-              pendingSendsRef.current.delete(raw.text || '');
+            // stable client_msg_id (= the temp id we sent) — survives a retry's new
+            // IV, unlike a ciphertext match, and is how a lost-response retry's
+            // original row reconciles instead of duplicating.
+            if (raw.uid === userUid && raw.client_msg_id && raw.client_msg_id.startsWith('temp_')) {
               const matchedReal = mapRow(raw);
-              setMessages((prev) => reconcileTemp(prev, tempId, matchedReal));
+              setMessages((prev) => reconcileTemp(prev, raw.client_msg_id!, matchedReal));
               return;
             }
             const newMsg = mapRow(payload.new as MessageRow);
@@ -447,7 +444,6 @@ export const useChatMessages = (
       // Per-room ciphertext cache: drop it on room switch so it can't grow
       // unbounded across rooms over a long-lived PWA session.
       cipherCacheRef.current.clear();
-      pendingSendsRef.current.clear();
     };
   }, [roomKey, pin, enabled, userUid, mapRow, mapPoll, fetchInitial, fetchNewer, resync]);
 
@@ -517,7 +513,6 @@ export const useChatMessages = (
         createdAt: new Date().toISOString(),
         replyTo: replyInfo,
       });
-      pendingSendsRef.current.set(encryptedText, tempId);
       setMessages((prev) => [...prev, temp]);
 
       const { data, error } = await supabase
@@ -532,6 +527,11 @@ export const useChatMessages = (
           attachment: null,
           reactions: {},
           location: null,
+          // Stable per-message id (= the temp id), reused verbatim on retry. The
+          // UNIQUE (room_key, client_msg_id) index makes the insert idempotent so a
+          // retry after a lost response can't duplicate, and the realtime echo is
+          // matched back to its temp by this id (Path A) regardless of IV.
+          client_msg_id: tempId,
           reply_to: replyTo
             ? {
                 id: replyTo.id,
@@ -545,7 +545,6 @@ export const useChatMessages = (
         .single();
 
       if (error || !data) {
-        pendingSendsRef.current.delete(encryptedText);
         setMessages((prev) => markMessageStatus(prev, tempId, 'failed'));
         return { ok: false, error: error ?? new Error('Insert returned no row') };
       }
@@ -553,16 +552,18 @@ export const useChatMessages = (
       // Path B: reconcile temp -> real (idempotent vs the echo path above).
       cipherCacheRef.current.set(data.id, encryptedText);
       const realMsg: Message = { ...temp, id: data.id, createdAt: data.created_at, status: undefined };
-      pendingSendsRef.current.delete(encryptedText);
       setMessages((prev) => reconcileTemp(prev, tempId, realMsg));
       return { ok: true };
     },
     [roomKey, pin, userUid]
   );
 
-  // Retry a failed typed-text message in place (reuses its tempId). Re-encrypts
-  // (new IV ⇒ new ciphertext; refresh the pending map), flips status back to
-  // 'sending', re-inserts, reconciles. Never throws; resolves with the outcome.
+  // Retry a failed typed-text message in place (reuses its tempId — and therefore
+  // its client_msg_id). Re-encrypts (new IV), flips status back to 'sending',
+  // re-inserts, reconciles. The UNIQUE (room_key, client_msg_id) index makes this
+  // idempotent: if the original insert actually persisted (its response was lost),
+  // the retry hits a 23505 conflict and we reconcile to the existing row instead
+  // of creating a duplicate. Never throws; resolves with the outcome.
   const retryMessage = useCallback(
     async (tempId: string): Promise<SendOutcome> => {
       if (!userUid || !roomKey) return { ok: false, error: new Error('Not ready') };
@@ -570,9 +571,6 @@ export const useChatMessages = (
       if (!msg) return { ok: false, error: new Error('Message not found') };
 
       const encryptedText = encryptMessage(msg.text, pin, roomKey);
-      // Drop any stale pending entry pointing at this temp, then record the new one.
-      for (const [c, t] of pendingSendsRef.current) if (t === tempId) pendingSendsRef.current.delete(c);
-      pendingSendsRef.current.set(encryptedText, tempId);
       setMessages((prev) => markMessageStatus(prev, tempId, 'sending'));
 
       const { data, error } = await supabase
@@ -587,6 +585,7 @@ export const useChatMessages = (
           attachment: null,
           reactions: {},
           location: null,
+          client_msg_id: tempId,
           reply_to: msg.replyTo
             ? {
                 id: msg.replyTo.id,
@@ -600,18 +599,31 @@ export const useChatMessages = (
         .single();
 
       if (error || !data) {
-        pendingSendsRef.current.delete(encryptedText);
+        // 23505 = the original insert DID persist (its response was lost); the
+        // unique (room_key, client_msg_id) index blocked the duplicate. Reconcile
+        // the temp to the already-saved row instead of leaving a 'failed' bubble.
+        if ((error as { code?: string } | null)?.code === '23505') {
+          const { data: existing } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('room_key', roomKey)
+            .eq('client_msg_id', tempId)
+            .maybeSingle();
+          if (existing) {
+            setMessages((prev) => reconcileTemp(prev, tempId, mapRow(existing as MessageRow)));
+            return { ok: true };
+          }
+        }
         setMessages((prev) => markMessageStatus(prev, tempId, 'failed'));
         return { ok: false, error: error ?? new Error('Insert returned no row') };
       }
 
       cipherCacheRef.current.set(data.id, encryptedText);
       const realMsg: Message = { ...msg, id: data.id, createdAt: data.created_at, status: undefined };
-      pendingSendsRef.current.delete(encryptedText);
       setMessages((prev) => reconcileTemp(prev, tempId, realMsg));
       return { ok: true };
     },
-    [roomKey, pin, userUid]
+    [roomKey, pin, userUid, mapRow]
   );
 
   // Create a poll as a dedicated message (type='poll'). Question + option text
