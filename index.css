@@ -118,3 +118,18 @@ body {
   background: rgba(15, 23, 42, 0.90);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
+
+/* Dark-theme elevation. Tailwind's default shadow scale is near-black at low
+   alpha (0.1–0.25) — fine on white, but invisible on dark surfaces, so the dark
+   theme looked flat. Re-cast the scale in dark mode with higher-alpha black + a
+   touch more spread so cards, modals ("windows"), menus and the header read as
+   elevated, matching the depth the light theme already has. Single-suffix
+   selectors (`.dark .shadow-lg`, etc.) outrank the base utility, and being after
+   `@tailwind utilities` they win without !important. Message bubbles use an
+   arbitrary shadow and get their own `dark:` variant in MessageList. */
+.dark .shadow-sm  { box-shadow: 0 1px 2px 0 rgba(0,0,0,0.55); }
+.dark .shadow     { box-shadow: 0 1px 3px 0 rgba(0,0,0,0.60), 0 1px 2px -1px rgba(0,0,0,0.60); }
+.dark .shadow-md  { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.60), 0 2px 4px -2px rgba(0,0,0,0.55); }
+.dark .shadow-lg  { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.65), 0 4px 6px -4px rgba(0,0,0,0.55); }
+.dark .shadow-xl  { box-shadow: 0 20px 25px -5px rgba(0,0,0,0.70), 0 8px 10px -6px rgba(0,0,0,0.60); }
+.dark .shadow-2xl { box-shadow: 0 25px 50px -12px rgba(0,0,0,0.85); }
