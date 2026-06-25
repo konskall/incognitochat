@@ -436,9 +436,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
 
   const handleRecordingComplete = async (blob: Blob, mimeType: string) => {
       // Covers the manual Stop (also gated in ChatInput) AND the recorder's
-      // max-duration auto-stop, which bypasses the button: never fire a doomed
-      // upload while offline.
-      if (isOffline) {
+      // max-duration auto-stop, which bypasses the button. Read navigator.onLine
+      // LIVE rather than the isOffline state: the recorder binds this callback at
+      // record-start, so a closed-over isOffline would be stale by auto-stop time.
+      if (!navigator.onLine) {
           flashToast('You’re offline — voice message not sent.');
           return;
       }
