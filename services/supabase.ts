@@ -27,6 +27,7 @@ export interface JoinRoomResult {
   auto_delete_seconds: number | null;
   pinned_message_id: string | null;
   approval_required: boolean;
+  is_notes: boolean;
   is_new: boolean;
 }
 

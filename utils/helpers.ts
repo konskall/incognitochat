@@ -175,6 +175,13 @@ export const INCO_BOT_AVATAR =
   (typeof window !== 'undefined' ? window.location.origin : '') +
   import.meta.env.BASE_URL + 'inco-avatar.png';
 
+// The Notes room's default avatar (self-hosted in /public), same resolution as
+// the get_or_create_notes_room RPC bakes. Used to restore it from the room
+// appearance editor. Absolute https at runtime; window-guarded for tests.
+export const NOTES_DEFAULT_AVATAR =
+  (typeof window !== 'undefined' ? window.location.origin : '') +
+  import.meta.env.BASE_URL + 'notes-default.png';
+
 // Strip trailing punctuation that the greedy URL regex (matches up to
 // whitespace) sucks in — e.g. "see https://example.com." → "https://example.com".
 // Used for link previews, the rendered anchor, and the room "Links" gallery so a

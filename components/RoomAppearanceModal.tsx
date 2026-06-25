@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Upload, Link as LinkIcon, RotateCcw, Save, Loader2, Image as ImageIcon, Check, Palette } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { compressImage } from '../utils/helpers';
+import { compressImage, NOTES_DEFAULT_AVATAR } from '../utils/helpers';
 import { ROOM_BG_PRESETS, ROOM_BG_CATEGORIES, presetCategory, type RoomBgCategory } from '../utils/roomBackgrounds';
 import { useModalA11y } from '../hooks/useModalA11y';
 import { parseTierError } from '../utils/tierGatingErrors';
@@ -16,9 +16,12 @@ interface RoomAppearanceModalProps {
   current: { avatarUrl: string; bgType: string; bgPreset: string; bgUrl: string };
   onUpdate: (next: { avatarUrl: string; bgType: string; bgPreset: string; bgUrl: string }) => void;
   onUpgrade?: (featureLabel: string, requiredTier: 'basic' | 'ultra', reason?: string) => void;
+  // The personal Notes room has a self-hosted default icon to restore to (a plain
+  // room just clears to initials). Only true for is_notes rooms.
+  isNotes?: boolean;
 }
 
-const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose, roomKey, roomName, isDarkMode, current, onUpdate, onUpgrade }) => {
+const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose, roomKey, roomName, isDarkMode, current, onUpdate, onUpgrade, isNotes }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
 
@@ -133,7 +136,9 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) upload(e.target.files[0], 'avatar'); e.target.value = ''; }} />
               </label>
               <button onClick={() => { setShowLink((s) => !s); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-xs font-semibold text-slate-600 dark:text-slate-300"><LinkIcon size={14} /> Link</button>
-              {avatarUrl && <button onClick={() => setAvatarUrl('')} aria-label="Reset icon" className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-xs font-semibold text-slate-600 dark:text-slate-300"><RotateCcw size={14} /></button>}
+              {isNotes
+                ? <button onClick={() => setAvatarUrl(NOTES_DEFAULT_AVATAR)} title="Reset to default" className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-xs font-semibold text-slate-600 dark:text-slate-300"><RotateCcw size={14} /> Default</button>
+                : (avatarUrl && <button onClick={() => setAvatarUrl('')} aria-label="Reset icon" className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-xs font-semibold text-slate-600 dark:text-slate-300"><RotateCcw size={14} /></button>)}
             </div>
             {showLink && (
               <div className="flex relative mt-2 animate-in slide-in-from-top-1">

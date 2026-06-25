@@ -220,6 +220,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const [isRoomReady, setIsRoomReady] = useState(false);
   const [roomCreatorId, setRoomCreatorId] = useState<string | null>(null);
   const [approvalRequired, setApprovalRequired] = useState(false);
+  const [isNotesRoom, setIsNotesRoom] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiAvatarUrl, setAiAvatarUrl] = useState('');
   // Non-null = the inco info modal is open, showing this avatar (the one tapped).
@@ -779,6 +780,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       if (room) {
         setRoomCreatorId(room.created_by);
         setApprovalRequired(!!room.approval_required);
+        setIsNotesRoom(!!room.is_notes);
         setAiEnabled(!!room.ai_enabled);
         setAiAvatarUrl(room.ai_avatar_url || '');
         setRoomAvatarUrl(room.avatar_url || '');
@@ -2031,6 +2033,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         current={{ avatarUrl: roomAvatarUrl, bgType, bgPreset, bgUrl }}
         onUpdate={(next) => { setRoomAvatarUrl(next.avatarUrl); setBgType(next.bgType); setBgPreset(next.bgPreset); setBgUrl(next.bgUrl); }}
         onUpgrade={promptUpgrade}
+        isNotes={isNotesRoom}
       />
 
       <EphemeralModal

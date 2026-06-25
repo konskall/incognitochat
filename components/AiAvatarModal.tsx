@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, RefreshCw, Upload, Link as LinkIcon, Save, Loader2, Wand2 } from 'lucide-react';
+import { X, RefreshCw, Upload, Link as LinkIcon, Save, Loader2, Wand2, RotateCcw } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { compressImage, INCO_BOT_AVATAR } from '../utils/helpers';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -67,13 +67,16 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      // Reset-to-default stores NULL (not the default URL) so the bot always
+      // tracks the current default avatar rather than a baked-in path.
+      const valueToSave = tempUrl === DEFAULT_BOT_AVATAR ? null : tempUrl;
       const { error } = await supabase
         .from('rooms')
-        .update({ ai_avatar_url: tempUrl })
+        .update({ ai_avatar_url: valueToSave })
         .eq('room_key', roomKey);
 
       if (error) throw error;
-      onUpdate(tempUrl);
+      onUpdate(valueToSave ?? '');
       onClose();
     } catch (err) {
       console.error(err);
@@ -151,6 +154,15 @@ const AiAvatarModal: React.FC<AiAvatarModalProps> = ({ show, onClose, currentAva
                 </button>
               </div>
             </div>
+          )}
+
+          {tempUrl !== DEFAULT_BOT_AVATAR && (
+            <button
+              onClick={() => setTempUrl(DEFAULT_BOT_AVATAR)}
+              className="flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-purple-500 transition"
+            >
+              <RotateCcw size={14} /> Reset to default
+            </button>
           )}
 
           <div className="flex gap-3 w-full mt-2">
