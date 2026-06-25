@@ -39,6 +39,11 @@ export const useIncoAI = (
     const lastMsg = messages[messages.length - 1];
 
     if (!lastMsg || !lastMsg.text || lastMsg.type === 'system') return;
+    // Never trigger on a not-yet-persisted optimistic message: its id is a
+    // temp_… that doesn't exist server-side (the bot reply would carry a dangling
+    // reply_to.id), and re-triggering after it reconciles can double-bill Gemini.
+    // The bot must fire only on the reconciled real row. (temp-exclusion invariant)
+    if (lastMsg.status) return;
     if (lastMsg.uid === INCO_BOT_UUID) return;
     // Only the author of the triggering message generates the reply. The bot
     // response is inserted client-side, so without this every member who has Inco

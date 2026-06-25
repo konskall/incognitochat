@@ -864,7 +864,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         setShowScrollDown(false);
         setNewMessageCount(0);
         const last = messages[messages.length - 1];
-        if (last) setLastRead(last.createdAt);
+        // Skip a not-yet-persisted optimistic temp: its createdAt is a CLIENT
+        // time and would pin the read pointer ahead → false "Seen" (mirrors the
+        // new-message effect's guard).
+        if (last && !last.status) setLastRead(last.createdAt);
     } else {
         // Surface the jump-to-bottom button whenever the user has scrolled up a
         // screenful, even with no new message (classic chat behaviour). The
@@ -1274,6 +1277,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       e?.preventDefault();
       if ((!inputText.trim() && selectedFiles.length === 0) || !user || roomDeleted) return;
 
+      // Daily message limit hit: don't round-trip a doomed insert. For the
+      // optimistic text path that would leave a stuck 'failed' bubble and clear
+      // the composer; open the upgrade funnel directly instead. Edits don't count
+      // against quota. (Mirrors the multi-file canSendBatch gate below.)
+      if (!editingMessageId && quotaLeft === 0) {
+          promptUpgrade('A higher message limit', 'ultra', "You've hit today's limit for this room.");
+          return;
+      }
+
       // Snapshot so a failed send can restore the composer (optimistic clear
       // must not silently eat the user's text/files/reply).
       const textToSend = inputText.trim();
@@ -1428,6 +1440,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+      // Don't send on the Enter that COMMITS an IME composition (CJK desktop IMEs,
+      // and mobile soft-keyboard autocomplete/glide-typing incl. Greek): it fires
+      // keydown with isComposing=true / keyCode 229. Sending here would ship a
+      // half-composed message and discard the in-flight composition.
+      if ((e.nativeEvent as any).isComposing || (e as any).keyCode === 229) return;
       if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
           handleSend();

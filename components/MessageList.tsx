@@ -87,6 +87,7 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
+    const [loadError, setLoadError] = useState(false);
     const bars = useMemo(() => Array.from({ length: 26 }, () => Math.floor(Math.random() * 50) + 25), []);
     useEffect(() => {
         const audio = audioRef.current;
@@ -120,7 +121,12 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
         audio.addEventListener('timeupdate', setAudioTime);
         audio.addEventListener('play', onPlay);
         audio.addEventListener('pause', onPause);
+        // iOS Safari/WebKit can't decode WebM/Opus (the codec Android/desktop
+        // Chrome records voice notes in) → the <audio> fires 'error' and the
+        // player would otherwise sit inert. Surface a clear fallback instead.
+        const onError = () => setLoadError(true);
         audio.addEventListener('ended', handleEnded);
+        audio.addEventListener('error', onError);
         return () => {
             audio.removeEventListener('loadedmetadata', setAudioData);
             audio.removeEventListener('durationchange', onDurationChange);
@@ -128,6 +134,7 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
             audio.removeEventListener('play', onPlay);
             audio.removeEventListener('pause', onPause);
             audio.removeEventListener('ended', handleEnded);
+            audio.removeEventListener('error', onError);
         };
     }, []);
     const togglePlay = () => {
@@ -167,6 +174,14 @@ const AudioPlayer: React.FC<{ src: string; isMe: boolean }> = ({ src, isMe }) =>
         const seconds = Math.floor(time % 60);
         return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     };
+    if (loadError) {
+        return (
+            <div className={`flex items-center gap-2 p-2.5 rounded-xl w-full sm:w-[260px] max-w-full text-xs ${isMe ? 'text-blue-50' : 'text-slate-600 dark:text-slate-300'}`}>
+                <AlertCircle size={16} className="shrink-0" />
+                <span className="flex-1 min-w-0">Voice note format isn’t supported on this device. <a href={src} target="_blank" rel="noopener noreferrer" className="underline font-semibold">Download</a></span>
+            </div>
+        );
+    }
     const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
     return (
         <div className={`flex items-center gap-3 p-2.5 rounded-xl w-full sm:w-[260px] max-w-full select-none ${isMe ? 'text-white' : 'text-slate-800 dark:text-slate-200'}`}>

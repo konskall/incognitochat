@@ -278,20 +278,43 @@ export const useChatMessages = (
       // id-dedup below removes the boundary row we already hold.
       .gte('created_at', latest)
       .order('created_at', { ascending: true })
-      .order('id', { ascending: true });
+      .order('id', { ascending: true })
+      // Bound the catch-up burst: without a limit a long background gap could pull
+      // (and synchronously AES-decrypt) hundreds of rows on resume, freezing the UI
+      // + spiking egress. A FULL page back means a large gap → reset path below.
+      .limit(MESSAGES_PAGE_SIZE);
 
     if (error) {
       console.error("Fetch newer failed", error);
       return;
     }
-    if (data && data.length) {
-      const newer = data.map(mapRow);
-      setMessages((prev) => {
-        const seen = new Set(prev.map((m) => m.id));
-        const fresh = newer.filter((m) => !seen.has(m.id));
-        return fresh.length ? [...prev, ...fresh] : prev;
-      });
+    if (!data || !data.length) return;
+
+    // Large gap: too many missed to decrypt inline. Reset to the most-recent page
+    // (like the initial load) but KEEP any in-flight optimistic temps so a 'failed'
+    // bubble's Retry survives. "Load earlier" refills older history on demand.
+    if (data.length === MESSAGES_PAGE_SIZE) {
+      const { data: recent, error: rErr } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('room_key', roomKey)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(MESSAGES_PAGE_SIZE);
+      if (rErr || !recent) return;
+      const page = recent.map(mapRow).reverse();
+      const pageIds = new Set(page.map((m) => m.id));
+      setMessages((prev) => [...page, ...prev.filter((m) => m.status && !pageIds.has(m.id))]);
+      setHasMoreOlder(recent.length === MESSAGES_PAGE_SIZE);
+      return;
     }
+
+    const newer = data.map(mapRow);
+    setMessages((prev) => {
+      const seen = new Set(prev.map((m) => m.id));
+      const fresh = newer.filter((m) => !seen.has(m.id));
+      return fresh.length ? [...prev, ...fresh] : prev;
+    });
   }, [roomKey, enabled, mapRow, fetchInitial]);
 
   // Full refocus/reconnect recovery: pull missed inserts AND reconcile the held

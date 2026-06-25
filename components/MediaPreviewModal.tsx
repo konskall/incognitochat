@@ -32,6 +32,12 @@ const MediaPreviewModal: React.FC<{ items: MediaItem[]; index: number; onClose: 
     const handleDownload = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!item) return;
+        // iOS Safari/WebKit ignores the <a download> attribute on a programmatic
+        // click (incl. blob: URLs) AND fetch/click resolve without throwing, so the
+        // catch fallback never fires → the button is a silent no-op. Open the URL
+        // directly so the user can long-press → Save. (Matches MessageList's path.)
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+        if (isIOS) { window.open(item.url, '_blank'); return; }
         try {
             const response = await fetch(item.url);
             const blob = await response.blob();

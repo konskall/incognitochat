@@ -292,8 +292,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
                      <button
                         onClick={stopRecording}
-                        className="w-10 h-10 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-red-500/30 transition transform active:scale-95"
-                        title="Send Voice Message"
+                        disabled={isOffline || !isRoomReady}
+                        className="w-10 h-10 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-red-500/30 transition transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-red-500"
+                        title={isOffline ? "Can’t send while offline — keep recording or cancel" : 'Send Voice Message'}
                      >
                          <Send size={20} className="ml-0.5" />
                      </button>
@@ -357,7 +358,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                      ) : (
                          <button
                             onClick={() => handleSend()}
-                            disabled={isOffline || isUploading || !isRoomReady || !!uploadProgress}
+                            disabled={isOffline || isUploading || !isRoomReady || !!uploadProgress || quotaLeft === 0}
                             aria-label="Send message"
                             className="w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-full shadow-lg shadow-blue-500/30 transition-all transform active:scale-95 flex items-center justify-center flex-shrink-0"
                          >
