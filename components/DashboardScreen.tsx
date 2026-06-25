@@ -1690,7 +1690,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                             >
                                 <div className="relative shrink-0">
                                     <img
-                                        src={`${import.meta.env.BASE_URL}notes-default.jpg`}
+                                        src={`${import.meta.env.BASE_URL}notes-default.png`}
                                         alt=""
                                         width={48}
                                         height={48}
