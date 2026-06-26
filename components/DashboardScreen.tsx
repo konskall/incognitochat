@@ -1545,6 +1545,14 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                     <button onClick={() => { setIsEditingProfile(false); setShowLinkInput(false); }} className="flex-1 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition">Cancel</button>
                                     <button onClick={handleSaveProfile} disabled={isSavingProfile} className="flex-1 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg shadow-md hover:bg-blue-700 transition flex items-center justify-center gap-2">{isSavingProfile ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}Save Changes</button>
                                 </div>
+                                {/* Theme toggle — lives inside Edit Profile (account settings). */}
+                                <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Appearance</span>
+                                    <button onClick={toggleTheme} aria-label="Toggle light/dark theme" title="Toggle light/dark" className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+                                        {isDark ? <Sun size={14} /> : <Moon size={14} />}
+                                        {isDark ? 'Dark' : 'Light'}
+                                    </button>
+                                </div>
                                 <div className="lg:hidden pt-4 border-t border-slate-200 dark:border-slate-800">{planCard}</div>
                                 <div className="pt-3 border-t border-slate-200 dark:border-slate-800 text-center">
                                     <button onClick={() => setShowDeleteAccount(true)} className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400">
@@ -1566,10 +1574,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                                         <span className="text-xs font-medium truncate opacity-80" title={user.email}>{user.email}</span>
                                     </div>
                                 </div>
-                                {/* Theme toggle, moved here from the dashboard header. */}
-                                <button onClick={toggleTheme} aria-label="Toggle light/dark theme" title="Toggle light/dark" className="shrink-0 self-center p-2.5 text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-white dark:hover:bg-slate-700 transition-colors shadow-sm">
-                                    {isDark ? <Sun size={16} /> : <Moon size={16} />}
-                                </button>
                             </div>
                         )}
                     </div>
