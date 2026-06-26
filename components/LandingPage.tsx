@@ -4,6 +4,7 @@ import InstallButton from './InstallButton';
 import PricingSection from './PricingSection';
 import LegalModal from './LegalModal';
 import { beginThemeTransition } from '../utils/helpers';
+import HelicalDriftBG from '../lib/helicalDriftBg';
 
 interface LandingPageProps {
   onStart: () => void;
@@ -214,6 +215,31 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
   const pricingRef = useRef<HTMLDivElement>(null);
   const scrollToPricing = () => pricingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
+  // Animated phyllotactic-vortex background radiating from the hero logo. The
+  // engine self-mounts a pointer-events:none, z-index:0 canvas layer into the
+  // hero (so it sits behind the z-10 content) and handles its own resize,
+  // off-screen / hidden-tab pause, reduced-motion and DPR caps — see
+  // lib/helicalDriftBg. Mounted ONLY in dark mode: it uses an additive
+  // ('lighter') glow that washes out to near-invisible muddy smudges on the
+  // light theme's near-white background. Re-mounts on theme toggle; destroyed
+  // on unmount / when switching to light.
+  const heroRef = useRef<HTMLElement>(null);
+  const heroLogoRef = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    if (!isDark) return;
+    const host = heroRef.current;
+    const logo = heroLogoRef.current;
+    if (!host || !logo) return;
+    const bg = new HelicalDriftBG(host, {
+      centerEl: logo,
+      voidPad: 2,
+      palette: ['#eaf2ff', '#3b6ef5', '#1b2b6b'],
+      opacity: 0.6,
+      rotationSpeed: 0.03,
+    });
+    return () => bg.destroy();
+  }, [isDark]);
+
   return (
     <div
       className="min-h-[100dvh] overflow-x-clip bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300 selection:bg-blue-500 selection:text-white"
@@ -258,7 +284,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
 
       <main id="top">
         {/* Hero Section */}
-        <section aria-labelledby="hero-title" className="relative overflow-hidden pt-10 pb-12 lg:pt-24 lg:pb-24">
+        <section ref={heroRef} aria-labelledby="hero-title" className="relative overflow-hidden pt-10 pb-12 lg:pt-24 lg:pb-24">
           {/* Background blob (decorative, clipped by overflow-hidden) */}
           <div
             aria-hidden="true"
@@ -271,6 +297,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
               <div className="relative animate-float">
                 <div aria-hidden="true" className="absolute -inset-4 bg-blue-500/20 rounded-full blur-xl"></div>
                 <img
+                  ref={heroLogoRef}
                   src={LOGO}
                   alt="Incognito Chat logo"
                   width={96}
