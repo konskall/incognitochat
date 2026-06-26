@@ -120,7 +120,12 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   }, [config.roomName, config.pin]);
   const qrDataUrl = useMemo(() => {
     // Error-correction 'H' (~30% recoverable) so the centred logo doesn't break scanning.
-    try { const qr = qrcode(0, 'H'); qr.addData(inviteUrl); qr.make(); return qr.createDataURL(6, 12); }
+    // cellSize 12 (not 6) renders at high resolution so that when the GIF is shown in
+    // the 168px box on high-DPR phones (e.g. a Pixel at ~3x = ~500 device px) it stays
+    // CRISP instead of upscaling to a blur — strict decoders (Google/Pixel) reject blurry
+    // modules where the lenient iOS scanner still succeeds. Margin is omitted so it
+    // defaults to cellSize*4 = a full 4-module quiet zone (the prior 12px was only 2).
+    try { const qr = qrcode(0, 'H'); qr.addData(inviteUrl); qr.make(); return qr.createDataURL(12); }
     catch { return ''; }
   }, [inviteUrl]);
   if (!show) return null;
