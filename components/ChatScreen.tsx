@@ -32,7 +32,7 @@ import { parseTierError } from '../utils/tierGatingErrors';
 import { canSendBatch } from '../utils/entitlements';
 import { buildLiveAvatars } from '../utils/avatars';
 import { computeSeenBy } from '../utils/readReceipts';
-import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin, Sparkles, MicOff, MapPinOff } from 'lucide-react';
+import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin, Sparkles, MicOff, MapPin, MapPinOff } from 'lucide-react';
 
 // Hooks
 import { useChatMessages } from '../hooks/useChatMessages';
@@ -341,6 +341,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const [showScrollDown, setShowScrollDown] = useState(false);
   // Blocked-location error -> shown via the shared PermissionModal (same style as mic).
   const [locationError, setLocationError] = useState<string | null>(null);
+  // When the "Location sharing" preference is OFF, tapping Location asks for an
+  // explicit confirm before sharing (a web app can't revoke the browser's GPS
+  // permission, so OFF means "ask every time" rather than a hard block).
+  const [confirmLocation, setConfirmLocation] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1459,10 +1463,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
        setIsGettingLocation(true);
        navigator.geolocation.getCurrentPosition(
            async (pos) => {
-               // GPS access succeeded — reflect it back into the preference so the
-               // Preferences toggle flips on (it no longer gates the button; sharing
-               // is always available and using it re-enables the setting).
-               setGpsEnabled(true);
                try {
                    await sendMessage("📍 Shared a location", config, null, null, { lat: pos.coords.latitude, lng: pos.coords.longitude }, 'text');
                    // Quota-counted insert — refresh the per-room remaining counter.
@@ -1490,6 +1490,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
            },
            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
        );
+  };
+
+  // Entry point for the Location "+" action. With the preference ON we share
+  // immediately; with it OFF we first ask for confirmation (the OFF state stays
+  // off — it's a privacy guard that prompts every time, not a one-time gate).
+  const requestSendLocation = () => {
+      if (gpsEnabled) handleSendLocation();
+      else setConfirmLocation(true);
   };
 
   const handleEditMessage = useCallback((msg: Message) => {
@@ -2041,7 +2049,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             setSelectedFiles={(f) => { setSelectedFiles(f); setPartialBatch(null); }}
             isUploading={isUploading}
             isGettingLocation={isGettingLocation}
-            handleSendLocation={handleSendLocation}
+            handleSendLocation={requestSendLocation}
             editingMessageId={editingMessageId}
             cancelEdit={() => { setEditingMessageId(null); setInputText(''); }}
             replyingTo={replyingTo}
@@ -2134,6 +2142,22 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
 
       <PermissionModal show={!!micError} title="Microphone unavailable" icon={<MicOff size={22} />} message={micError || ''} onClose={dismissMicError} />
       <PermissionModal show={!!locationError} title="Location unavailable" icon={<MapPinOff size={22} />} message={locationError || ''} onClose={() => setLocationError(null)} />
+      {confirmLocation && createPortal(
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setConfirmLocation(false)}>
+          <div role="dialog" aria-modal="true" aria-label="Share location" onClick={(e) => e.stopPropagation()} className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-white/10 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="flex items-center justify-center w-11 h-11 rounded-full bg-blue-500/10 text-blue-500 shrink-0"><MapPin size={22} /></span>
+              <h3 className="text-lg font-bold text-slate-800 dark:text-white">Share your location?</h3>
+            </div>
+            <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400 mb-6">Your current location will be shared in this room. Location sharing is off in Preferences, so we ask each time.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmLocation(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition active:scale-[0.98]">Cancel</button>
+              <button onClick={() => { setConfirmLocation(false); handleSendLocation(); }} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition active:scale-[0.98]">Share location</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       <PollComposerModal
         show={showPollComposer}
