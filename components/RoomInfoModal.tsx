@@ -123,9 +123,11 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
     // cellSize 12 (not 6) renders at high resolution so that when the GIF is shown in
     // the 168px box on high-DPR phones (e.g. a Pixel at ~3x = ~500 device px) it stays
     // CRISP instead of upscaling to a blur — strict decoders (Google/Pixel) reject blurry
-    // modules where the lenient iOS scanner still succeeds. Margin is omitted so it
-    // defaults to cellSize*4 = a full 4-module quiet zone (the prior 12px was only 2).
-    try { const qr = qrcode(0, 'H'); qr.addData(inviteUrl); qr.make(); return qr.createDataURL(12); }
+    // modules where the lenient iOS scanner still succeeds. margin=0: the pattern fills
+    // the GIF edge-to-edge; the required ~4-module quiet zone comes from the white card
+    // it sits on (p-4 ≈ 16px ≈ 4.7 modules) rather than being baked in a SECOND time —
+    // the doubled white border (GIF margin + card padding) looked too heavy.
+    try { const qr = qrcode(0, 'H'); qr.addData(inviteUrl); qr.make(); return qr.createDataURL(12, 0); }
     catch { return ''; }
   }, [inviteUrl]);
   if (!show) return null;
@@ -240,7 +242,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
 
           {showQr && (
             <div className="mt-5 flex flex-col items-center gap-3 animate-in fade-in zoom-in-95 duration-200">
-              <div className="relative bg-white p-3 rounded-2xl shadow-sm border border-slate-200">
+              <div className="relative bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                 {qrDataUrl
                   ? <img src={qrDataUrl} alt="Room invite QR code" className="block" style={{ width: 168, height: 168 }} />
                   : <div className="flex items-center justify-center text-slate-400 text-xs" style={{ width: 168, height: 168 }}>QR unavailable</div>}
