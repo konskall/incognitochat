@@ -55,6 +55,27 @@ html.theme-anim *::after {
 }
 .animate-fade-in { animation: ic-fade-in 0.2s ease-out; }
 
+/* "Living" account-avatar glow (dashboard). Two ease-in-out cycles on coprime
+   durations — opacity/blur on 5.3s, scale on 7.9s — so the combined pulse keeps
+   drifting and never settles into an obvious loop: an organic, irregular
+   breathing rather than a metronome. The global reduce-motion block below
+   neutralizes it (falls back to the static blur-sm base). */
+@keyframes ic-glow-breathe-a {
+  0%, 100% { opacity: 0.45; filter: blur(4px); }
+  43%      { opacity: 1;    filter: blur(9px); }
+  72%      { opacity: 0.6;  filter: blur(5px); }
+}
+@keyframes ic-glow-breathe-b {
+  0%, 100% { transform: scale(0.94); }
+  37%      { transform: scale(1.08); }
+  63%      { transform: scale(1.0); }
+}
+.animate-avatar-glow {
+  animation: ic-glow-breathe-a 5.3s ease-in-out infinite,
+             ic-glow-breathe-b 7.9s ease-in-out infinite;
+  will-change: opacity, transform, filter;
+}
+
 /* Respect the OS "Reduce Motion" setting (iOS/Android accessibility). Neutralizes
    the entrance animations, the infinite pulse glow, and hover scale/translate
    across the whole app for users with vestibular sensitivity (WCAG 2.3.3). */

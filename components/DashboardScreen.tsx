@@ -439,11 +439,36 @@ const StaticRoomCard = React.memo((props: RoomCardProps) => (
   </div>
 ));
 
+// Stale-while-revalidate cache for the room list. The dashboard fully unmounts
+// when the user opens a room (App swaps Dashboard↔Chat), so without this every
+// return to the dashboard would re-show the loading skeleton. Module-scoped =
+// survives unmount within the session; keyed by uid so a different account starts
+// clean; a hard page reload clears it (a genuine cold load). Cleared on logout
+// since Room rows carry the PIN.
+let roomsCache: { uid: string; rooms: Room[] } | null = null;
+
+// Favorites live in localStorage; reading them synchronously at mount avoids a
+// star-flicker when the cached list renders before the background refetch lands.
+const readFavorites = (uid: string): Set<string> => {
+  try {
+    const raw = localStorage.getItem(`roomFav_${uid}`);
+    if (raw) { const p = JSON.parse(raw); if (Array.isArray(p)) return new Set(p as string[]); }
+  } catch { /* ignore corrupt */ }
+  return new Set();
+};
+
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onLogout }) => {
+  // Clear the SWR room cache on logout — Room rows carry the PIN, and a new
+  // account in the same tab must not inherit the previous list.
+  const handleLogout = () => { roomsCache = null; onLogout(); };
   const { tier, ent, loading: entLoading } = useEntitlements(user?.uid);
   const [upgradePrompt, setUpgradePrompt] = useState<{ featureLabel: string; requiredTier: 'basic' | 'ultra' } | null>(null);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [loadingRooms, setLoadingRooms] = useState(true);
+  // Seed from the SWR cache so re-entering the dashboard shows the rooms
+  // instantly (Viber-style) instead of a skeleton; the effect below still
+  // refetches in the background and reconciles silently.
+  const cacheHit = !!roomsCache && roomsCache.uid === user.uid;
+  const [rooms, setRooms] = useState<Room[]>(() => (cacheHit ? roomsCache!.rooms : []));
+  const [loadingRooms, setLoadingRooms] = useState(!cacheHit);
   const [showCreate, setShowCreate] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomPin, setNewRoomPin] = useState('');
@@ -494,7 +519,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   // Search / filter / favorites (client-side).
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<RoomFilter>('all');
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [favorites, setFavorites] = useState<Set<string>>(() => readFavorites(user.uid));
   const searchRef = useRef<HTMLInputElement>(null);
 
   const [isDark, setIsDark] = useState(() =>
@@ -692,7 +717,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
   // Keep a live ref of rooms so the overview-refresh poll always sees the current
   // list WITHOUT re-subscribing on every rooms change (drag/unread).
   const roomsRef = useRef(rooms);
-  useEffect(() => { roomsRef.current = rooms; }, [rooms]);
+  useEffect(() => {
+    roomsRef.current = rooms;
+    // Keep the SWR cache in sync with every list mutation (fetch, delete,
+    // rename, reorder, recreate) so the next remount paints the latest state.
+    roomsCache = { uid: user.uid, rooms };
+  }, [rooms, user.uid]);
 
   // Keep per-room unread + last-message preview fresh WITHOUT a global realtime
   // firehose. The previous approach subscribed to EVERY `messages` INSERT in the
@@ -1492,7 +1522,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button onClick={onLogout} aria-label="Logout" className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm">
+                    <button onClick={handleLogout} aria-label="Logout" className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm">
                         <LogOut size={16} />
                         <span className="hidden sm:inline">Logout</span>
                     </button>
@@ -1563,7 +1593,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
                         ) : (
                             <div className="flex items-center gap-5 animate-in fade-in zoom-in-95 duration-300 relative z-10">
                                 <div className="relative flex-shrink-0">
-                                    <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full opacity-100 transition duration-500 blur-sm"></div>
+                                    <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full blur-sm animate-avatar-glow"></div>
                                     <img src={safeAvatarUrl(avatarUrl)} alt="Profile" width={80} height={80} loading="lazy" onError={onAvatarError} className="relative w-20 h-20 rounded-full object-cover border-4 border-white dark:border-slate-900 shadow-lg"/>
                                     <button onClick={() => { setTempAvatarUrl(avatarUrl); setIsEditingProfile(true); }} className="absolute bottom-0 right-0 p-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-full shadow-md border border-slate-100 dark:border-slate-700 hover:text-blue-600 hover:scale-110 transition-all z-20" title="Edit Profile"><Edit2 size={12} /></button>
                                 </div>
@@ -1815,7 +1845,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ user, onJoinRoom, onL
     <DeleteAccountModal
         show={showDeleteAccount}
         onClose={() => setShowDeleteAccount(false)}
-        onDeleted={() => { flashToast('Your account has been deleted.'); onLogout(); }}
+        onDeleted={() => { flashToast('Your account has been deleted.'); handleLogout(); }}
     />
     </>
   );
