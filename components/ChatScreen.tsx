@@ -301,6 +301,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   // reload instead of silently resetting to defaults every session.
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('soundEnabled') !== 'false');
   const [vibrationEnabled, setVibrationEnabled] = useState(() => localStorage.getItem('vibrationEnabled') !== 'false');
+  // Device-scoped privacy preference: when off, the Location ("+") attachment is
+  // hidden so no GPS read is ever requested. Default ON (preserves prior behavior).
+  const [gpsEnabled, setGpsEnabled] = useState(() => localStorage.getItem('gpsEnabled') !== 'false');
   const [canVibrate, setCanVibrate] = useState(false);
 
   // Email Alert State
@@ -544,6 +547,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   // Persist audio/haptic preferences whenever they change.
   useEffect(() => { safeSetItem('soundEnabled', String(soundEnabled)); }, [soundEnabled]);
   useEffect(() => { safeSetItem('vibrationEnabled', String(vibrationEnabled)); }, [vibrationEnabled]);
+  useEffect(() => { safeSetItem('gpsEnabled', String(gpsEnabled)); }, [gpsEnabled]);
 
   // Unlock the Web Audio context on the first user gesture inside the chat. iOS
   // keeps the AudioContext suspended until a gesture creates/resumes it, and the
@@ -2033,6 +2037,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             isUploading={isUploading}
             isGettingLocation={isGettingLocation}
             handleSendLocation={handleSendLocation}
+            locationEnabled={gpsEnabled}
             editingMessageId={editingMessageId}
             cancelEdit={() => { setEditingMessageId(null); setInputText(''); }}
             replyingTo={replyingTo}
@@ -2168,6 +2173,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         onToggleVibration={() => setVibrationEnabled((v) => !v)}
         soundEnabled={soundEnabled}
         onToggleSound={() => setSoundEnabled((v) => !v)}
+        gpsEnabled={gpsEnabled}
+        onToggleGps={() => setGpsEnabled((v) => !v)}
         notificationsEnabled={notificationsEnabled}
         onToggleNotifications={toggleNotifications}
         isDarkMode={isDarkMode}

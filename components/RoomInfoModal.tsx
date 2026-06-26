@@ -2,7 +2,7 @@ import React, { useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, Search, Image as ImageIcon, Users, Wand2, Sparkles, Palette, Timer, Mail, Share2, Trash2, ChevronRight, Lock, ChevronLeft, Clock, Eraser, QrCode, Copy, Check, ShieldCheck,
-  Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Sun, Moon,
+  Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Sun, Moon, MapPin, MapPinOff,
 } from 'lucide-react';
 import qrcode from 'qrcode-generator';
 import { ChatConfig, Presence } from '../types';
@@ -48,6 +48,8 @@ interface RoomInfoModalProps {
   onToggleSound: () => void;
   notificationsEnabled: boolean;
   onToggleNotifications: () => void;
+  gpsEnabled: boolean;
+  onToggleGps: () => void;
   isDarkMode: boolean;
   onToggleTheme: () => void;
   // Tier plumbing (Phase 3): entitlements + upgrade prompt; gates the
@@ -103,7 +105,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   ent, entLoading, onUpgrade,
   approvalRequired, onToggleApproval, pendingCount,
   canVibrate, vibrationEnabled, onToggleVibration, soundEnabled, onToggleSound,
-  notificationsEnabled, onToggleNotifications, isDarkMode, onToggleTheme,
+  notificationsEnabled, onToggleNotifications, gpsEnabled, onToggleGps, isDarkMode, onToggleTheme,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
@@ -463,6 +465,16 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
           trailing={
             <span role="switch" aria-checked={notificationsEnabled} className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${notificationsEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
               <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${notificationsEnabled ? 'translate-x-4' : ''}`} />
+            </span>
+          }
+        />
+        <Row
+          icon={gpsEnabled ? <MapPin size={18} /> : <MapPinOff size={18} />}
+          label="Location sharing"
+          onClick={onToggleGps}
+          trailing={
+            <span role="switch" aria-checked={gpsEnabled} className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${gpsEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${gpsEnabled ? 'translate-x-4' : ''}`} />
             </span>
           }
         />
