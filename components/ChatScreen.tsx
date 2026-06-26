@@ -226,6 +226,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   // Non-null = the inco info modal is open, showing this avatar (the one tapped).
   const [incoInfoAvatar, setIncoInfoAvatar] = useState<string | null>(null);
 
+  // The room's display name (owner rename via rename_room). It is NOT in the join
+  // RPC payload and config.roomName is the IDENTITY name (room_name — used in
+  // invite/push deep-links to re-derive the key), so it must not be overwritten.
+  // We track the cosmetic display name separately: seeded from config.roomName,
+  // read from the row once ready, and kept live via the room_status handler.
+  const [roomDisplayName, setRoomDisplayName] = useState(config.roomName);
   // Room appearance (icon + wallpaper), owner-editable, propagated via realtime.
   // Restore the last-known appearance for THIS room synchronously from localStorage
   // so re-entering a configured room paints its real background AND icon on the
@@ -1193,6 +1199,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             if (payload.new.ai_avatar_url !== undefined) setAiAvatarUrl(payload.new.ai_avatar_url || '');
             // Room appearance changes propagate live to everyone in the room.
             if (payload.new.avatar_url !== undefined) setRoomAvatarUrl(payload.new.avatar_url || '');
+            if (payload.new.display_name !== undefined) setRoomDisplayName(payload.new.display_name || config.roomName);
             if (payload.new.background_type !== undefined) setBgType(payload.new.background_type || 'preset');
             if (payload.new.background_preset !== undefined) setBgPreset(payload.new.background_preset || 'dots');
             if (payload.new.background_url !== undefined) setBgUrl(payload.new.background_url || '');
@@ -1208,16 +1215,22 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     return () => { roomStatusChannelRef.current = null; supabase.removeChannel(roomStatusChannel); };
   }, [config.roomKey, isRoomReady, roomDeleted, user?.uid, roomCreatorId]);
 
-  // The free-tier 24h auto-delete timestamp isn't in the join RPC payload; read
-  // it directly once the room is ready (members can SELECT room columns under
-  // RLS). Realtime keeps it fresh via the room_status handler above.
+  // The free-tier 24h auto-delete timestamp AND the cosmetic display_name aren't
+  // in the join RPC payload; read them directly once the room is ready (members
+  // can SELECT room columns under RLS). Realtime keeps both fresh via the
+  // room_status handler above.
   useEffect(() => {
     if (!isRoomReady || !config.roomKey) return;
     let alive = true;
-    supabase.from('rooms').select('expires_at').eq('room_key', config.roomKey).maybeSingle()
-      .then(({ data }) => { if (alive) setRoomExpiresAt((data as { expires_at?: string | null } | null)?.expires_at ?? null); });
+    supabase.from('rooms').select('expires_at, display_name').eq('room_key', config.roomKey).maybeSingle()
+      .then(({ data }) => {
+        if (!alive) return;
+        const row = data as { expires_at?: string | null; display_name?: string | null } | null;
+        setRoomExpiresAt(row?.expires_at ?? null);
+        setRoomDisplayName(row?.display_name || config.roomName);
+      });
     return () => { alive = false; };
-  }, [isRoomReady, config.roomKey]);
+  }, [isRoomReady, config.roomKey, config.roomName]);
 
   const handleExitChat = async () => {
       // No "left the room" system message — it spammed the chat.
@@ -1932,6 +1945,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         isRoomReady={isRoomReady && !roomDeleted}
         onExit={handleExitChat}
         roomAvatarUrl={roomAvatarUrl}
+        roomDisplayName={roomDisplayName}
         messageTtlLabel={formatTtl(messageTtl)}
         roomFreeExpiryLabel={expiryShortLabel(roomExpiresAt, nowTick)}
         onOpenRoomInfo={() => setShowRoomInfo(true)}
@@ -2176,6 +2190,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         config={config}
         participants={participants}
         roomAvatarUrl={roomAvatarUrl}
+        roomDisplayName={roomDisplayName}
         isOwner={user?.uid === roomCreatorId}
         isGoogleUser={user ? !user.isAnonymous : false}
         aiEnabled={aiEnabled}

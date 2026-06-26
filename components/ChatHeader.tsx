@@ -9,6 +9,8 @@ interface ChatHeaderProps {
   isRoomReady: boolean;
   onExit: () => void;
   roomAvatarUrl?: string;
+  // Cosmetic room name (owner rename). Falls back to the identity name.
+  roomDisplayName?: string;
   messageTtlLabel?: string | null;
   roomFreeExpiryLabel?: string | null; // absolute auto-delete countdown (rooms.expires_at)
   // Tapping the room identity opens the consolidated Room Info hub.
@@ -23,12 +25,14 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   isRoomReady,
   onExit,
   roomAvatarUrl,
+  roomDisplayName,
   messageTtlLabel,
   roomFreeExpiryLabel,
   onOpenRoomInfo,
   onOpenParticipants,
 }) => {
   const onlineCount = participants.filter((p) => p.status === 'active').length;
+  const name = roomDisplayName || config.roomName;
 
   return (
     <header className="glass-bar glass-bar-top px-4 py-3 flex items-center justify-between z-30 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
@@ -40,15 +44,15 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         title="Room info"
       >
         {roomAvatarUrl ? (
-          <img src={safeAvatarUrl(roomAvatarUrl)} alt={config.roomName} className="w-10 h-10 rounded-full object-cover shadow-lg flex-shrink-0 bg-slate-200 dark:bg-slate-700 border border-white/40 dark:border-slate-700" />
+          <img src={safeAvatarUrl(roomAvatarUrl)} alt={name} className="w-10 h-10 rounded-full object-cover shadow-lg flex-shrink-0 bg-slate-200 dark:bg-slate-700 border border-white/40 dark:border-slate-700" />
         ) : (
           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
-            {config.roomName.substring(0, 2).toUpperCase()}
+            {name.substring(0, 2).toUpperCase()}
           </div>
         )}
         <div className="min-w-0 flex flex-col justify-center">
           <h2 className="font-bold text-slate-800 dark:text-slate-100 leading-tight truncate text-sm md:text-base flex items-center gap-1.5">
-            {config.roomName}
+            {name}
           </h2>
           <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
             <div className="flex items-center gap-1.5">

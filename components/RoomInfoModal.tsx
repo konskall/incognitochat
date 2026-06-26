@@ -18,6 +18,9 @@ interface RoomInfoModalProps {
   config: ChatConfig;
   participants: Presence[];
   roomAvatarUrl?: string;
+  // Cosmetic room name (owner rename). Falls back to the identity name. Used for
+  // display only — invite link + share text keep config.roomName (the join key).
+  roomDisplayName?: string;
   isOwner: boolean;
   isGoogleUser: boolean;
   aiEnabled: boolean;
@@ -99,7 +102,7 @@ function formatExpiryHint(iso?: string | null): string | null {
 }
 
 const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
-  show, onClose, config, participants, roomAvatarUrl, isOwner, isGoogleUser,
+  show, onClose, config, participants, roomAvatarUrl, roomDisplayName, isOwner, isGoogleUser,
   aiEnabled, messageTtlLabel, roomExpiryLabel, roomExpiresAt, emailAlertsEnabled,
   onToggleSearch, onOpenGallery, onOpenParticipants, onOpenMembers, onToggleAI, onOpenAiAvatar,
   onOpenRoomAppearance, onOpenEphemeral, onOpenRoomExpiry, onClearMessages, onOpenEmail, onDeleteRoom,
@@ -140,7 +143,10 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
 
   const onlineCount = participants.filter((p) => p.status === 'active').length;
   const total = participants.length;
-  const initials = config.roomName.substring(0, 2).toUpperCase();
+  // Display name (owner rename) for the hero/avatar; invite + share keep the
+  // identity name (config.roomName) so the derived room key still matches.
+  const displayName = roomDisplayName || config.roomName;
+  const initials = displayName.substring(0, 2).toUpperCase();
   const expiryHint = formatExpiryHint(roomExpiresAt);
   // A room sits on the FREE fixed 24h timer when it carries an `expires_at` but
   // NO chosen interval — only free creation does that. A paid-chosen auto-delete
@@ -204,12 +210,12 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
         <div className="flex flex-col items-center text-center px-6 pt-6 pb-5 border-b border-slate-100 dark:border-slate-800">
           {roomAvatarUrl ? (
             <button type="button" onClick={() => setAvatarPreview(true)} aria-label="View room photo" title="View photo" className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-              <img src={safeAvatarUrl(roomAvatarUrl)} alt={config.roomName} className="w-24 h-24 rounded-full object-cover shadow-lg border border-white/40 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 cursor-zoom-in transition-transform hover:scale-105 active:scale-95" />
+              <img src={safeAvatarUrl(roomAvatarUrl)} alt={displayName} className="w-24 h-24 rounded-full object-cover shadow-lg border border-white/40 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 cursor-zoom-in transition-transform hover:scale-105 active:scale-95" />
             </button>
           ) : (
             <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-3xl shadow-lg">{initials}</div>
           )}
-          <h2 className="mt-3 text-xl font-bold text-slate-800 dark:text-white break-words max-w-full">{config.roomName}</h2>
+          <h2 className="mt-3 text-xl font-bold text-slate-800 dark:text-white break-words max-w-full">{displayName}</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             {total} participant{total === 1 ? '' : 's'}{onlineCount > 0 && <span className="text-green-500"> · {onlineCount} online</span>}
           </p>
@@ -507,7 +513,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
         </button>
         <img
           src={safeAvatarUrl(roomAvatarUrl)}
-          alt={config.roomName}
+          alt={displayName}
           onClick={(e) => e.stopPropagation()}
           className="max-w-full max-h-[85vh] rounded-2xl object-contain shadow-2xl animate-in zoom-in-95 duration-200"
         />
