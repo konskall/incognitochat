@@ -2,6 +2,7 @@ import React, { useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, Search, Image as ImageIcon, Users, Wand2, Sparkles, Palette, Timer, Mail, Share2, Trash2, ChevronRight, Lock, ChevronLeft, Clock, Eraser, QrCode, Copy, Check, ShieldCheck,
+  Vibrate, VibrateOff, Volume2, VolumeX, Bell, BellOff, Sun, Moon,
 } from 'lucide-react';
 import qrcode from 'qrcode-generator';
 import { ChatConfig, Presence } from '../types';
@@ -39,6 +40,16 @@ interface RoomInfoModalProps {
   approvalRequired?: boolean;
   onToggleApproval?: () => void;
   pendingCount?: number;
+  // Device preferences (moved here from the old chat-header gear menu).
+  canVibrate: boolean;
+  vibrationEnabled: boolean;
+  onToggleVibration: () => void;
+  soundEnabled: boolean;
+  onToggleSound: () => void;
+  notificationsEnabled: boolean;
+  onToggleNotifications: () => void;
+  isDarkMode: boolean;
+  onToggleTheme: () => void;
   // Tier plumbing (Phase 3): entitlements + upgrade prompt; gates the
   // appearance / disappearing / auto-delete / AI rows by tier.
   ent?: import('../utils/entitlements').TierEntitlements;
@@ -54,9 +65,11 @@ const Row: React.FC<{
   tint?: string;        // tailwind classes for the icon chip
   trailing?: React.ReactNode;
   danger?: boolean;
-}> = ({ icon, label, onClick, tint = 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300', trailing, danger }) => (
+  ariaPressed?: boolean; // for toggle-style rows whose state is shown as text (e.g. Theme)
+}> = ({ icon, label, onClick, tint = 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300', trailing, danger, ariaPressed }) => (
   <button
     onClick={onClick}
+    aria-pressed={ariaPressed}
     className={`flex items-center gap-3.5 w-full px-4 py-3 text-left transition active:scale-[0.99] hover:bg-slate-50 dark:hover:bg-slate-800/60 ${danger ? 'text-red-500' : 'text-slate-700 dark:text-slate-200'}`}
   >
     <span className={`flex items-center justify-center w-9 h-9 rounded-full shrink-0 ${danger ? 'bg-red-500/10 text-red-500' : tint}`}>{icon}</span>
@@ -89,6 +102,8 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
   onOpenRoomAppearance, onOpenEphemeral, onOpenRoomExpiry, onClearMessages, onOpenEmail, onDeleteRoom,
   ent, entLoading, onUpgrade,
   approvalRequired, onToggleApproval, pendingCount,
+  canVibrate, vibrationEnabled, onToggleVibration, soundEnabled, onToggleSound,
+  notificationsEnabled, onToggleNotifications, isDarkMode, onToggleTheme,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
@@ -407,6 +422,50 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
             }
           />
         )}
+
+        {/* Preferences — device-scoped (vibration/sound/notifications/theme).
+            Moved here from the old chat-header gear menu; these toggle in place
+            and keep the modal open (like the AI / Approval switches above). */}
+        <SectionLabel>Preferences</SectionLabel>
+        {canVibrate && (
+          <Row
+            icon={vibrationEnabled ? <Vibrate size={18} /> : <VibrateOff size={18} />}
+            label="Vibration"
+            onClick={onToggleVibration}
+            trailing={
+              <span role="switch" aria-checked={vibrationEnabled} className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${vibrationEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${vibrationEnabled ? 'translate-x-4' : ''}`} />
+              </span>
+            }
+          />
+        )}
+        <Row
+          icon={soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          label="Sound"
+          onClick={onToggleSound}
+          trailing={
+            <span role="switch" aria-checked={soundEnabled} className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${soundEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${soundEnabled ? 'translate-x-4' : ''}`} />
+            </span>
+          }
+        />
+        <Row
+          icon={notificationsEnabled ? <Bell size={18} /> : <BellOff size={18} />}
+          label="Notifications"
+          onClick={onToggleNotifications}
+          trailing={
+            <span role="switch" aria-checked={notificationsEnabled} className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${notificationsEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${notificationsEnabled ? 'translate-x-4' : ''}`} />
+            </span>
+          }
+        />
+        <Row
+          icon={isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+          label="Theme"
+          onClick={onToggleTheme}
+          ariaPressed={isDarkMode}
+          trailing={<span className="text-xs font-semibold text-slate-400">{isDarkMode ? 'Dark' : 'Light'}</span>}
+        />
 
         {/* Danger zone — any member can delete the room. */}
         <div className="h-px bg-slate-100 dark:bg-slate-800 my-2" />

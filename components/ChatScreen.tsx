@@ -208,7 +208,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showParticipantsList, setShowParticipantsList] = useState(false);
   const [showMembers, setShowMembers] = useState(false); // join-history list
-  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   
   // Room Status
   const [roomDeleted, setRoomDeleted] = useState(false);
@@ -540,7 +539,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     const newTheme = !isDarkMode;
     setIsDarkMode(newTheme);
     safeSetItem('theme', newTheme ? 'dark' : 'light');
-    setShowSettingsMenu(false);
   };
 
   // Persist audio/haptic preferences whenever they change.
@@ -1561,7 +1559,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   };
   
   const toggleNotifications = async () => {
-      setShowSettingsMenu(false);
       if (notificationsEnabled) {
           setNotificationsEnabled(false);
           // Unregister this device's push subscription for the room. If the
@@ -1667,7 +1664,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
 
           setEmailAlertsEnabled(true);
           setShowEmailModal(false);
-          setShowSettingsMenu(false);
       } catch (e: any) {
           console.error("Error saving email:", e);
           flashToast("Failed to subscribe.");
@@ -1912,17 +1908,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         config={config}
         participants={participants}
         isRoomReady={isRoomReady && !roomDeleted}
-        showSettingsMenu={showSettingsMenu}
-        setShowSettingsMenu={setShowSettingsMenu}
-        canVibrate={canVibrate}
-        vibrationEnabled={vibrationEnabled}
-        setVibrationEnabled={setVibrationEnabled}
-        soundEnabled={soundEnabled}
-        setSoundEnabled={setSoundEnabled}
-        notificationsEnabled={notificationsEnabled}
-        toggleNotifications={toggleNotifications}
-        isDarkMode={isDarkMode}
-        toggleTheme={toggleTheme}
         onExit={handleExitChat}
         roomAvatarUrl={roomAvatarUrl}
         messageTtlLabel={formatTtl(messageTtl)}
@@ -2178,6 +2163,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         approvalRequired={approvalRequired}
         onToggleApproval={handleToggleApproval}
         pendingCount={isOwner ? pendingRequests.length : 0}
+        canVibrate={canVibrate}
+        vibrationEnabled={vibrationEnabled}
+        onToggleVibration={() => setVibrationEnabled((v) => !v)}
+        soundEnabled={soundEnabled}
+        onToggleSound={() => setSoundEnabled((v) => !v)}
+        notificationsEnabled={notificationsEnabled}
+        onToggleNotifications={toggleNotifications}
+        isDarkMode={isDarkMode}
+        onToggleTheme={toggleTheme}
       />
 
       <MembersHistoryModal
