@@ -209,7 +209,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const actionsDisabled = isOffline || !isRoomReady;
 
   return (
-      <footer className="glass-bar glass-bar-bottom p-1.5 shadow-lg z-20 relative pb-[max(0.5rem,env(safe-area-inset-bottom))] flex flex-col items-center justify-center transition-colors">
+      <footer data-chat-composer className="glass-bar glass-bar-bottom p-1.5 shadow-lg z-20 relative pb-[max(0.5rem,env(safe-area-inset-bottom))] flex flex-col items-center justify-center transition-colors">
          {typingLabel && (
              <div className="absolute -top-6 left-6 text-xs text-slate-500 dark:text-slate-400 bg-white/80 dark:bg-slate-900/80 backdrop-blur px-2 py-0.5 rounded-t-lg animate-pulse flex items-center gap-1">
                  <span className="flex gap-0.5">

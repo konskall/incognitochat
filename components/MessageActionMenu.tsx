@@ -101,10 +101,14 @@ const MessageActionMenu: React.FC<MessageActionMenuProps> = ({
         aria-label="Message actions"
         tabIndex={-1}
         style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, visibility: pos ? 'visible' : 'hidden' }}
-        className={`fixed flex flex-col gap-2.5 max-h-[calc(100dvh_-_1rem)] outline-none ${isMe ? 'items-end' : 'items-start'} animate-in zoom-in-95 fade-in duration-150`}
+        // pointer-events-none on the container so taps in its empty areas (the
+        // gaps between the rows, and the pointer-events-none bubble clone) fall
+        // THROUGH to the backdrop and close the menu — matching the dimmed-area
+        // dismiss users expect. The interactive rows below re-enable pointer events.
+        className={`fixed flex flex-col gap-2.5 max-h-[calc(100dvh_-_1rem)] outline-none pointer-events-none ${isMe ? 'items-end' : 'items-start'} animate-in zoom-in-95 fade-in duration-150`}
       >
         {/* Reaction row */}
-        <div className="shrink-0 flex items-center gap-0.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full px-1.5 py-1 shadow-2xl">
+        <div className="pointer-events-auto shrink-0 flex items-center gap-0.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full px-1.5 py-1 shadow-2xl">
           {QUICK_REACTIONS.map((e) => (
             <button key={e} onClick={() => run(() => onReact(e))} aria-label={`React with ${e}`} className="p-1 rounded-full hover:scale-125 transition-transform"><Emoji emoji={e} size={28} /></button>
           ))}
@@ -121,7 +125,7 @@ const MessageActionMenu: React.FC<MessageActionMenuProps> = ({
         />
 
         {/* Action list */}
-        <div className="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-2xl min-w-[212px] divide-y divide-slate-100 dark:divide-slate-700/60">
+        <div className="pointer-events-auto shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-2xl min-w-[212px] divide-y divide-slate-100 dark:divide-slate-700/60">
           {seenBy && seenBy.length > 0 && (
             <div className="px-4 py-2.5">
               <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5"><CheckCheck size={12} /> Seen by</p>
