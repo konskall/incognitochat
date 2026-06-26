@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Upload, Link as LinkIcon, RotateCcw, Save, Loader2, Image as ImageIcon, Check, Palette } from 'lucide-react';
+import { X, Upload, Link as LinkIcon, RotateCcw, Save, Loader2, Image as ImageIcon, Check, Palette, Sparkles, Lock } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { compressImage, NOTES_DEFAULT_AVATAR } from '../utils/helpers';
 import { ROOM_BG_PRESETS, ROOM_BG_CATEGORIES, presetCategory, type RoomBgCategory } from '../utils/roomBackgrounds';
@@ -19,9 +19,12 @@ interface RoomAppearanceModalProps {
   // The personal Notes room has a self-hosted default icon to restore to (a plain
   // room just clears to initials). Only true for is_notes rooms.
   isNotes?: boolean;
+  // Animated presets (Vortex) are Ultra-only. When true, tapping one prompts an
+  // Ultra upgrade instead of selecting it (the server enforces it on save too).
+  animatedLocked?: boolean;
 }
 
-const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose, roomKey, roomName, isDarkMode, current, onUpdate, onUpgrade, isNotes }) => {
+const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose, roomKey, roomName, isDarkMode, current, onUpdate, onUpgrade, isNotes, animatedLocked }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(show, onClose, dialogRef);
 
@@ -100,7 +103,14 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
       const tierErr = parseTierError(e);
       if (tierErr?.code === 'QT004' && onUpgrade) {
         onClose();
-        onUpgrade('Room appearance', tierErr.requiredTier);
+        // Match the picker-lock copy for the animated (Ultra) case; this path is
+        // only hit if the client lock was bypassed (e.g. the entLoading window).
+        const isAnimated = tierErr.requiredTier === 'ultra';
+        onUpgrade(
+          isAnimated ? 'Animated wallpaper' : 'Room appearance',
+          tierErr.requiredTier,
+          isAnimated ? 'The animated Vortex wallpaper is an Ultra feature.' : undefined,
+        );
       } else {
         flashToast('Failed to save room appearance');
       }
@@ -183,15 +193,27 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
           <div className="grid grid-cols-3 gap-2.5">
             {ROOM_BG_PRESETS.filter((p) => p.category === bgTab).map((p) => {
               const selected = bgType === 'preset' && bgPreset === p.key;
+              const locked = !!p.animated && !!animatedLocked;
               return (
                 <button
                   key={p.key}
-                  onClick={() => { setBgType('preset'); setBgPreset(p.key); }}
+                  onClick={() => {
+                    if (locked) {
+                      onUpgrade?.('Animated wallpaper', 'ultra', 'The animated Vortex wallpaper is an Ultra feature.');
+                      return;
+                    }
+                    setBgType('preset'); setBgPreset(p.key);
+                  }}
                   className={`relative h-20 rounded-xl overflow-hidden border-2 transition-all ${selected ? 'border-blue-500 ring-2 ring-blue-500/30' : 'border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}
                   style={p.style(isDarkMode)}
-                  title={p.name}
+                  title={locked ? `${p.name} — Ultra` : p.name}
                 >
                   {selected && <span className="absolute top-1 right-1 bg-blue-500 text-white rounded-full p-0.5 shadow"><Check size={12} /></span>}
+                  {p.animated && (
+                    <span className={`absolute top-1 left-1 flex items-center gap-0.5 text-white rounded-full pl-1 pr-1.5 py-0.5 text-[9px] font-bold shadow ${locked ? 'bg-amber-500/90' : 'bg-fuchsia-500/90'}`} title={locked ? 'Ultra feature' : 'Animated'}>
+                      {locked ? <Lock size={10} /> : <Sparkles size={10} />} {locked ? 'Ultra' : 'Live'}
+                    </span>
+                  )}
                   <span className="absolute bottom-0 inset-x-0 text-[10px] font-bold text-center py-0.5 bg-black/30 text-white backdrop-blur-sm">{p.name}</span>
                 </button>
               );

@@ -30,6 +30,12 @@ describe('parseTierError', () => {
     expect(parseTierError({ code: 'QT004', message: 'TIER_REQUIRED:basic' }, 'free')?.requiredTier).toBe('basic');
   });
 
+  it('maps QT004 ultra -> ultra (animated Vortex wallpaper)', () => {
+    const r = parseTierError({ code: 'QT004', message: 'TIER_REQUIRED:ultra' }, 'basic');
+    expect(r?.requiredTier).toBe('ultra');
+    expect(r?.message).toMatch(/Ultra/);
+  });
+
   it('maps QT005 TIER_REQUIRED:basic -> basic (clear-messages / notes gate)', () => {
     const r = parseTierError({ code: 'QT005', message: 'TIER_REQUIRED:basic' }, 'free');
     expect(r?.code).toBe('QT005');
@@ -40,5 +46,6 @@ describe('parseTierError', () => {
   it('falls back to message matching when error.code is absent', () => {
     expect(parseTierError({ message: 'QUOTA_EXCEEDED:free' }, 'free')?.code).toBe('QT002');
     expect(parseTierError({ message: 'TIER_REQUIRED:ai' }, 'free')?.code).toBe('QT004');
+    expect(parseTierError({ message: 'TIER_REQUIRED:ultra' }, 'basic')?.requiredTier).toBe('ultra');
   });
 });

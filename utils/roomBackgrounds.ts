@@ -15,6 +15,10 @@ export interface RoomBgPreset {
   name: string;
   category: RoomBgCategory;
   style: (isDark: boolean) => CSSProperties;
+  // Animated presets render a live canvas (HelicalDriftBG) ON TOP of `style`
+  // (which supplies the themed backdrop colour). ChatScreen mounts/destroys the
+  // engine; the picker shows the static backdrop swatch with an "animated" badge.
+  animated?: boolean;
 }
 
 // Inline-SVG watermark of the Incognito Chat mark (speech bubble + mountain +
@@ -100,6 +104,21 @@ export const ROOM_BG_PRESETS: RoomBgPreset[] = [
   },
 
   // ── Gradients (mesh) ─────────────────────────────────────────────────────
+  {
+    key: 'vortex',
+    name: 'Vortex',
+    category: 'gradient',
+    animated: true,
+    // Backdrop colour only — the live phyllotactic-vortex canvas is layered on
+    // top by ChatScreen. Near-black on dark (for the additive glow) / near-white
+    // on light (so the darker dots read), with a faint centre lift for depth.
+    style: (d) => ({
+      backgroundColor: d ? '#020617' : '#f6f8ff',
+      backgroundImage: d
+        ? 'radial-gradient(at 50% 42%, rgba(59,110,245,0.10), transparent 60%)'
+        : 'radial-gradient(at 50% 42%, rgba(43,78,214,0.06), transparent 60%)',
+    }),
+  },
   {
     key: 'brand',
     name: 'Incognito',
@@ -260,6 +279,11 @@ export const ROOM_BG_CATEGORIES: { key: RoomBgCategory; label: string }[] = [
 // Category of a stored preset key (falls back to gradient for unknown/legacy).
 export function presetCategory(key: string | null | undefined): RoomBgCategory {
   return ROOM_BG_PRESETS.find((p) => p.key === key)?.category ?? 'gradient';
+}
+
+// True when the preset renders a live animated canvas (vs a pure-CSS look).
+export function isAnimatedPreset(key: string | null | undefined): boolean {
+  return !!ROOM_BG_PRESETS.find((p) => p.key === key)?.animated;
 }
 
 export interface RoomAppearance {

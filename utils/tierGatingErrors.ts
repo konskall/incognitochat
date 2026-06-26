@@ -7,8 +7,9 @@
 //   QT001  "ROOM_LOCKED"
 //   QT002  "QUOTA_EXCEEDED:<currentTier>"
 //   QT003  "ROOM_LIMIT:<currentTier>"
-//   QT004  "TIER_REQUIRED:ai"    -> needs ultra
-//          "TIER_REQUIRED:basic" -> needs basic
+//   QT004  "TIER_REQUIRED:ai"     -> needs ultra
+//          "TIER_REQUIRED:ultra"  -> needs ultra (e.g. animated Vortex wallpaper)
+//          "TIER_REQUIRED:basic"  -> needs basic
 //   QT005  "TIER_REQUIRED:basic" -> needs basic
 //          (clear_room_messages / get_or_create_notes_room — basic+ gates added
 //           after QT001-QT004; handled identically to QT004 via the suffix.)
@@ -65,8 +66,8 @@ export function parseTierError(err: any, currentTier: Tier = 'free'): TierError 
   if (code === 'QT003') {
     return { code, requiredTier: nextTierUp(currentTier), message: "You've reached your room limit. Upgrade to create more rooms." };
   }
-  // QT004 / QT005 — suffix encodes the required tier directly ('ai' => ultra, else basic).
-  const needsUltra = /TIER_REQUIRED:\s*ai/i.test(msg);
+  // QT004 / QT005 — suffix encodes the required tier directly ('ai'/'ultra' => ultra, else basic).
+  const needsUltra = /TIER_REQUIRED:\s*(ai|ultra)\b/i.test(msg);
   const req: 'basic' | 'ultra' = needsUltra ? 'ultra' : 'basic';
   return { code, requiredTier: req, message: `This feature is available on ${req === 'ultra' ? 'Ultra' : 'Basic'}.` };
 }
