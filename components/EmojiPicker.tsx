@@ -37,15 +37,21 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onSelect, onClose }) => {
   // re-anchored the picker's `fixed` offsets. Escaping to body restores both.
   return createPortal(
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      {/* Use fixed positioning to ensure it's not clipped by overflow-hidden containers on mobile */}
+      {/* Backdrop + picker sit at z-[130]/[140] — ABOVE the long-press action menu
+          (z-[120]) so the "+ more reactions" picker renders in front of it AND its
+          full-screen backdrop covers the menu, so a tap anywhere outside the picker
+          closes it. (In the composer context nothing else is above, so this is safe.) */}
+      <div className="fixed inset-0 z-[130]" onClick={onClose} />
+      {/* Fixed positioning so overflow-hidden containers don't clip it. bottom uses
+          the home-indicator safe-area inset so on iOS PWA it clears the composer
+          (desktop inset = 0, so its position is unchanged). */}
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Pick an emoji"
         tabIndex={-1}
-        className="fixed bottom-20 right-4 sm:right-10 w-72 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col outline-none animate-in fade-in zoom-in duration-200"
+        className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 sm:right-10 w-72 h-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[140] overflow-hidden flex flex-col outline-none animate-in fade-in zoom-in duration-200"
       >
         <div className="p-2 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-700 font-medium text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider">
           Pick an Emoji
