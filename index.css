@@ -22,6 +22,24 @@ html, body {
   overscroll-behavior-y: none;
 }
 
+/* iOS long-press hardening — a long-press on a chat bubble must open the app's
+   OWN action menu (Reply / Copy / Delete), never iOS Safari's native text
+   selection + copy/translate callout. The bubble carried inline guards, but the
+   lifted CLONE rendered by MessageActionMenu (same `.chat-bubble` class via
+   dangerouslySetInnerHTML) and the bubbles' text descendants could still be
+   selected on iOS — flashing a full-bubble blue selection beside our menu. On
+   iOS `user-select:none` alone is not enough; `-webkit-touch-callout:none` is
+   also required. Hardcode the -webkit- prefixes (don't rely on autoprefixer) on
+   every bubble and everything inside it. The composer's <textarea> is not a
+   `.chat-bubble` descendant, so typing-area selection is unaffected. */
+.chat-bubble,
+.chat-bubble * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+}
+
 /* Smooth dark <-> light switch. Applied only for ~400ms while toggling (the
    `.theme-anim` class is added to <html> by the toggle, then removed) so we get
    a gentle cross-fade of colors without paying a transition cost on every paint. */
