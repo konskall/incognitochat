@@ -29,8 +29,6 @@ interface ChatInputProps {
   
   isGettingLocation: boolean;
   handleSendLocation: () => void;
-  /** Device preference: when false, the Location attachment is hidden (no GPS). */
-  locationEnabled: boolean;
   
   editingMessageId: string | null;
   cancelEdit: () => void;
@@ -70,7 +68,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   isUploading,
   isGettingLocation,
   handleSendLocation,
-  locationEnabled,
   editingMessageId,
   cancelEdit,
   replyingTo,
@@ -96,14 +93,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
       onClick: () => fileInputRef.current?.click(),
       tileClass: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
     },
-    ...(locationEnabled ? [{
+    {
       key: 'location',
       label: 'Location',
       icon: <MapPin size={24} />,
       onClick: handleSendLocation,
       disabled: isGettingLocation,
       tileClass: 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400',
-    }] : []),
+    },
     {
       key: 'poll',
       label: 'Poll',

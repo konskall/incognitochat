@@ -1459,6 +1459,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
        setIsGettingLocation(true);
        navigator.geolocation.getCurrentPosition(
            async (pos) => {
+               // GPS access succeeded — reflect it back into the preference so the
+               // Preferences toggle flips on (it no longer gates the button; sharing
+               // is always available and using it re-enables the setting).
+               setGpsEnabled(true);
                try {
                    await sendMessage("📍 Shared a location", config, null, null, { lat: pos.coords.latitude, lng: pos.coords.longitude }, 'text');
                    // Quota-counted insert — refresh the per-room remaining counter.
@@ -2038,7 +2042,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             isUploading={isUploading}
             isGettingLocation={isGettingLocation}
             handleSendLocation={handleSendLocation}
-            locationEnabled={gpsEnabled}
             editingMessageId={editingMessageId}
             cancelEdit={() => { setEditingMessageId(null); setInputText(''); }}
             replyingTo={replyingTo}
