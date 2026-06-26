@@ -26,7 +26,7 @@ const PLANS: PlanCard[] = [
   {
     key: 'basic', name: 'Basic', icon: <Rocket size={22} />, accent: 'blue', highlight: true,
     blurb: 'More rooms, more messages, audio calls.',
-    features: ['10 rooms', '100 messages/day per room', 'Rooms never expire', 'Audio calls', 'Room appearance & disappearing messages', 'Up to 10MB files'],
+    features: ['10 rooms', '100 messages/day per room', 'Rooms never expire', 'Audio calls', 'Room appearance & disappearing messages', 'Personal Notes room', 'Email alerts, multi-file upload & clear chat', 'Up to 10MB files'],
   },
   {
     key: 'ultra', name: 'Ultra', icon: <Crown size={22} />, accent: 'purple',

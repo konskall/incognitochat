@@ -47,6 +47,10 @@
     <meta name="description" content="Anonymous, private chat in PIN-locked rooms. No phone number or sign-up — share the room name and PIN to talk freely." />
 
     <!-- Structured data for rich results -->
+    <!-- SEO structured data. NOTE: prices (highPrice "10", and "€5"/"€10" in the
+         plans FAQ below) are HARDCODED here. The live pricing cards read Stripe
+         prices dynamically; this JSON-LD + the FAQ copy in components/LandingPage.tsx
+         do NOT. If Stripe prices change, update BOTH so advertised === charged. -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -84,7 +88,7 @@
             {
               "@type": "Question",
               "name": "What plans are available and what do they cost?",
-              "acceptedAnswer": { "@type": "Answer", "text": "Incognito Chat is free to use. Basic (€5/month) unlocks 10 rooms, 100 messages per day per room, audio calls, room customization and disappearing messages. Ultra (€10/month) adds unlimited rooms and messages, video calls, screen sharing, the Inco AI assistant and 40MB uploads. You can cancel anytime from your dashboard." }
+              "acceptedAnswer": { "@type": "Answer", "text": "Incognito Chat is free to use. Basic (€5/month) unlocks 10 rooms, 100 messages per day per room, audio calls, room customization, disappearing messages, a personal Notes room, email alerts, multi-file uploads and clear-chat. Ultra (€10/month) adds unlimited rooms and messages, video calls, screen sharing, the Inco AI assistant and 40MB uploads. You can cancel anytime from your dashboard." }
             },
             {
               "@type": "Question",
@@ -109,7 +113,7 @@
             {
               "@type": "Question",
               "name": "Will I be notified of new messages?",
-              "acceptedAnswer": { "@type": "Answer", "text": "Yes — enable web push notifications (they work even when the app is closed; on iPhone, add the app to your Home Screen first) or per-room email alerts. Your message content is never sent to the email service." }
+              "acceptedAnswer": { "@type": "Answer", "text": "Yes — enable free web push notifications (they work even when the app is closed; on iPhone, add the app to your Home Screen first) or per-room email alerts on Basic and up. Your message content is never sent to the email service." }
             },
             {
               "@type": "Question",

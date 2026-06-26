@@ -24,11 +24,11 @@ const focusRing =
 const FEATURES = [
   { icon: <Lock className="text-blue-500" />, title: 'PIN-Locked Private Rooms', description: 'Every message is scrambled with your room PIN — only people who join with the right name and PIN can read along.' },
   { icon: <Shield className="text-purple-500" />, title: 'No Sign-Up, Truly Anonymous', description: 'No phone number or email. Pick a username and a secret room; a Google login is optional, just to save your rooms.' },
-  { icon: <Video className="text-green-500" />, title: 'Audio, Video & Screen Share', description: 'Group and 1-on-1 calls connect peer-to-peer with a secure relay fallback. Add video and screen sharing on Ultra.' },
+  { icon: <Video className="text-green-500" />, title: 'Audio, Video & Screen Share', description: 'Group and 1-on-1 calls connect peer-to-peer with a secure relay fallback. Audio on Basic; video and screen sharing on Ultra.' },
   { icon: <Sparkles className="text-fuchsia-500" />, title: 'Inco AI Assistant', description: 'Summon an in-room AI to answer questions and look things up — with cited sources. Available on Ultra.' },
-  { icon: <Timer className="text-orange-500" />, title: 'Disappearing & Self-Destruct Rooms', description: 'Set messages to vanish on a timer, or have the whole room auto-delete after a chosen period.' },
+  { icon: <Timer className="text-orange-500" />, title: 'Disappearing & Self-Destruct Rooms', description: 'Set messages to vanish on a timer, or have the whole room auto-delete after a chosen period — on Basic and Ultra.' },
   { icon: <MessagesSquare className="text-emerald-500" />, title: 'Rich Messaging', description: 'Replies, reactions, polls, voice notes, location, a media gallery, link previews and in-room search.' },
-  { icon: <Bell className="text-rose-500" />, title: 'Push & Email Alerts', description: 'Get notified of new messages by web push — even when the app is closed — or by email, without exposing your message content.' },
+  { icon: <Bell className="text-rose-500" />, title: 'Push & Email Alerts', description: 'Get notified of new messages by free web push — even when the app is closed — or by email on Basic and up, without exposing your message content.' },
   { icon: <Smartphone className="text-sky-500" />, title: 'Installable PWA + Dark Mode', description: 'Add it to your home screen like a native app, offline-ready, with a polished dark theme.' },
 ];
 
@@ -51,6 +51,10 @@ const STEPS = [
 ];
 
 // Kept in sync with the FAQPage JSON-LD in index.html.
+// NOTE: the €5 / €10 amounts below are hardcoded copy. The pricing CARDS render
+// LIVE Stripe prices (usePrices); these FAQ strings + the FAQPage JSON-LD in
+// index.html do NOT — if the Stripe prices ever change, update BOTH here and the
+// matching answers in index.html so advertised price === charged price.
 const FAQS = [
   {
     q: 'Do I need an account to use Incognito Chat?',
@@ -62,7 +66,7 @@ const FAQS = [
   },
   {
     q: 'What plans are available and what do they cost?',
-    a: 'Incognito Chat is free to use. Basic (€5/month) unlocks 10 rooms, 100 messages per day per room, audio calls, room customization and disappearing messages. Ultra (€10/month) adds unlimited rooms and messages, video calls, screen sharing, the Inco AI assistant and 40MB uploads. You can cancel anytime from your dashboard.',
+    a: 'Incognito Chat is free to use. Basic (€5/month) unlocks 10 rooms, 100 messages per day per room, audio calls, room customization, disappearing messages, a personal Notes room, email alerts, multi-file uploads and clear-chat. Ultra (€10/month) adds unlimited rooms and messages, video calls, screen sharing, the Inco AI assistant and 40MB uploads. You can cancel anytime from your dashboard.',
   },
   {
     q: 'How do the audio and video calls work?',
@@ -82,7 +86,7 @@ const FAQS = [
   },
   {
     q: 'Will I be notified of new messages?',
-    a: 'Yes — enable web push notifications (they work even when the app is closed; on iPhone, add the app to your Home Screen first) or per-room email alerts. Your message content is never sent to the email service.',
+    a: 'Yes — enable free web push notifications (they work even when the app is closed; on iPhone, add the app to your Home Screen first) or per-room email alerts on Basic and up. Your message content is never sent to the email service.',
   },
   {
     q: 'What happens when a room is deleted?',

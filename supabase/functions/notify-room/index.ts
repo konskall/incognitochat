@@ -113,6 +113,32 @@ Deno.serve(async (req: Request) => {
       .map((s) => s.uid);
     if (candidateUids.length === 0) return json({ sent: 0 }, 200);
 
+    // Email alerts are a Basic+ feature. A DB trigger gates SETTING the email,
+    // but we ALSO re-check effective tier at SEND time (defense-in-depth): a user
+    // who subscribed while paid and later downgraded to free must stop receiving
+    // alerts — no free riders on the email send cost. Mirrors SQL effective_tier
+    // / client resolveTier. Free users (no subscription row) are dropped.
+    const { data: subRows, error: subTierErr } = await admin
+      .from("subscriptions")
+      .select("user_id, tier, status, current_period_end")
+      .in("user_id", candidateUids);
+    if (subTierErr) {
+      console.error("subscriptions tier read failed", subTierErr);
+      return json({ error: "DB_ERROR" }, 500);
+    }
+    const entitledUids = new Set<string>();
+    for (const s of subRows ?? []) {
+      const periodMs = s.current_period_end ? Date.parse(s.current_period_end) : NaN;
+      const inPeriod = Number.isFinite(periodMs) && periodMs > now;
+      const entitled =
+        s.status === "active" ||
+        s.status === "trialing" ||
+        ((s.status === "past_due" || s.status === "canceled") && inPeriod);
+      if (entitled && (s.tier === "basic" || s.tier === "ultra")) entitledUids.add(s.user_id);
+    }
+    const paidUids = candidateUids.filter((u) => entitledUids.has(u));
+    if (paidUids.length === 0) return json({ sent: 0 }, 200);
+
     // ATOMIC cooldown pre-claim. A single conditional UPDATE bumps
     // last_notified_at ONLY for rows whose cooldown has elapsed (or that were
     // never notified) and RETURNS the rows it actually changed. Two concurrent
@@ -127,7 +153,7 @@ Deno.serve(async (req: Request) => {
       .from("subscribers")
       .update({ last_notified_at: new Date(now).toISOString() })
       .eq("room_key", roomKey)
-      .in("uid", candidateUids)
+      .in("uid", paidUids)
       .or(`last_notified_at.is.null,last_notified_at.lt.${cutoffIso}`)
       .select("uid, email");
     if (claimErr) {

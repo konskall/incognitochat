@@ -1683,7 +1683,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
           setShowEmailModal(false);
       } catch (e: any) {
           console.error("Error saving email:", e);
-          flashToast("Failed to subscribe.");
+          // Email alerts are Basic+ (server enforce_email_alert_tier → QT004). If a
+          // free user reaches this write (e.g. UI gate bypassed), surface the
+          // paywall instead of a generic failure.
+          const tierErr = parseTierError(e, tier);
+          if (tierErr) { setShowEmailModal(false); promptUpgrade('Email alerts', tierErr.requiredTier, 'Get notified by email when new messages arrive.'); }
+          else flashToast("Failed to subscribe.");
       } finally {
           setIsSavingEmail(false);
       }
