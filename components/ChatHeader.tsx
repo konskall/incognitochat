@@ -1,6 +1,7 @@
 import React from 'react';
 import { Users, LogOut, Timer, Hourglass } from 'lucide-react';
 import { ChatConfig, Presence } from '../types';
+import { safeAvatarUrl } from '../utils/helpers';
 
 interface ChatHeaderProps {
   config: ChatConfig;
@@ -39,7 +40,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
         title="Room info"
       >
         {roomAvatarUrl ? (
-          <img src={roomAvatarUrl} alt={config.roomName} className="w-10 h-10 rounded-full object-cover shadow-lg flex-shrink-0 bg-slate-200 dark:bg-slate-700 border border-white/40 dark:border-slate-700" />
+          <img src={safeAvatarUrl(roomAvatarUrl)} alt={config.roomName} className="w-10 h-10 rounded-full object-cover shadow-lg flex-shrink-0 bg-slate-200 dark:bg-slate-700 border border-white/40 dark:border-slate-700" />
         ) : (
           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
             {config.roomName.substring(0, 2).toUpperCase()}

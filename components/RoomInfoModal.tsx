@@ -7,6 +7,7 @@ import {
 import qrcode from 'qrcode-generator';
 import { ChatConfig, Presence } from '../types';
 import { useModalA11y } from '../hooks/useModalA11y';
+import { safeAvatarUrl } from '../utils/helpers';
 
 // App logo, base-path aware (works in dev, on GitHub Pages, behind a custom domain).
 const LOGO = `${import.meta.env.BASE_URL}favicon-96x96.png`;
@@ -203,7 +204,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
         <div className="flex flex-col items-center text-center px-6 pt-6 pb-5 border-b border-slate-100 dark:border-slate-800">
           {roomAvatarUrl ? (
             <button type="button" onClick={() => setAvatarPreview(true)} aria-label="View room photo" title="View photo" className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-              <img src={roomAvatarUrl} alt={config.roomName} className="w-24 h-24 rounded-full object-cover shadow-lg border border-white/40 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 cursor-zoom-in transition-transform hover:scale-105 active:scale-95" />
+              <img src={safeAvatarUrl(roomAvatarUrl)} alt={config.roomName} className="w-24 h-24 rounded-full object-cover shadow-lg border border-white/40 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 cursor-zoom-in transition-transform hover:scale-105 active:scale-95" />
             </button>
           ) : (
             <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-3xl shadow-lg">{initials}</div>
@@ -505,7 +506,7 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
           <X size={24} />
         </button>
         <img
-          src={roomAvatarUrl}
+          src={safeAvatarUrl(roomAvatarUrl)}
           alt={config.roomName}
           onClick={(e) => e.stopPropagation()}
           className="max-w-full max-h-[85vh] rounded-2xl object-contain shadow-2xl animate-in zoom-in-95 duration-200"

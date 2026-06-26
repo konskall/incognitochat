@@ -227,13 +227,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const [incoInfoAvatar, setIncoInfoAvatar] = useState<string | null>(null);
 
   // Room appearance (icon + wallpaper), owner-editable, propagated via realtime.
-  const [roomAvatarUrl, setRoomAvatarUrl] = useState('');
-  // Restore the last-known wallpaper for THIS room synchronously from localStorage
-  // so re-entering a configured room paints its real background on the first frame
-  // — instead of flashing the default 'dots' preset until the room row loads over
-  // the network. Never-visited rooms fall back to defaults; the live values from
-  // initRoom / realtime still override and refresh the cache (effect below).
+  // Restore the last-known appearance for THIS room synchronously from localStorage
+  // so re-entering a configured room paints its real background AND icon on the
+  // first frame — instead of flashing the default 'dots' preset (and the initials
+  // fallback for the icon) until the room row loads over the network. Never-visited
+  // rooms fall back to defaults; the live values from initRoom / realtime still
+  // override and refresh the cache (effect below).
   const cachedBg = useMemo(() => readCachedAppearance(config.roomKey), [config.roomKey]);
+  const [roomAvatarUrl, setRoomAvatarUrl] = useState(() => cachedBg?.avatarUrl || '');
   const [bgType, setBgType] = useState(() => cachedBg?.type || 'preset');
   const [bgPreset, setBgPreset] = useState(() => cachedBg?.preset || 'dots');
   const [bgUrl, setBgUrl] = useState(() => cachedBg?.url || '');
@@ -254,8 +255,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   // before the room row arrives; read back by the lazy initializers above.
   useEffect(() => {
     if (!config.roomKey || !isRoomReady) return;
-    writeCachedAppearance(config.roomKey, { type: bgType, preset: bgPreset, url: bgUrl });
-  }, [config.roomKey, isRoomReady, bgType, bgPreset, bgUrl]);
+    writeCachedAppearance(config.roomKey, { type: bgType, preset: bgPreset, url: bgUrl, avatarUrl: roomAvatarUrl });
+  }, [config.roomKey, isRoomReady, bgType, bgPreset, bgUrl, roomAvatarUrl]);
   const [showRoomAppearance, setShowRoomAppearance] = useState(false);
 
   // Disappearing messages: per-room TTL in seconds (null = off).

@@ -263,9 +263,10 @@ export function presetCategory(key: string | null | undefined): RoomBgCategory {
 }
 
 export interface RoomAppearance {
-  type?: string | null;     // 'preset' | 'image'
-  preset?: string | null;   // preset key when type === 'preset'
-  url?: string | null;      // image URL when type === 'image'
+  type?: string | null;       // 'preset' | 'image'
+  preset?: string | null;     // preset key when type === 'preset'
+  url?: string | null;        // image URL when type === 'image'
+  avatarUrl?: string | null;  // room icon URL (cached so it paints on first frame)
 }
 
 // Resolves the background style for the chat area from a room's stored appearance.
@@ -289,12 +290,13 @@ export function getRoomBackgroundStyle(appearance: RoomAppearance, isDark: boole
 }
 
 // ── Per-room appearance cache ────────────────────────────────────────────────
-// The room's wallpaper lives in the `rooms` row, which only arrives after the
-// initRoom network round-trip — so on entry the chat area paints the default
-// 'dots' preset for a beat before swapping to the configured look. We mirror the
-// last-known appearance per room into localStorage so the NEXT visit can restore
-// it synchronously on the first frame (no default flash). The live values from
-// initRoom / realtime still override and refresh the cache.
+// The room's wallpaper AND icon live in the `rooms` row, which only arrives
+// after the initRoom network round-trip — so on entry the chat area paints the
+// default 'dots' preset (and the header shows the initials fallback) for a beat
+// before swapping to the configured look. We mirror the last-known appearance
+// per room into localStorage so the NEXT visit can restore it synchronously on
+// the first frame (no default flash). The live values from initRoom / realtime
+// still override and refresh the cache.
 const BG_CACHE_PREFIX = 'roombg_';
 
 export function readCachedAppearance(roomKey: string): RoomAppearance | null {
@@ -304,7 +306,7 @@ export function readCachedAppearance(roomKey: string): RoomAppearance | null {
     if (!raw) return null;
     const a = JSON.parse(raw);
     if (a && typeof a === 'object') {
-      return { type: a.type ?? null, preset: a.preset ?? null, url: a.url ?? null };
+      return { type: a.type ?? null, preset: a.preset ?? null, url: a.url ?? null, avatarUrl: a.avatarUrl ?? null };
     }
   } catch { /* corrupt/unavailable storage → fall back to defaults */ }
   return null;
@@ -315,7 +317,7 @@ export function writeCachedAppearance(roomKey: string, a: RoomAppearance): void 
   try {
     localStorage.setItem(
       BG_CACHE_PREFIX + roomKey,
-      JSON.stringify({ type: a.type ?? null, preset: a.preset ?? null, url: a.url ?? null }),
+      JSON.stringify({ type: a.type ?? null, preset: a.preset ?? null, url: a.url ?? null, avatarUrl: a.avatarUrl ?? null }),
     );
   } catch { /* private mode / quota → caching is best-effort */ }
 }
