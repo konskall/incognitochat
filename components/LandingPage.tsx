@@ -22,6 +22,19 @@ const LOGO = `${import.meta.env.BASE_URL}web-app-manifest-192x192.png`;
 const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-950';
 
+// Per-theme tuning for the hero vortex (lib/helicalDriftBg). Dark uses an
+// additive 'lighter' glow on the near-black background; light uses plain
+// 'source-over' with a darker, denser palette so the dots read on near-white.
+// NEVER use a software blend like 'multiply' for light — canvas software blend
+// modes run on the CPU and collapse the frame rate (~1 fps).
+const HERO_THEMES = {
+  dark: { opacity: 0.6, blend: 'lighter', palette: ['#eaf2ff', '#3b6ef5', '#1b2b6b'] },
+  light: {
+    opacity: 1.0, blend: 'source-over', intensity: 1.1, pointSize: 1.8,
+    spacing: 2.6, ringAmount: 0.42, palette: ['#0f1c56', '#2b4ed6', '#8fa9e0'],
+  },
+};
+
 const FEATURES = [
   { icon: <Lock className="text-blue-500" />, title: 'PIN-Locked Private Rooms', description: 'Every message is scrambled with your room PIN — only people who join with the right name and PIN can read along.' },
   { icon: <Shield className="text-purple-500" />, title: 'No Sign-Up, Truly Anonymous', description: 'No phone number or email. Pick a username and a secret room; a Google login is optional, just to save your rooms.' },
@@ -217,28 +230,27 @@ const LandingPage: React.FC<LandingPageProps> = ({ onStart, onChoosePlan }) => {
 
   // Animated phyllotactic-vortex background radiating from the hero logo. The
   // engine self-mounts a pointer-events:none, z-index:0 canvas layer into the
-  // hero (so it sits behind the z-10 content) and handles its own resize,
-  // off-screen / hidden-tab pause, reduced-motion and DPR caps — see
-  // lib/helicalDriftBg. Mounted ONLY in dark mode: it uses an additive
-  // ('lighter') glow that washes out to near-invisible muddy smudges on the
-  // light theme's near-white background. Re-mounts on theme toggle; destroyed
-  // on unmount / when switching to light.
+  // hero (behind the z-10 content) and handles its own resize, off-screen /
+  // hidden-tab pause, reduced-motion and DPR caps — see lib/helicalDriftBg.
+  // Shown in BOTH themes with per-theme tuning (HERO_THEMES): the blend mode and
+  // palette switch so it glows on dark and reads cleanly on light. Re-created on
+  // every theme change (`theme` dep) with destroy() cleanup, so there is never
+  // more than one canvas layer.
   const heroRef = useRef<HTMLElement>(null);
   const heroLogoRef = useRef<HTMLImageElement>(null);
+  const theme = isDark ? 'dark' : 'light';
   useEffect(() => {
-    if (!isDark) return;
     const host = heroRef.current;
     const logo = heroLogoRef.current;
     if (!host || !logo) return;
     const bg = new HelicalDriftBG(host, {
       centerEl: logo,
       voidPad: 2,
-      palette: ['#eaf2ff', '#3b6ef5', '#1b2b6b'],
-      opacity: 0.6,
       rotationSpeed: 0.03,
+      ...HERO_THEMES[theme],
     });
     return () => bg.destroy();
-  }, [isDark]);
+  }, [theme]);
 
   return (
     <div

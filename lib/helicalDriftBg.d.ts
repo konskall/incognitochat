@@ -33,6 +33,13 @@ export interface HelicalDriftBGOptions {
   pointSize?: number;
   /** Use the 'lighter' composite (additive glow); best on dark backgrounds. */
   glow?: boolean;
+  /**
+   * Explicit canvas globalCompositeOperation, overriding `glow` when set.
+   * Use 'lighter' for additive glow on dark backgrounds and 'source-over' for
+   * normal painting on light backgrounds. Avoid software blend modes such as
+   * 'multiply' — they run on the CPU and collapse the frame rate.
+   */
+  blend?: string | null;
   seed?: number;
   mask?: 'none' | 'edges' | 'soft' | 'donut';
   fps?: number;
