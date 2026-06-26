@@ -12,7 +12,7 @@ import MediaPreviewModal, { MediaItem } from './MediaPreviewModal';
 import PollMessage from './PollMessage';
 import {
   FileText, Download,
-  File, FileVideo, FileCode, FileArchive, Reply, ExternalLink, MapPin, Trash2, Eye, Clock, Play, Pause, AlertCircle, Wand2, Search, CheckCheck, ImageOff, Youtube
+  File, FileVideo, FileCode, FileArchive, Reply, ExternalLink, MapPin, Trash2, Eye, Clock, Play, Pause, AlertCircle, Wand2, Search, CheckCheck, ImageOff, Youtube, MessagesSquare
 } from 'lucide-react';
 import MessageActionMenu, { flashToast } from './MessageActionMenu';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -895,7 +895,24 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
               </div>
             )}
             {liveMessages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 opacity-60">{messages.length > 0 ? (<><p>Messages here have expired.</p><p className="text-xs">Load earlier to see older ones.</p></>) : (<><p>No messages yet.</p><p className="text-xs">Say hello! 👋</p></>)}</div>
+              <div className="flex flex-col items-center justify-center h-64 text-center px-6 select-none">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/15 to-indigo-500/15 ring-1 ring-blue-500/20 dark:ring-blue-400/20 flex items-center justify-center mb-3 shadow-sm">
+                  {messages.length > 0
+                    ? <Clock className="text-blue-500/80 dark:text-blue-400/80" size={28} strokeWidth={1.75} />
+                    : <MessagesSquare className="text-blue-500/80 dark:text-blue-400/80" size={28} strokeWidth={1.75} />}
+                </div>
+                {messages.length > 0 ? (
+                  <>
+                    <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">Messages here have expired</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Load earlier to see older ones.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">No messages yet</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Start the conversation</p>
+                  </>
+                )}
+              </div>
             ) : (
               liveMessages.map((msg, i, arr) => {
                 const lbl = dayLabel(msg.createdAt);
