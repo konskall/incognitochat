@@ -750,7 +750,17 @@ const DayDivider = ({ label }: { label: string }) => (
 // never rendered. Cuts the cost of a long, media-heavy history without unmounting
 // anything (so scroll anchoring + the "Load earlier" restore stay intact). Ignored
 // by browsers that don't support it (older Safari) — graceful, no behavior change.
-const CV_STYLE = { contentVisibility: 'auto', containIntrinsicSize: 'auto 72px' } as React.CSSProperties;
+// scrollMargin keeps jump-to-message (pinned / reply / search) targets clear of
+// the translucent glass header & composer that overlay the full-height scroller:
+// scrollIntoView honors scroll-margin, so a bubble in the first/last screenful is
+// nudged into the visible gap instead of tucking its highlight ring under a bar.
+// The --chat-* vars are set on the chat root and inherit down to every row.
+const CV_STYLE = {
+  contentVisibility: 'auto',
+  containIntrinsicSize: 'auto 72px',
+  scrollMarginTop: 'calc(var(--chat-top-h, 4rem) + 0.5rem)',
+  scrollMarginBottom: 'calc(var(--chat-bottom-h, 4rem) + 0.5rem)',
+} as React.CSSProperties;
 
 const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onRetry, onUserClick, onIncoClick, getSeenBy, liveAvatars, hasMoreOlder, onLoadEarlier, searchQuery, seenMessageId, messageTtlSeconds, roomOwnerUid, isOwner, pinnedMessageId, onPin, onUnpin, onVotePoll, onToggleClosedPoll }) => {
   const avatars = liveAvatars ?? EMPTY_AVATARS;

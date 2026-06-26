@@ -119,6 +119,24 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+/* Viber-style translucent chat bars. The header & composer overlay the message
+   scroller, so they're more transparent than .glass-panel and lean on a wider
+   blur + saturate to stay legible over wallpaper and scrolling messages behind
+   them. .glass-bar-top/-bottom add the hairline edge facing the messages.
+   Tune the alpha here if text legibility over a bright wallpaper suffers. */
+.glass-bar {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+}
+.dark .glass-bar {
+  background: rgba(15, 23, 42, 0.72);
+}
+.glass-bar-top         { border-bottom: 1px solid rgba(0, 0, 0, 0.06); }
+.dark .glass-bar-top   { border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.glass-bar-bottom      { border-top: 1px solid rgba(0, 0, 0, 0.06); }
+.dark .glass-bar-bottom{ border-top: 1px solid rgba(255, 255, 255, 0.06); }
+
 /* Dark-theme elevation. Tailwind's default shadow scale is near-black at low
    alpha (0.1–0.25) — fine on white, but invisible on dark surfaces, so the dark
    theme looked flat. Re-cast the scale in dark mode with higher-alpha black + a

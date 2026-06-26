@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, joinOrCreateRoom, setMyAvatar, listAccessRequests, approveAccessRequest, denyAccessRequest, setRoomApproval, type PendingRequest } from '../services/supabase';
 import { ChatConfig, Message, User, Subscriber, Presence } from '../types';
@@ -321,6 +321,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const rootRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
+  // The translucent top stack (header + search + pinned) and the bottom stack
+  // (composer) overlay the message scroller; we measure their live heights into
+  // CSS vars so the scroller's top/bottom padding keeps messages resting in the
+  // visible gap (Viber-style glass bars — see specs/2026-06-26-viber-...).
+  const topBarRef = useRef<HTMLDivElement>(null);
+  const bottomBarRef = useRef<HTMLDivElement>(null);
   const isFirstLoad = useRef(true);
   const lastMessageIdRef = useRef<string | null>(null);
   const atBottomRef = useRef(true);
@@ -1730,6 +1736,40 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     };
   }, []);
 
+  // The glass top/bottom bars overlay the full-height message scroller, so the
+  // scroller pads itself by each bar's live height to keep the first/last
+  // message resting in the visible gap. Measured via ResizeObserver and written
+  // STRAIGHT to the root's CSS vars (no React state → MessageList's React.memo
+  // stays effective, so growing the textarea or opening a reply banner never
+  // re-renders the list). roomDeleted re-grabs the footer ref when it mounts.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const update = () => {
+      const t = topBarRef.current;
+      const b = bottomBarRef.current;
+      root.style.setProperty('--chat-top-h', `${t ? t.offsetHeight : 0}px`);
+      root.style.setProperty('--chat-bottom-h', `${b ? b.offsetHeight : 0}px`);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    if (topBarRef.current) ro.observe(topBarRef.current);
+    if (bottomBarRef.current) ro.observe(bottomBarRef.current);
+    // env(safe-area-inset-*) can change WITHOUT a content change inside the bars
+    // (orientation flip; the home-indicator inset resolving to 0 when the soft
+    // keyboard opens). ResizeObserver does fire on those, but a frame late — while
+    // the visualViewport handler resizes the root synchronously on the same event
+    // — so re-measure eagerly on these to avoid a 1-frame tuck/gap.
+    const vv = window.visualViewport;
+    window.addEventListener('orientationchange', update);
+    vv?.addEventListener('resize', update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('orientationchange', update);
+      vv?.removeEventListener('resize', update);
+    };
+  }, [roomDeleted]);
+
   // Tapping the inco bot's avatar/name opens its info modal (it has no user
   // profile). Show whatever avatar was on screen, falling back to the default.
   const handleIncoClick = useCallback((avatar: string) => {
@@ -1780,8 +1820,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   }, []);
 
   return (
-    <div ref={rootRef} className="fixed inset-0 flex flex-col h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
-      
+    <div ref={rootRef} className="fixed inset-0 h-[100dvh] w-full bg-slate-100 dark:bg-slate-900 max-w-5xl mx-auto shadow-2xl overflow-hidden z-50 md:relative md:inset-auto md:rounded-2xl md:my-4 md:h-[95vh] md:border border-white/40 dark:border-slate-800 transition-colors">
+
+      {/* Full-bleed wallpaper layer — behind the scroller AND the glass bars, so
+          messages and bars alike reveal it (Viber-style). Was the <main> bg. */}
+      <div
+        aria-hidden
+        className="absolute inset-0 z-0 pointer-events-none"
+        style={getRoomBackgroundStyle({ type: bgType === 'image' && !bgReady ? 'preset' : bgType, preset: bgPreset, url: bgUrl }, isDarkMode)}
+      />
+
       {roomDeleted && <RoomDeletedToast onExit={handleExitChat} onRecreate={handleRecreate} />}
 
       {showQuotaNudge && (
@@ -1857,6 +1905,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
           </Suspense>
       )}
 
+      {/* Glass top stack — overlays the scroller; header + search + pinned move
+          here together so their combined live height feeds --chat-top-h. */}
+      <div ref={topBarRef} className="absolute top-0 inset-x-0 z-30">
       <ChatHeader
         config={config}
         participants={participants}
@@ -1914,11 +1965,16 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         </div>
       )}
 
+      </div>
+
       <main
         ref={mainRef}
         onScroll={handleMainScroll}
-        className="relative flex-1 overflow-y-auto overflow-x-clip overscroll-contain p-4 pb-20 transition-colors"
-        style={getRoomBackgroundStyle({ type: bgType === 'image' && !bgReady ? 'preset' : bgType, preset: bgPreset, url: bgUrl }, isDarkMode)}
+        className="absolute inset-0 z-10 overflow-y-auto overflow-x-clip overscroll-contain px-4 transition-colors"
+        style={{
+          paddingTop: 'calc(var(--chat-top-h, 4rem) + 0.5rem)',
+          paddingBottom: 'calc(var(--chat-bottom-h, 4rem) + 0.5rem)',
+        }}
       >
         <MessageList
             messages={messages}
@@ -1953,7 +2009,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       {showScrollDown && !roomDeleted && !showQuotaNudge && (
         <button
           onClick={() => scrollToBottom()}
-          className="absolute bottom-24 right-4 z-30 flex items-center gap-1.5 pl-3 pr-3 py-2 bg-white/90 text-slate-700 ring-1 ring-black/10 hover:bg-white dark:bg-slate-900/90 dark:text-white dark:ring-white/20 dark:hover:bg-slate-800 backdrop-blur-md rounded-full shadow-xl shadow-black/30 transition-all active:scale-95 animate-in fade-in slide-in-from-bottom-2"
+          className="absolute bottom-24 right-4 z-40 flex items-center gap-1.5 pl-3 pr-3 py-2 bg-white/90 text-slate-700 ring-1 ring-black/10 hover:bg-white dark:bg-slate-900/90 dark:text-white dark:ring-white/20 dark:hover:bg-slate-800 backdrop-blur-md rounded-full shadow-xl shadow-black/30 transition-all active:scale-95 animate-in fade-in slide-in-from-bottom-2"
           aria-label="Scroll to latest messages"
         >
           <ChevronDown size={18} />
@@ -1963,6 +2019,12 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         </button>
       )}
 
+      {/* Glass bottom stack — overlays the scroller; its live height feeds
+          --chat-bottom-h (grows with reply/edit banners, file chips, multiline).
+          Keep this wrapper ALWAYS mounted and gate its CHILDREN on !roomDeleted
+          (not the wrapper) so the ResizeObserver keeps observing it; when deleted
+          the empty div collapses to 0 and the scroller padding self-corrects. */}
+      <div ref={bottomBarRef} className="absolute bottom-0 inset-x-0 z-20">
       {!roomDeleted && (
         <>
         {partialBatch && selectedFiles.length > 0 && (
@@ -2001,6 +2063,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         />
         </>
       )}
+      </div>
 
       <DeleteChatModal
         show={showDeleteModal}

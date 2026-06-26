@@ -94,7 +94,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   const onlineCount = participants.filter((p) => p.status === 'active').length;
 
   return (
-    <header className="glass-panel px-4 py-3 flex items-center justify-between z-30 sticky top-0 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
+    <header className="glass-bar glass-bar-top px-4 py-3 flex items-center justify-between z-30 shadow-sm pt-[calc(0.75rem+env(safe-area-inset-top))]">
       {/* Room identity — only this block is tappable (opens the Room Info hub) */}
       <div className="flex items-center min-w-0 flex-1">
       <button
