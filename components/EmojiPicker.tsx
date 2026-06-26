@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useModalA11y } from '../hooks/useModalA11y';
 import Emoji from './Emoji';
 
@@ -30,7 +31,11 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onSelect, onClose }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   useModalA11y(true, onClose, dialogRef);
 
-  return (
+  // Portal to <body>: the composer footer's `backdrop-filter` (glass-bar) makes
+  // it a containing block for fixed descendants, which confined this dismiss
+  // backdrop to the footer box (tap-outside stopped closing the picker) and
+  // re-anchored the picker's `fixed` offsets. Escaping to body restores both.
+  return createPortal(
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       {/* Use fixed positioning to ensure it's not clipped by overflow-hidden containers on mobile */}
@@ -58,7 +63,8 @@ const EmojiPicker: React.FC<EmojiPickerProps> = ({ onSelect, onClose }) => {
           ))}
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 };
 

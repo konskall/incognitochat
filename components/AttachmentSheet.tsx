@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useModalA11y } from '../hooks/useModalA11y';
 
 export interface SheetAction {
@@ -27,7 +28,11 @@ const AttachmentSheet: React.FC<AttachmentSheetProps> = ({ show, onClose, action
 
   if (!show) return null;
 
-  return (
+  // Portal to <body>: the composer footer now has `backdrop-filter` (glass-bar),
+  // which makes it a containing block for fixed-positioned descendants — that
+  // confined this full-screen dismiss backdrop to the ~60px footer box, so a tap
+  // outside it never closed the sheet. Escaping to body restores viewport-fixed.
+  return createPortal(
     <>
       <div
         className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm animate-fade-in"
@@ -60,7 +65,8 @@ const AttachmentSheet: React.FC<AttachmentSheetProps> = ({ show, onClose, action
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 };
 
