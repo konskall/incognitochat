@@ -19,9 +19,51 @@ const ScreenLoader: React.FC = () => (
   </div>
 );
 
+// Synchronous boot route. A refresh INSIDE a room used to flash the marketing
+// landing (the default view) before the async session restore ran — supabase is
+// dynamic-imported and getSession() is async, so the room couldn't be restored on
+// the first paint. The stored room, however, is readable from localStorage
+// SYNCHRONOUSLY, so when one is present (and there's no invite deep-link, which
+// must win and route to login) we start directly on the chat view — no flash.
+// Auth still resolves asynchronously: ChatScreen runs its own getSession() and the
+// split-brain guard there only mints/blocks based on a found session vs the
+// `account` prop, which is null at this point exactly as it is for today's async
+// stored-room restore — so no phantom anonymous identity is created. Invite links
+// and the Google-user→dashboard case still route via the async effect below.
+function computeInitialRoute(): { view: 'landing' | 'chat'; config: ChatConfig | null } {
+  try {
+    const search = new URLSearchParams(window.location.search);
+    // An invite deep-link must win (→ async routes to prefilled login / push room).
+    if (search.get('room') && search.get('pin')) return { view: 'landing', config: null };
+    const pin = localStorage.getItem('chatPin');
+    const roomName = localStorage.getItem('chatRoomName');
+    const username = localStorage.getItem('chatUsername');
+    if (pin && roomName && username) {
+      return {
+        view: 'chat',
+        config: {
+          username,
+          avatarURL: localStorage.getItem('chatAvatarURL') || '',
+          roomName,
+          pin,
+          roomKey: generateRoomKey(pin, roomName),
+        },
+      };
+    }
+  } catch { /* storage/URL unavailable → fall back to the async landing flow */ }
+  return { view: 'landing', config: null };
+}
+
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<'landing' | 'login' | 'dashboard' | 'chat'>('landing');
-  const [chatConfig, setChatConfig] = useState<ChatConfig | null>(null);
+  // Resolve the boot route synchronously (once) so a refresh inside a room paints
+  // the room on the first frame instead of flashing the landing — see
+  // computeInitialRoute above.
+  const bootRoute = React.useRef<{ view: 'landing' | 'chat'; config: ChatConfig | null } | null>(null);
+  if (bootRoute.current === null) bootRoute.current = computeInitialRoute();
+  const syncRestoredRoom = bootRoute.current.view === 'chat';
+
+  const [currentView, setCurrentView] = useState<'landing' | 'login' | 'dashboard' | 'chat'>(bootRoute.current.view);
+  const [chatConfig, setChatConfig] = useState<ChatConfig | null>(bootRoute.current.config);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   // Set from an invite deep-link (?room=&pin=) so LoginScreen prefills the room.
   const [invitePrefill, setInvitePrefill] = useState<{ roomName: string; pin: string } | null>(null);
@@ -100,7 +142,11 @@ const App: React.FC = () => {
         const storedUsername = localStorage.getItem('chatUsername') || session?.user?.user_metadata?.full_name;
         const storedAvatar = localStorage.getItem('chatAvatarURL') || session?.user?.user_metadata?.custom_avatar || session?.user?.user_metadata?.avatar_url;
 
-        if (hasInvite && fromPush && storedUsername) {
+        if (syncRestoredRoom) {
+            // View + config were already set synchronously (computeInitialRoute) and
+            // the Back history entry is pushed in its own mount effect — the async
+            // path only refreshes currentUser (done above), so don't re-route here.
+        } else if (hasInvite && fromPush && storedUsername) {
             // Push deep-link for a returning member: open the room the notification
             // is about DIRECTLY, overriding the stored last-room — no login round-trip.
             // Persist it as the current room so a later refresh stays coherent.
@@ -145,7 +191,10 @@ const App: React.FC = () => {
         // getSession can reject (offline, CORS, corrupt stored session). Don't
         // hang on a blank screen — fall back to a usable entry point.
         console.error('Session restore failed', e);
-        if (!cancelled) setCurrentView(hasInvite || hasSeenLanding ? 'login' : 'landing');
+        // Don't yank a synchronously-restored room to login on a transient
+        // getSession failure — ChatScreen runs its own getSession + anonymous
+        // fallback (or surfaces a connection error), so leave the room in place.
+        if (!cancelled && !syncRestoredRoom) setCurrentView(hasInvite || hasSeenLanding ? 'login' : 'landing');
       }
 
       if (cancelled) return;
@@ -195,6 +244,15 @@ const App: React.FC = () => {
     })();
 
     return () => { cancelled = true; if (subscription) subscription.unsubscribe(); };
+  }, []);
+
+  // A synchronously-restored room (computeInitialRoute) bypassed handleJoin and the
+  // async restore, so push the chat history entry here — once, on mount — so the
+  // browser Back button steps to dashboard/login (see onPopState) instead of
+  // exiting the SPA. Mirrors the pushState in handleJoin / the async restore branch.
+  useEffect(() => {
+    if (syncRestoredRoom) window.history.pushState({ icView: 'chat' }, '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleJoin = (config: ChatConfig) => {
