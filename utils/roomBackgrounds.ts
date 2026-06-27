@@ -37,7 +37,8 @@ function logoWatermark(col: string, op: number): string {
 }
 
 export const ROOM_BG_PRESETS: RoomBgPreset[] = [
-  // ── Patterns ─────────────────────────────────────────────────────────────
+  // ── Patterns (incl. animated/live wallpapers like Vortex) ────────────────
+  // NOTE: keep 'dots' first — ROOM_BG_PRESETS[0] is the default/fallback look.
   {
     key: 'dots',
     name: 'Dots',
@@ -102,12 +103,10 @@ export const ROOM_BG_PRESETS: RoomBgPreset[] = [
       };
     },
   },
-
-  // ── Gradients (mesh) ─────────────────────────────────────────────────────
   {
     key: 'vortex',
     name: 'Vortex',
-    category: 'gradient',
+    category: 'pattern',
     animated: true,
     // Backdrop colour only — the live phyllotactic-vortex canvas is layered on
     // top by ChatScreen. Near-black on dark (for the additive glow) / near-white
@@ -119,6 +118,8 @@ export const ROOM_BG_PRESETS: RoomBgPreset[] = [
         : 'radial-gradient(at 50% 42%, rgba(43,78,214,0.06), transparent 60%)',
     }),
   },
+
+  // ── Gradients (mesh) ─────────────────────────────────────────────────────
   {
     key: 'brand',
     name: 'Incognito',
