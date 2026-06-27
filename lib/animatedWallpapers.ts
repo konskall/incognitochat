@@ -67,7 +67,7 @@ export const ANIMATED_WALLPAPERS: Record<string, LiveWallpaperFactory> = {
       // filament accretion disk (diskOuter 7.5× the horizon) → a small centre,
       // big disk. fps:30 keeps the particle field light for a backdrop.
       bg: '#05060a',
-      shadowRadius: 0.052,
+      shadowRadius: 0.075,
       tilt: 0.28,
       diskInner: 1.35,
       diskOuter: 7.5,
