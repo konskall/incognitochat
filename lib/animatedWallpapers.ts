@@ -45,7 +45,7 @@ export const ANIMATED_WALLPAPERS: Record<string, LiveWallpaperFactory> = {
     new DoublePendulumBG(host, {
       count: 6,
       simSpeed: 0.8,     // a touch faster than a slow drift, still ambient
-      reach: 0.75,       // span most of the window's short side (bleeds to edges)
+      reach: 0.55,       // fills the window without the trails spilling far off-edge
       lineWidth: 1.4,
       colorMode: 'velocity',
       ...(isDark
