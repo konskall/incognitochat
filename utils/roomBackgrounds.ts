@@ -118,6 +118,21 @@ export const ROOM_BG_PRESETS: RoomBgPreset[] = [
         : 'radial-gradient(at 50% 42%, rgba(43,78,214,0.06), transparent 60%)',
     }),
   },
+  {
+    key: 'pendulum',
+    name: 'Pendulum',
+    category: 'pattern',
+    animated: true,
+    // Backdrop colour only — the live double-pendulum (deterministic chaos)
+    // canvas is layered on top by ChatScreen. Near-black on dark so the additive
+    // glow trails bloom / near-white on light where the darker trails read.
+    style: (d) => ({
+      backgroundColor: d ? '#05060a' : '#f6f8ff',
+      backgroundImage: d
+        ? 'radial-gradient(at 50% 45%, rgba(91,140,255,0.10), transparent 60%)'
+        : 'radial-gradient(at 50% 45%, rgba(43,78,214,0.06), transparent 60%)',
+    }),
+  },
 
   // ── Gradients (mesh) ─────────────────────────────────────────────────────
   {

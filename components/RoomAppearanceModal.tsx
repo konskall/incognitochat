@@ -19,8 +19,8 @@ interface RoomAppearanceModalProps {
   // The personal Notes room has a self-hosted default icon to restore to (a plain
   // room just clears to initials). Only true for is_notes rooms.
   isNotes?: boolean;
-  // Animated presets (Vortex) are Ultra-only. When true, tapping one prompts an
-  // Ultra upgrade instead of selecting it (the server enforces it on save too).
+  // Animated presets (Vortex, Pendulum, …) are Ultra-only. When true, tapping one
+  // prompts an Ultra upgrade instead of selecting it (server enforces on save too).
   animatedLocked?: boolean;
 }
 
@@ -109,7 +109,7 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
         onUpgrade(
           isAnimated ? 'Animated wallpaper' : 'Room appearance',
           tierErr.requiredTier,
-          isAnimated ? 'The animated Vortex wallpaper is an Ultra feature.' : undefined,
+          isAnimated ? 'Animated (live) wallpapers are an Ultra feature.' : undefined,
         );
       } else {
         flashToast('Failed to save room appearance');
@@ -199,7 +199,7 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
                   key={p.key}
                   onClick={() => {
                     if (locked) {
-                      onUpgrade?.('Animated wallpaper', 'ultra', 'The animated Vortex wallpaper is an Ultra feature.');
+                      onUpgrade?.('Animated wallpaper', 'ultra', 'Animated (live) wallpapers are an Ultra feature.');
                       return;
                     }
                     setBgType('preset'); setBgPreset(p.key);

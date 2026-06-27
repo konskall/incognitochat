@@ -27,7 +27,7 @@ import RoomInfoModal from './RoomInfoModal';
 import MembersHistoryModal from './MembersHistoryModal';
 import { flashToast } from '../utils/toast';
 import { getRoomBackgroundStyle, readCachedAppearance, writeCachedAppearance, isAnimatedPreset } from '../utils/roomBackgrounds';
-import HelicalDriftBG from '../lib/helicalDriftBg';
+import { ANIMATED_WALLPAPERS } from '../lib/animatedWallpapers';
 import { expiryShortLabel } from '../utils/roomLifecycle';
 import { parseTierError } from '../utils/tierGatingErrors';
 import { canSendBatch } from '../utils/entitlements';
@@ -332,31 +332,25 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
 
-  // ── Animated wallpaper (Vortex) ────────────────────────────────────────────
-  // The wallpaper layer can host a live phyllotactic-vortex canvas instead of a
-  // pure-CSS look. The engine (lib/helicalDriftBg) self-mounts a
+  // ── Animated wallpaper (live presets: Vortex, Pendulum, …) ──────────────────
+  // The wallpaper layer can host a live canvas animation instead of a pure-CSS
+  // look. Each engine (lib/animatedWallpapers registry) self-mounts a
   // pointer-events:none canvas into the wallpaper div, over its themed backdrop
   // colour, and handles resize / off-screen + hidden-tab pause / reduced-motion
-  // / DPR caps itself. Theme-aware blend: additive 'lighter' glow on dark, plain
-  // 'source-over' on light (a software blend like 'multiply' would tank FPS).
-  // Selecting it is an ULTRA feature (server-enforced in enforce_room_tier); any
-  // member then SEES the room's animation regardless of their own tier.
+  // / DPR caps itself. Per-theme tuning lives in the registry. Selecting one is
+  // an ULTRA feature (server-enforced in enforce_room_tier); any member then
+  // SEES the room's animation regardless of their own tier.
   const wallpaperRef = useRef<HTMLDivElement>(null);
   const animatedWallpaper = bgType === 'preset' && isAnimatedPreset(bgPreset);
   useEffect(() => {
     if (!animatedWallpaper) return;
     const host = wallpaperRef.current;
     if (!host) return;
-    const themed = isDarkMode
-      ? { palette: ['#eaf2ff', '#3b6ef5', '#1b2b6b'], blend: 'lighter', opacity: 0.5 }
-      : { palette: ['#0f1c56', '#2b4ed6', '#8fa9e0'], blend: 'source-over', opacity: 0.55, intensity: 1.05, spacing: 2.8 };
-    const bg = new HelicalDriftBG(host, {
-      rotationSpeed: 0.022, // calm, ambient — it's a backdrop, not the focal point
-      mask: 'edges',        // soft vignette so dots fade before the screen edges
-      ...themed,
-    });
+    const mount = ANIMATED_WALLPAPERS[bgPreset];
+    if (!mount) return;
+    const bg = mount(host, isDarkMode);
     return () => bg.destroy();
-  }, [animatedWallpaper, isDarkMode]);
+  }, [animatedWallpaper, bgPreset, isDarkMode]);
   // The translucent top stack (header + search + pinned) and the bottom stack
   // (composer) overlay the message scroller; we measure their live heights into
   // CSS vars so the scroller's top/bottom padding keeps messages resting in the
@@ -2158,9 +2152,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
         onUpdate={(next) => { setRoomAvatarUrl(next.avatarUrl); setBgType(next.bgType); setBgPreset(next.bgPreset); setBgUrl(next.bgUrl); }}
         onUpgrade={promptUpgrade}
         isNotes={isNotesRoom}
-        // Animated wallpapers (Vortex) are Ultra-only. Gate the picker on the
-        // resolved tier (skip while entitlements load so a real Ultra user
-        // doesn't see a lock flash); the server enforces it on save regardless.
+        // Animated wallpapers (Vortex, Pendulum, …) are Ultra-only. Gate the
+        // picker on the resolved tier (skip while entitlements load so a real
+        // Ultra user doesn't see a lock flash); the server enforces on save too.
         animatedLocked={!entLoading && tier !== 'ultra'}
       />
 
