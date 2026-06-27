@@ -39,19 +39,20 @@ export const ANIMATED_WALLPAPERS: Record<string, LiveWallpaperFactory> = {
         : { palette: ['#0f1c56', '#2b4ed6', '#8fa9e0'], blend: 'source-over', opacity: 0.55, intensity: 1.05, spacing: 2.8 }),
     }),
 
-  // Double-pendulum (deterministic chaos) — a coherent fan of swings that
-  // diverges into long-exposure trails. Dark: additive glowing trails bloom on
-  // a near-black field. Light: glow off so dark trails read on white.
-  pendulum: (host, isDark) =>
+  // Double-pendulum (deterministic chaos) — a dense fan of near-identical swings
+  // (tiny spread) that diverges into long-exposure filament trails. Dark in both
+  // themes (the config below has no theme branch).
+  pendulum: (host) =>
     new DoublePendulumBG(host, {
-      count: 6,
-      simSpeed: 0.8,     // a touch faster than a slow drift, still ambient
-      reach: 0.55,       // fills the window without the trails spilling far off-edge
-      lineWidth: 1.4,
-      colorMode: 'velocity',
-      ...(isDark
-        ? { bg: '#05060a', glow: true, fade: 0.05, opacity: 0.5, palette: ['#6ad7ff', '#5b8cff', '#b07bff'] }
-        : { bg: '#f6f8ff', glow: false, fade: 0.07, opacity: 0.45, palette: ['#1e3a8a', '#2b4ed6', '#7c3aed'] }),
+      count: 300,
+      spread: 0.0009,
+      showRods: false,
+      colorMode: 'index',
+      palette: ['#b07bff', '#5b8cff', '#6ad7ff'],
+      fade: 0.06,
+      lineWidth: 0.8,
+      simSpeed: 0.40,
+      bg: '#05060a',
     }),
 
   // Black hole — a particle accretion disk (brushed orbital filaments) wrapping a
