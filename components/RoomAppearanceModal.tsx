@@ -140,7 +140,7 @@ const RoomAppearanceModal: React.FC<RoomAppearanceModalProps> = ({ show, onClose
             : <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-md">{initials}</div>}
           <div className="flex-1">
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Room Icon</p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <label className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition text-xs font-semibold text-slate-600 dark:text-slate-300" title="Upload icon">
                 {uploading === 'avatar' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Upload
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => { if (e.target.files?.[0]) upload(e.target.files[0], 'avatar'); e.target.value = ''; }} />
