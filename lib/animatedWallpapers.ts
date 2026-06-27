@@ -44,8 +44,8 @@ export const ANIMATED_WALLPAPERS: Record<string, LiveWallpaperFactory> = {
   pendulum: (host, isDark) =>
     new DoublePendulumBG(host, {
       count: 6,
-      simSpeed: 0.55,    // calm, ambient — it's a backdrop, not the focal point
-      reach: 0.34,       // keep the swing centred, not edge-to-edge
+      simSpeed: 0.8,     // a touch faster than a slow drift, still ambient
+      reach: 0.75,       // span most of the window's short side (bleeds to edges)
       lineWidth: 1.4,
       colorMode: 'velocity',
       ...(isDark
