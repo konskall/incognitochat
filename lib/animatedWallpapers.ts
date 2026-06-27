@@ -62,16 +62,27 @@ export const ANIMATED_WALLPAPERS: Record<string, LiveWallpaperFactory> = {
   // dark wallpaper regardless of theme (the preset's CSS backdrop is dark too).
   blackhole: (host) =>
     new BlackHoleBG(host, {
-      rotationSpeed: 0.6,   // calm, ambient
-      shadowRadius: 0.1,    // a present (not tiny) event horizon
-      glow: true,
-      opacity: 0.55,
+      // Small event horizon (shadowRadius 0.052 ≈ 5% of min(w,h)) under a large
+      // filament accretion disk (diskOuter 7.5× the horizon) → a small centre,
+      // big disk. fps:30 keeps the particle field light for a backdrop.
       bg: '#05060a',
-      palette: ['#ffffff', '#cdd9f5', '#5b6b8c', '#161b24'],
-      starColor: '#cdd7ff',
-      // Trimmed particle counts (vs the engine's 6000/2400 defaults) — plenty
-      // dense for the filament look while keeping the frame budget for a backdrop.
-      diskCount: 3500, mobileDiskCount: 1600,
-      vDiskCount: 1300, mobileVDiskCount: 650,
+      shadowRadius: 0.052,
+      tilt: 0.28,
+      diskInner: 1.35,
+      diskOuter: 7.5,
+      streak: 0.5,
+      streakWidth: 0.9,
+      diskCount: 3600,
+      doppler: 0.8,
+      vDisk: true,
+      vDiskCount: 2000,
+      vDiskScale: 0.44,
+      vAspect: 0.26,
+      photonRing: true,
+      flare: false,
+      stars: 170,
+      rotationSpeed: 1.0,
+      fps: 30,
+      palette: ['#ffffff', '#dbe4f5', '#6b7892', '#161b24'],
     }),
 };
