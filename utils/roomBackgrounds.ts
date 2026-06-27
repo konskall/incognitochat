@@ -133,6 +133,20 @@ export const ROOM_BG_PRESETS: RoomBgPreset[] = [
         : 'radial-gradient(at 50% 45%, rgba(43,78,214,0.06), transparent 60%)',
     }),
   },
+  {
+    key: 'blackhole',
+    name: 'Black Hole',
+    category: 'pattern',
+    animated: true,
+    // Backdrop colour only — the live black-hole particle field (accretion disk +
+    // photon ring + lensed starfield) is layered on top by ChatScreen. ALWAYS the
+    // near-black space field in both themes (a black hole needs a dark field; see
+    // lib/animatedWallpapers), matching the engine's `bg` so the field blends.
+    style: () => ({
+      backgroundColor: '#05060a',
+      backgroundImage: 'radial-gradient(at 50% 50%, rgba(120,140,180,0.10), transparent 60%)',
+    }),
+  },
 
   // ── Gradients (mesh) ─────────────────────────────────────────────────────
   {

@@ -1,5 +1,6 @@
 import HelicalDriftBG from './helicalDriftBg';
 import DoublePendulumBG from './doublePendulumBg';
+import BlackHoleBG from './blackHoleBg';
 
 // Registry of animated ("live") wallpapers → their canvas engine.
 //
@@ -51,5 +52,26 @@ export const ANIMATED_WALLPAPERS: Record<string, LiveWallpaperFactory> = {
       ...(isDark
         ? { bg: '#05060a', glow: true, fade: 0.05, opacity: 0.5, palette: ['#6ad7ff', '#5b8cff', '#b07bff'] }
         : { bg: '#f6f8ff', glow: false, fade: 0.07, opacity: 0.45, palette: ['#1e3a8a', '#2b4ed6', '#7c3aed'] }),
+    }),
+
+  // Black hole — a particle accretion disk (brushed orbital filaments) wrapping a
+  // true-black event horizon, with a photon ring + lensed starfield. The field
+  // (bg + stars) fills the window; the disk is the central object. ALWAYS dark
+  // (both app themes): a black hole is a space scene, and on a pale field the
+  // additive glow vanishes and the #000 horizon washes to grey — so it stays a
+  // dark wallpaper regardless of theme (the preset's CSS backdrop is dark too).
+  blackhole: (host) =>
+    new BlackHoleBG(host, {
+      rotationSpeed: 0.6,   // calm, ambient
+      shadowRadius: 0.1,    // a present (not tiny) event horizon
+      glow: true,
+      opacity: 0.55,
+      bg: '#05060a',
+      palette: ['#ffffff', '#cdd9f5', '#5b6b8c', '#161b24'],
+      starColor: '#cdd7ff',
+      // Trimmed particle counts (vs the engine's 6000/2400 defaults) — plenty
+      // dense for the filament look while keeping the frame budget for a backdrop.
+      diskCount: 3500, mobileDiskCount: 1600,
+      vDiskCount: 1300, mobileVDiskCount: 650,
     }),
 };
