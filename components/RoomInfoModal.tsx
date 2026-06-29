@@ -327,11 +327,6 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
             }
           />
         )}
-        {!entLoading && ent && !ent.canRoomAppearance ? (
-          <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => { onClose(); onUpgrade?.('Room appearance', 'basic'); }} tint="bg-blue-500/10 text-blue-500" trailing={lockedTrailing} />
-        ) : canManage ? (
-          <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => go(onOpenRoomAppearance)} tint="bg-blue-500/10 text-blue-500" />
-        ) : null}
         {!entLoading && ent && !ent.canDisappearing ? (
           <Row
             icon={<Timer size={18} />}
@@ -438,6 +433,11 @@ const RoomInfoModal: React.FC<RoomInfoModalProps> = ({
             }
           />
         )}
+        {!entLoading && ent && !ent.canRoomAppearance ? (
+          <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => { onClose(); onUpgrade?.('Room appearance', 'basic'); }} tint="bg-blue-500/10 text-blue-500" trailing={lockedTrailing} />
+        ) : canManage ? (
+          <Row icon={<Palette size={18} />} label="Room appearance" onClick={() => go(onOpenRoomAppearance)} tint="bg-blue-500/10 text-blue-500" />
+        ) : null}
 
         {/* Preferences — device-scoped (vibration/sound/notifications/theme).
             Moved here from the old chat-header gear menu; these toggle in place
