@@ -2013,7 +2013,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
       <main
         ref={mainRef}
         onScroll={handleMainScroll}
-        className="absolute inset-0 z-10 overflow-y-auto overflow-x-clip overscroll-contain px-4 transition-colors"
+        className="chat-scroll absolute inset-0 z-10 overflow-y-auto overflow-x-clip overscroll-contain px-4 transition-colors"
         style={{
           paddingTop: 'calc(var(--chat-top-h, 4rem) + 0.5rem)',
           paddingBottom: 'calc(var(--chat-bottom-h, 4rem) + 0.5rem)',

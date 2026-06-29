@@ -24,16 +24,28 @@ html, body {
 
 /* iOS long-press hardening — a long-press on a chat bubble must open the app's
    OWN action menu (Reply / Copy / Delete), never iOS Safari's native text
-   selection + copy/translate callout. The bubble carried inline guards, but the
-   lifted CLONE rendered by MessageActionMenu (same `.chat-bubble` class via
-   dangerouslySetInnerHTML) and the bubbles' text descendants could still be
-   selected on iOS — flashing a full-bubble blue selection beside our menu. On
-   iOS `user-select:none` alone is not enough; `-webkit-touch-callout:none` is
-   also required. Hardcode the -webkit- prefixes (don't rely on autoprefixer) on
-   every bubble and everything inside it. The composer's <textarea> is not a
-   `.chat-bubble` descendant, so typing-area selection is unaffected. */
+   selection + copy/translate callout. On iOS `user-select:none` alone is not
+   enough; `-webkit-touch-callout:none` is also required. Hardcode the -webkit-
+   prefixes (don't rely on autoprefixer).
+
+   `.chat-bubble` covers the bubble + everything inside it, AND the lifted CLONE
+   rendered by MessageActionMenu (same `.chat-bubble` class via
+   dangerouslySetInnerHTML), which is portaled to <body> — OUTSIDE the scroller
+   below — so it needs its own coverage.
+
+   `.chat-scroll` (the <main> message scroller) is the second, crucial half:
+   making only the bubble non-selectable was not enough, because on iOS a
+   long-press on a non-selectable LEAF escalates the selection up to the nearest
+   selectable ANCESTOR. The message rows and the scroller itself were still
+   selectable, so iOS selected the entire message list — the whole screen lit up
+   blue beside our menu. Making the full scroller subtree non-selectable removes
+   every ancestor iOS could escalate into. The scroller holds no inputs (the
+   composer <textarea> and the search <input> live in the glass bars, outside
+   <main>), so nothing inside it needs selection re-enabled. */
 .chat-bubble,
-.chat-bubble * {
+.chat-bubble *,
+.chat-scroll,
+.chat-scroll * {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   -moz-user-select: none;
