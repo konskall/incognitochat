@@ -16,25 +16,28 @@ export function sameLocalDay(a: string | Date, b: string | Date): boolean {
     && da.getDate() === db.getDate();
 }
 
-// Divider label for a message's day: "Today" / "Yesterday" / a locale date
+// Divider label for a message's day: "Today" / "Yesterday" / a date
 // ("23 Jun", or "23 Jun 2025" when it isn't the current year). `now` is injectable
 // for deterministic tests. Yesterday is derived via the local calendar (DST-safe).
+// Locale is pinned to en-GB (day-first English) so the chip matches the app's
+// English UI on every device — `undefined` would localise it to the OS language.
 export function dayLabel(iso: string | Date, now: Date = new Date()): string {
   const d = toDate(iso);
   if (Number.isNaN(d.getTime())) return '';
   if (sameLocalDay(d, now)) return 'Today';
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   if (sameLocalDay(d, yesterday)) return 'Yesterday';
-  return d.toLocaleDateString(undefined, d.getFullYear() === now.getFullYear()
+  return d.toLocaleDateString('en-GB', d.getFullYear() === now.getFullYear()
     ? { day: 'numeric', month: 'short' }
     : { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 // Full date + time for the per-message tooltip ("26 Jun 2026, 22:02").
+// en-GB pinned for the same reason as dayLabel (English UI on every device).
 export function fullDateTime(iso: string | Date): string {
   const d = toDate(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit', hour12: false,
   });

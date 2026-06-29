@@ -24,12 +24,8 @@ describe('dayLabel', () => {
     expect(dayLabel(new Date(2025, 11, 31, 8, 0), jan1)).toBe('Yesterday');
   });
   it('older same-year date omits the year; cross-year includes it', () => {
-    expect(dayLabel(new Date(2026, 5, 23, 9, 0), NOW)).toBe(
-      new Date(2026, 5, 23).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
-    );
-    expect(dayLabel(new Date(2025, 5, 23, 9, 0), NOW)).toBe(
-      new Date(2025, 5, 23).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }),
-    );
+    expect(dayLabel(new Date(2026, 5, 23, 9, 0), NOW)).toBe('23 Jun');
+    expect(dayLabel(new Date(2025, 5, 23, 9, 0), NOW)).toBe('23 Jun 2025');
   });
   it('returns empty string for invalid input', () => {
     expect(dayLabel('not-a-date', NOW)).toBe('');
@@ -38,11 +34,7 @@ describe('dayLabel', () => {
 
 describe('fullDateTime', () => {
   it('formats a full date + 24h time', () => {
-    expect(fullDateTime(new Date(2026, 5, 26, 22, 2))).toBe(
-      new Date(2026, 5, 26, 22, 2).toLocaleString(undefined, {
-        day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
-      }),
-    );
+    expect(fullDateTime(new Date(2026, 5, 26, 22, 2))).toBe('26 Jun 2026, 22:02');
   });
   it('returns empty string for invalid input', () => {
     expect(fullDateTime('nope')).toBe('');
