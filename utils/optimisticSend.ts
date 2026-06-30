@@ -1,4 +1,4 @@
-import { Message } from '../types';
+import { Message, Attachment } from '../types';
 
 // Random temp id for a not-yet-persisted message. Kept separate from
 // buildTempMessage so that builder stays pure (testable without randomness).
@@ -14,6 +14,9 @@ export interface TempMessageParams {
   avatarURL: string;
   createdAt: string;
   replyTo: { id: string; username: string; text: string; isAttachment: boolean } | null;
+  // Optimistic media: a local-blob-URL Attachment shown instantly, swapped for
+  // the uploaded one on reconcile. Omitted for plain text bubbles.
+  attachment?: Attachment | null;
 }
 
 // The optimistic bubble shown the instant the user hits send.
@@ -28,6 +31,7 @@ export function buildTempMessage(p: TempMessageParams): Message {
     reactions: {},
     replyTo: p.replyTo,
     type: 'text',
+    attachment: p.attachment ?? undefined,
     status: 'sending',
   };
 }

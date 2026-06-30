@@ -77,6 +77,10 @@ export const useChatMessages = (
   // full row but never changes `text`, so this lets the UPDATE handler skip the
   // AES decrypt and reuse the already-decrypted plaintext.
   const cipherCacheRef = useRef<Map<string, string>>(new Map());
+  // In-flight / failed optimistic media: tempId -> the source File (for re-upload
+  // on retry), its local blob: preview URL (to revoke once reconciled or on room
+  // teardown), and the caption/reply needed to re-issue the send.
+  const pendingMediaRef = useRef<Map<string, { file: File; localUrl: string; caption: string; replyTo: Message | null }>>(new Map());
   // Throttle the refocus resync: visibilitychange and window 'focus' fire
   // back-to-back on tab return, which used to issue two identical round-trips.
   const lastResyncRef = useRef(0);
@@ -461,6 +465,10 @@ export const useChatMessages = (
       // Per-room ciphertext cache: drop it on room switch so it can't grow
       // unbounded across rooms over a long-lived PWA session.
       cipherCacheRef.current.clear();
+      // Revoke any still-pending optimistic-media blob previews so leaving a room
+      // mid-upload doesn't leak object URLs.
+      pendingMediaRef.current.forEach((p) => URL.revokeObjectURL(p.localUrl));
+      pendingMediaRef.current.clear();
     };
   }, [roomKey, pin, enabled, userUid, mapRow, mapPoll, fetchInitial, fetchNewer, resync]);
 
@@ -845,7 +853,7 @@ export const useChatMessages = (
     [userUid]
   );
 
-  const uploadFile = async (file: File): Promise<Attachment | null> => {
+  const uploadFile = useCallback(async (file: File): Promise<Attachment | null> => {
     if (!userUid) return null;
     setIsUploading(true);
     try {
@@ -884,7 +892,134 @@ export const useChatMessages = (
     } finally {
         setIsUploading(false);
     }
-  };
+  }, [userUid, roomKey]);
+
+  // Shared tail for an optimistic media bubble: upload the file, insert the row
+  // (client_msg_id = tempId, so the realtime echo reconciles via Path A and a
+  // lost-response retry is idempotent via the UNIQUE index), then swap the temp
+  // for the real message and revoke the local preview. The initial send AND retry
+  // both call this — a media retry simply re-uploads from the retained File.
+  // Never throws; resolves with the outcome and leaves a 'failed' bubble on error.
+  const finalizeAttachment = useCallback(
+    async (
+      tempId: string,
+      file: File,
+      caption: string,
+      config: { username: string; avatarURL: string },
+      replyTo: Message | null,
+    ): Promise<SendOutcome> => {
+      if (!userUid || !roomKey) return { ok: false, error: new Error('Not ready') };
+      const revoke = () => {
+        const pend = pendingMediaRef.current.get(tempId);
+        if (pend) { URL.revokeObjectURL(pend.localUrl); pendingMediaRef.current.delete(tempId); }
+      };
+      try {
+        const real = await uploadFile(file);
+        if (!real) throw new Error('Upload failed');
+        const encryptedText = encryptMessage(caption, pin, roomKey);
+        const replyPayload = replyTo
+          ? { id: replyTo.id, username: replyTo.username, text: encryptMessage(replyTo.text || 'Attachment', pin, roomKey), isAttachment: !!replyTo.attachment }
+          : null;
+        const { data, error } = await supabase
+          .from('messages')
+          .insert({
+            room_key: roomKey,
+            uid: userUid,
+            username: config.username,
+            avatar_url: config.avatarURL,
+            text: encryptedText,
+            type: 'text',
+            attachment: real,
+            reactions: {},
+            location: null,
+            client_msg_id: tempId,
+            reply_to: replyPayload,
+          })
+          .select('id, created_at')
+          .single();
+
+        if (error || !data) {
+          // 23505: the original insert persisted (response lost) — reconcile to it.
+          if ((error as { code?: string } | null)?.code === '23505') {
+            const { data: existing } = await supabase
+              .from('messages')
+              .select('*')
+              .eq('room_key', roomKey)
+              .eq('uid', userUid)
+              .eq('client_msg_id', tempId)
+              .maybeSingle();
+            if (existing) {
+              setMessages((prev) => reconcileTemp(prev, tempId, mapRow(existing as MessageRow)));
+              revoke();
+              return { ok: true };
+            }
+          }
+          throw (error ?? new Error('Insert returned no row'));
+        }
+
+        cipherCacheRef.current.set(data.id, encryptedText);
+        const cur = messagesRef.current.find((m) => m.id === tempId);
+        const realMsg: Message = cur
+          ? { ...cur, id: data.id, createdAt: data.created_at, status: undefined, attachment: real }
+          : { id: data.id, text: caption, uid: userUid, username: config.username, avatarURL: config.avatarURL, createdAt: data.created_at, reactions: {}, type: 'text', attachment: real };
+        setMessages((prev) => reconcileTemp(prev, tempId, realMsg));
+        revoke();
+        return { ok: true };
+      } catch (e) {
+        // Keep the File + blob preview in pendingMediaRef so Retry can re-upload.
+        setMessages((prev) => markMessageStatus(prev, tempId, 'failed'));
+        return { ok: false, error: e };
+      }
+    },
+    [roomKey, pin, userUid, mapRow, uploadFile],
+  );
+
+  // Optimistic media send: render a bubble with a local blob preview INSTANTLY,
+  // then upload + persist in the background (parallel-safe — each call adds its
+  // temp synchronously before awaiting). Returns the outcome; never throws.
+  const sendAttachment = useCallback(
+    async (
+      file: File,
+      config: { username: string; avatarURL: string },
+      caption: string,
+      replyTo: Message | null,
+    ): Promise<SendOutcome> => {
+      if (!userUid || !roomKey) return { ok: false, error: new Error('Not ready') };
+      const tempId = makeTempId();
+      const localUrl = URL.createObjectURL(file);
+      const replyInfo = replyTo
+        ? { id: replyTo.id, username: replyTo.username, text: replyTo.text || 'Attachment', isAttachment: !!replyTo.attachment }
+        : null;
+      const temp = buildTempMessage({
+        tempId,
+        text: caption,
+        uid: userUid,
+        username: config.username,
+        avatarURL: config.avatarURL,
+        createdAt: new Date().toISOString(),
+        replyTo: replyInfo,
+        attachment: { url: localUrl, name: file.name, type: file.type, size: file.size },
+      });
+      setMessages((prev) => [...prev, temp]);
+      pendingMediaRef.current.set(tempId, { file, localUrl, caption, replyTo });
+      return finalizeAttachment(tempId, file, caption, config, replyTo);
+    },
+    [roomKey, userUid, finalizeAttachment],
+  );
+
+  // Retry a failed optimistic MEDIA bubble: re-upload the retained File + re-insert
+  // under the same tempId (idempotent). Routed here by ChatScreen for bubbles that
+  // carry an attachment; plain-text retries go through retryMessage.
+  const retryAttachment = useCallback(
+    async (tempId: string): Promise<SendOutcome> => {
+      const pend = pendingMediaRef.current.get(tempId);
+      const cur = messagesRef.current.find((m) => m.id === tempId);
+      if (!pend || !cur) return { ok: false, error: new Error('Nothing to retry') };
+      setMessages((prev) => markMessageStatus(prev, tempId, 'sending'));
+      return finalizeAttachment(tempId, pend.file, pend.caption, { username: cur.username, avatarURL: cur.avatarURL }, pend.replyTo);
+    },
+    [finalizeAttachment],
+  );
 
   return {
     messages,
@@ -894,7 +1029,9 @@ export const useChatMessages = (
     isLoadingOlder,
     loadOlderMessages,
     sendMessage,
+    sendAttachment,
     retryMessage,
+    retryAttachment,
     editMessage,
     deleteMessage,
     reactToMessage,

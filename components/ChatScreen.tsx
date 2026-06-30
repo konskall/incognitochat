@@ -406,7 +406,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     hasMoreOlder,
     loadOlderMessages,
     sendMessage,
+    sendAttachment,
     retryMessage,
+    retryAttachment,
     editMessage,
     deleteMessage,
     reactToMessage,
@@ -1422,35 +1424,29 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
                   else if (gate.reason === 'max') flashToast(`You can send up to ${gate.limit} files at once.`);
                   return;
               }
-              // Send each file as its own message, in order. Caption + reply
-              // attach to the FIRST message only; the rest are bare.
+              // OPTIMISTIC: each file becomes a bubble with a local preview AT ONCE
+              // (sendAttachment adds its temp synchronously), then uploads + persists
+              // in parallel. Caption + reply attach to the FIRST bubble only; the rest
+              // are bare. A failure surfaces as an inline failed+Retry bubble (same
+              // model as text), so there's no composer restore / partial-batch banner.
               setPartialBatch(null);
-              for (let i = 0; i < filesToSend.length; i++) {
-                  setUploadProgress({ current: i + 1, total: filesToSend.length });
-                  try {
-                      const attachment = await uploadFile(filesToSend[i]);
-                      await sendMessage(i === 0 ? textToSend : '', config, attachment, i === 0 ? replyToSend : null, null, 'text');
-                      if (i === 0) setQuotaBump((n) => n + 1);
-                  } catch (err) {
-                      // Keep what's already sent; restore the unsent remainder
-                      // (plus caption/reply if the first never went) for retry.
-                      setUploadProgress(null);
-                      setSelectedFiles(filesToSend.slice(i));
-                      if (i === 0) { setInputText(textToSend); setReplyingTo(replyToSend); }
-                      // Persistent marker (survives the transient toast) so the user
-                      // sees the leftover chips are a partial-send remainder.
-                      if (i > 0) setPartialBatch({ sent: i, total: filesToSend.length });
-                      const tierErr = parseTierError(err, tier);
-                      if (tierErr?.code === 'QT002') promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
-                      else if (tierErr) flashToast(tierErr.message);
-                      else flashToast(`Sent ${i} of ${filesToSend.length} files. Tap send to retry the rest.`);
-                      return;
-                  }
-              }
               setUploadProgress(null);
-              setPartialBatch(null);
-              setQuotaBump((n) => n + 1);
-              notifySubscribers('message', textToSend || `Sent ${filesToSend.length} files`);
+              const outcomes = await Promise.all(
+                  filesToSend.map((file, i) =>
+                      sendAttachment(file, config, i === 0 ? textToSend : '', i === 0 ? replyToSend : null)
+                  )
+              );
+              const okCount = outcomes.filter((o) => o.ok).length;
+              if (okCount > 0) {
+                  setQuotaBump((n) => n + 1);
+                  notifySubscribers('message', textToSend || `Sent ${okCount} file${okCount > 1 ? 's' : ''}`);
+              }
+              const failed = outcomes.find((o) => !o.ok);
+              if (failed && !failed.ok) {
+                  const tierErr = parseTierError(failed.error, tier);
+                  if (tierErr?.code === 'QT002') promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
+                  else if (tierErr) flashToast(tierErr.message);
+              }
           }
       } catch (err) {
           console.error('Send failed', err);
@@ -1479,18 +1475,20 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const notifySubscribersRef = useRef(notifySubscribers);
   notifySubscribersRef.current = notifySubscribers;
 
-  // Retry a failed optimistic text send (tapped from the inline failed bubble).
+  // Retry a failed optimistic send (tapped from the inline failed bubble). Media
+  // bubbles (carry an attachment) re-upload via retryAttachment; plain text goes
+  // through retryMessage.
   const handleRetry = useCallback(async (msg: Message) => {
-      const outcome = await retryMessage(msg.id);
+      const outcome = msg.attachment ? await retryAttachment(msg.id) : await retryMessage(msg.id);
       if (outcome.ok) {
           setQuotaBump((n) => n + 1);
-          notifySubscribersRef.current('message', msg.text);
+          notifySubscribersRef.current('message', msg.attachment ? (msg.text || 'Attachment') : msg.text);
       } else {
           const tierErr = parseTierError(outcome.error, tier);
           if (tierErr?.code === 'QT002') promptUpgrade('A higher message limit', tierErr.requiredTier, "You've hit today's limit for this room.");
           else if (tierErr) flashToast(tierErr.message);
       }
-  }, [retryMessage, tier, promptUpgrade]);
+  }, [retryMessage, retryAttachment, tier, promptUpgrade]);
 
   const handleSendLocation = async () => {
        if (!user || roomDeleted) return;

@@ -32,6 +32,13 @@ describe('buildTempMessage', () => {
     const m = buildTempMessage(params({ replyTo: { id: 'r1', username: 'Bob', text: 'hi', isAttachment: false } }));
     expect(m.replyTo).toEqual({ id: 'r1', username: 'Bob', text: 'hi', isAttachment: false });
   });
+  it('has no attachment by default but carries one when given (optimistic media)', () => {
+    expect(buildTempMessage(params()).attachment).toBeUndefined();
+    const att = { url: 'blob:local', name: 'p.jpg', type: 'image/jpeg', size: 1234 };
+    const m = buildTempMessage(params({ attachment: att }));
+    expect(m.attachment).toEqual(att);
+    expect(m.status).toBe('sending');
+  });
 });
 
 describe('reconcileTemp', () => {
