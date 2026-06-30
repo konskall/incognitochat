@@ -5,6 +5,12 @@ import { useState, useRef, useEffect } from 'react';
 // upload limit). 5 minutes is plenty for a voice message.
 const MAX_RECORDING_SECONDS = 300;
 
+// Live-waveform tuning: how many bars the rolling window holds, how often a new
+// bar is pushed (ms), and the gain applied so ordinary speech fills the bars.
+const WAVEFORM_BARS = 28;
+const WAVEFORM_SAMPLE_MS = 80;
+const WAVEFORM_GAIN = 3.2;
+
 // Friendly, specific message for a getUserMedia (microphone) failure — surfaced
 // in a modal instead of a raw alert().
 function micErrorMessage(err: unknown): string {
@@ -21,6 +27,9 @@ function micErrorMessage(err: unknown): string {
 export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: string) => void) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  // Rolling window of recent mic amplitudes (0..1), newest last, for the live
+  // recording waveform. Empty when not recording.
+  const [levels, setLevels] = useState<number[]>([]);
   // Set when the mic can't be accessed; the UI shows it in a modal (was alert()).
   const [micError, setMicError] = useState<string | null>(null);
 
@@ -29,6 +38,11 @@ export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: str
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mimeTypeRef = useRef<string>('');
+  // Web Audio plumbing for the live waveform (best-effort, torn down on stop).
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const levelsRef = useRef<number[]>([]);
 
   const clearTimer = () => {
     if (recordingTimerRef.current) {
@@ -37,9 +51,73 @@ export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: str
     }
   };
 
+  // Tear down the Web Audio graph + animation frame driving the live waveform.
+  // Safe to call repeatedly; leaves `levels` untouched (callers reset it).
+  const stopAnalysis = () => {
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    analyserRef.current = null;
+    const ctx = audioCtxRef.current;
+    if (ctx) {
+      ctx.close().catch(() => { /* already closed */ });
+      audioCtxRef.current = null;
+    }
+    levelsRef.current = [];
+  };
+
+  // Feed the live mic stream into an AnalyserNode and push a throttled rolling
+  // amplitude window to state for the waveform UI. Best-effort: if Web Audio is
+  // missing or throws, recording still works — just without bars.
+  const startAnalysis = (stream: MediaStream) => {
+    try {
+      const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctor) return;
+      const ctx = new Ctor();
+      audioCtxRef.current = ctx;
+      // A fresh context can start suspended outside the gesture tick (getUserMedia
+      // is async); resume so the analyser actually sees samples.
+      ctx.resume().catch(() => { /* best-effort */ });
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      analyserRef.current = analyser;
+      levelsRef.current = [];
+      setLevels([]);
+
+      const buf = new Uint8Array(analyser.fftSize);
+      let last = 0;
+      const tick = (t: number) => {
+        const a = analyserRef.current;
+        if (!a) return;
+        if (t - last >= WAVEFORM_SAMPLE_MS) {
+          last = t;
+          a.getByteTimeDomainData(buf);
+          // RMS deviation from the 128 silence midpoint -> 0..1 loudness.
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) {
+            const v = (buf[i] - 128) / 128;
+            sum += v * v;
+          }
+          const level = Math.min(1, Math.sqrt(sum / buf.length) * WAVEFORM_GAIN);
+          const next = [...levelsRef.current, level];
+          if (next.length > WAVEFORM_BARS) next.shift();
+          levelsRef.current = next;
+          setLevels(next);
+        }
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    } catch {
+      stopAnalysis();
+    }
+  };
+
   // Always release the microphone tracks + timer (called from onstop, cancel, unmount).
   const releaseStream = () => {
     clearTimer();
+    stopAnalysis();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
   };
@@ -80,6 +158,7 @@ export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: str
       };
 
       mediaRecorder.start();
+      startAnalysis(stream);
       setIsRecording(true);
       setRecordingDuration(0);
 
@@ -111,6 +190,7 @@ export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: str
       releaseStream();
     }
     setIsRecording(false);
+    setLevels([]);
     clearTimer();
   };
 
@@ -123,6 +203,7 @@ export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: str
       }
     }
     setIsRecording(false);
+    setLevels([]);
     releaseStream();
   };
 
@@ -145,6 +226,7 @@ export const useAudioRecorder = (onRecordingComplete: (blob: Blob, mimeType: str
   return {
     isRecording,
     recordingDuration,
+    levels,
     startRecording,
     stopRecording,
     cancelRecording,

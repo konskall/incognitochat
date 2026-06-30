@@ -531,6 +531,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const {
       isRecording,
       recordingDuration,
+      levels: recordingLevels,
       startRecording,
       stopRecording,
       cancelRecording,
@@ -2102,6 +2103,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             handleKeyDown={handleKeyDown}
             isRecording={isRecording}
             recordingDuration={recordingDuration}
+            recordingLevels={recordingLevels}
             startRecording={startRecording}
             stopRecording={stopRecording}
             cancelRecording={cancelRecording}

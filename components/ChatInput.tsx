@@ -17,6 +17,7 @@ interface ChatInputProps {
   
   isRecording: boolean;
   recordingDuration: number;
+  recordingLevels: number[];
   startRecording: () => void;
   stopRecording: () => void;
   cancelRecording: () => void;
@@ -58,6 +59,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   handleKeyDown,
   isRecording,
   recordingDuration,
+  recordingLevels,
   startRecording,
   stopRecording,
   cancelRecording,
@@ -285,9 +287,18 @@ const ChatInput: React.FC<ChatInputProps> = ({
                          <Trash2 size={24} />
                      </button>
                      
-                     <div className="flex items-center gap-2 text-red-500 font-mono text-sm bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-full animate-pulse">
-                         <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                         <span>{formatDuration(recordingDuration)}</span>
+                     <div className="flex-1 min-w-0 flex items-center gap-2 text-red-500 font-mono text-sm bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-full">
+                         <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0"></div>
+                         <div className="flex-1 min-w-0 h-5 flex items-center justify-end gap-[2px] overflow-hidden" aria-hidden="true">
+                             {recordingLevels.map((lvl, i) => (
+                                 <span
+                                    key={i}
+                                    className="w-[3px] rounded-full bg-red-400/80 flex-shrink-0"
+                                    style={{ height: `${Math.max(12, Math.round(lvl * 100))}%` }}
+                                 />
+                             ))}
+                         </div>
+                         <span className="flex-shrink-0 tabular-nums">{formatDuration(recordingDuration)}</span>
                      </div>
 
                      <button
