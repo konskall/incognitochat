@@ -40,6 +40,9 @@ interface MessageListProps {
   liveAvatars?: Map<string, string>;
   hasMoreOlder?: boolean;
   onLoadEarlier?: () => void | Promise<void>;
+  // True while the first history page is still loading — show a skeleton instead
+  // of the empty "No messages yet" state so a populated room never flashes empty.
+  initialLoading?: boolean;
   searchQuery?: string;
   seenMessageId?: string | null;
   messageTtlSeconds?: number | null;
@@ -781,7 +784,26 @@ const CV_STYLE = {
   scrollMarginBottom: 'calc(var(--chat-bottom-h, 4rem) + 0.5rem)',
 } as React.CSSProperties;
 
-const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onRetry, onUserClick, onIncoClick, getSeenBy, liveAvatars, hasMoreOlder, onLoadEarlier, searchQuery, seenMessageId, messageTtlSeconds, roomOwnerUid, isOwner, pinnedMessageId, onPin, onUnpin, onVotePoll, onToggleClosedPoll }) => {
+// Skeleton shown while the first history page loads, so a populated room never
+// flashes the empty "No messages yet" state on entry. Alternating incoming/
+// outgoing placeholder bubbles with a gentle pulse — purely presentational.
+const SKELETON_ROWS = [
+  { me: false, w: 'w-40' }, { me: false, w: 'w-56' },
+  { me: true, w: 'w-48' },
+  { me: false, w: 'w-36' },
+  { me: true, w: 'w-52' }, { me: true, w: 'w-28' },
+];
+const MessageSkeleton: React.FC = () => (
+  <div className="py-4 space-y-3 animate-pulse" aria-hidden="true">
+    {SKELETON_ROWS.map((r, i) => (
+      <div key={i} className={`flex ${r.me ? 'justify-end' : 'justify-start'}`}>
+        <div className={`h-9 ${r.w} max-w-[70%] rounded-2xl ${r.me ? 'bg-blue-500/20 dark:bg-blue-400/15 rounded-br-none' : 'bg-slate-300/50 dark:bg-slate-600/30 rounded-bl-none'}`} />
+      </div>
+    ))}
+  </div>
+);
+
+const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onEdit, onDelete, onReact, onReply, onRetry, onUserClick, onIncoClick, getSeenBy, liveAvatars, hasMoreOlder, onLoadEarlier, initialLoading, searchQuery, seenMessageId, messageTtlSeconds, roomOwnerUid, isOwner, pinnedMessageId, onPin, onUnpin, onVotePoll, onToggleClosedPoll }) => {
   const avatars = liveAvatars ?? EMPTY_AVATARS;
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
@@ -913,7 +935,9 @@ const MessageList: React.FC<MessageListProps> = ({ messages, currentUserUid, onE
                 </button>
               </div>
             )}
-            {liveMessages.length === 0 ? (
+            {initialLoading && liveMessages.length === 0 ? (
+              <MessageSkeleton />
+            ) : liveMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-64 text-center px-6 select-none">
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/15 to-indigo-500/15 ring-1 ring-blue-500/20 dark:ring-blue-400/20 flex items-center justify-center mb-3 shadow-sm">
                   {messages.length > 0

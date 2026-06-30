@@ -402,6 +402,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const {
     messages,
     isUploading,
+    initialLoading,
     hasMoreOlder,
     loadOlderMessages,
     sendMessage,
@@ -2034,6 +2035,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
             liveAvatars={liveAvatars}
             hasMoreOlder={hasMoreOlder}
             onLoadEarlier={loadOlderMessages}
+            initialLoading={initialLoading}
             searchQuery={showSearch ? searchQuery : ''}
             seenMessageId={seenMessageId}
             messageTtlSeconds={messageTtl}

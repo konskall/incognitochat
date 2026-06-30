@@ -57,6 +57,9 @@ export const useChatMessages = (
   const [isUploading, setIsUploading] = useState(false);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  // True until the first history page resolves, so the UI can show a skeleton
+  // instead of the empty "No messages yet" state during the initial fetch.
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const onNewMessageRef = useRef(onNewMessage);
   useEffect(() => {
@@ -139,12 +142,14 @@ export const useChatMessages = (
 
     if (error) {
       console.error("Fetch error:", error);
+      setInitialLoading(false);
       return;
     }
     if (data) {
       setMessages(data.map(mapRow).reverse());
       setHasMoreOlder(data.length === MESSAGES_PAGE_SIZE);
     }
+    setInitialLoading(false);
   }, [roomKey, enabled, mapRow]);
 
   // Reconcile the messages we currently hold against the server. Realtime can
@@ -884,6 +889,7 @@ export const useChatMessages = (
   return {
     messages,
     isUploading,
+    initialLoading,
     hasMoreOlder,
     isLoadingOlder,
     loadOlderMessages,
