@@ -61,6 +61,9 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js')
       .then((registration) => {
+        // Launch-time check: an installed PWA reopened after a deploy should pick
+        // up the new SW promptly rather than waiting for the hourly tick below.
+        registration.update().catch(() => {});
         // Catch deploys that land during a long-lived session / open PWA.
         setInterval(() => { registration.update().catch(() => {}); }, 60 * 60 * 1000);
       })

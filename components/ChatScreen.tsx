@@ -207,6 +207,9 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const [selectedUserSubscriber, setSelectedUserSubscriber] = useState<Subscriber | null>(null);
   
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  // Tracks whether we were offline, so the 'online' event only toasts after a real
+  // offline stretch (not on the initial connect).
+  const wasOfflineRef = useRef(!navigator.onLine);
   const [showParticipantsList, setShowParticipantsList] = useState(false);
   const [showMembers, setShowMembers] = useState(false); // join-history list
   
@@ -697,7 +700,14 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
     };
     checkUser();
 
-    const handleNetworkChange = () => setIsOffline(!navigator.onLine);
+    const handleNetworkChange = () => {
+      const off = !navigator.onLine;
+      // Positive reconnect feedback: the offline pill just disappearing is silent,
+      // so confirm we're back (only after an actual offline stretch, not on mount).
+      if (!off && wasOfflineRef.current) flashToast('Back online');
+      wasOfflineRef.current = off;
+      setIsOffline(off);
+    };
     window.addEventListener('online', handleNetworkChange);
     window.addEventListener('offline', handleNetworkChange);
     // NOTE: notificationsEnabled is NOT derived from Notification.permission here

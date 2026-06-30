@@ -29,6 +29,16 @@ const MediaPreviewModal: React.FC<{ items: MediaItem[]; index: number; onClose: 
         return () => window.removeEventListener('keydown', onKey);
     }, [go]);
 
+    // Warm the immediate neighbours so a swipe/arrow to the next image paints
+    // instantly instead of pausing on a cold fetch. Images only — videos are too
+    // heavy to preload eagerly (they keep preload='metadata' on demand).
+    useEffect(() => {
+        [index - 1, index + 1].forEach((i) => {
+            const it = items[i];
+            if (it && it.type.startsWith('image/')) { const img = new Image(); img.src = it.url; }
+        });
+    }, [index, items]);
+
     const handleDownload = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!item) return;
