@@ -439,12 +439,19 @@ export const useChatMessages = (
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', resync);
+    // Network restore: pull missed inserts + reconcile the held window the instant
+    // connectivity returns, not only when the tab is refocused. A user who stayed
+    // on the (visible, focused) tab through a network blip would otherwise wait for
+    // the next focus/visibility event to catch up. resync is throttled, so this can
+    // safely fire alongside a near-simultaneous focus.
+    window.addEventListener('online', resync);
 
     return () => {
       clearTimeout(fallbackTimer);
       supabase.removeChannel(channel);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', resync);
+      window.removeEventListener('online', resync);
       // Per-room ciphertext cache: drop it on room switch so it can't grow
       // unbounded across rooms over a long-lived PWA session.
       cipherCacheRef.current.clear();
