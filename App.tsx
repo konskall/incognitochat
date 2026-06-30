@@ -75,6 +75,23 @@ const App: React.FC = () => {
   const userRef = React.useRef(currentUser);
   useEffect(() => { userRef.current = currentUser; }, [currentUser]);
 
+  // Warm the heavy route chunks during idle while the marketing/login view is up,
+  // so tapping "Enter Room" / signing in doesn't then wait on a cold
+  // ChatScreen/Dashboard chunk fetch. Idle-scheduled, so it never competes with
+  // first paint (the landing-perf concern is first-paint cost, not post-idle); the
+  // bundler caches the dynamic import, so the real navigation reuses it. Skipped on
+  // Save-Data / 2g so a metered visitor isn't charged for a screen they may not open.
+  useEffect(() => {
+    if (currentView !== 'landing' && currentView !== 'login') return;
+    const conn = (navigator as unknown as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+    if (conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))) return;
+    const warm = () => { import('./components/ChatScreen'); import('./components/DashboardScreen'); };
+    const w = window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    if (w.requestIdleCallback) { const id = w.requestIdleCallback(warm, { timeout: 3000 }); return () => w.cancelIdleCallback?.(id); }
+    const t = window.setTimeout(warm, 1200);
+    return () => clearTimeout(t);
+  }, [currentView]);
+
   // Prevents a double-click on a paid CTA from firing two create-checkout-session
   // calls (each would open an orphaned Stripe session).
   const checkoutBusy = React.useRef(false);

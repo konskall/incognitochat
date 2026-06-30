@@ -934,27 +934,36 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   }, []);
 
   // Track whether the user is parked at the bottom; mark messages as read when so.
+  // The scroll event fires many times per frame (60–120Hz); coalesce the work to
+  // one run per animation frame so a fast flick through a long room doesn't issue
+  // a recompute + read-pointer update on every event (low-end Android jank).
+  const scrollRafRef = useRef<number | null>(null);
   const handleMainScroll = useCallback(() => {
-    const el = mainRef.current;
-    if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const atBottom = distanceFromBottom < 80;
-    atBottomRef.current = atBottom;
-    if (atBottom) {
-        setShowScrollDown(false);
-        setNewMessageCount(0);
-        const last = messages[messages.length - 1];
-        // Skip a not-yet-persisted optimistic temp: its createdAt is a CLIENT
-        // time and would pin the read pointer ahead → false "Seen" (mirrors the
-        // new-message effect's guard).
-        if (last && !last.status) setLastRead(last.createdAt);
-    } else {
-        // Surface the jump-to-bottom button whenever the user has scrolled up a
-        // screenful, even with no new message (classic chat behaviour). The
-        // new-message effect keeps the unread count badge in sync.
-        setShowScrollDown(distanceFromBottom > 240);
-    }
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const el = mainRef.current;
+      if (!el) return;
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const atBottom = distanceFromBottom < 80;
+      atBottomRef.current = atBottom;
+      if (atBottom) {
+          setShowScrollDown(false);
+          setNewMessageCount(0);
+          const last = messages[messages.length - 1];
+          // Skip a not-yet-persisted optimistic temp: its createdAt is a CLIENT
+          // time and would pin the read pointer ahead → false "Seen" (mirrors the
+          // new-message effect's guard).
+          if (last && !last.status) setLastRead(last.createdAt);
+      } else {
+          // Surface the jump-to-bottom button whenever the user has scrolled up a
+          // screenful, even with no new message (classic chat behaviour). The
+          // new-message effect keeps the unread count badge in sync.
+          setShowScrollDown(distanceFromBottom > 240);
+      }
+    });
   }, [messages, setLastRead]);
+  useEffect(() => () => { if (scrollRafRef.current != null) cancelAnimationFrame(scrollRafRef.current); }, []);
 
   useEffect(() => {
     if (!messagesEndRef.current || messages.length === 0) return;
