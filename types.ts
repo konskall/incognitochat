@@ -6,10 +6,17 @@ export interface User {
 }
 
 export interface Attachment {
-  url: string; 
+  url: string;
   name: string;
   type: string;
   size: number;
+  // Image-only, optional (older messages omit them). Captured client-side at
+  // upload: natural pixel size reserves the bubble's aspect-ratio (no layout
+  // shift as the image streams in), and `color` is an average-color hex painted
+  // as an instant placeholder behind the image (Viber-style).
+  width?: number;
+  height?: number;
+  color?: string;
 }
 
 export interface ReplyInfo {

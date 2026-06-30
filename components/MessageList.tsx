@@ -357,6 +357,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
 
   // Attachment image/video that fails to load (file removed, 404) → placeholder.
   const [attachmentBroken, setAttachmentBroken] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
   // YouTube facade: the heavy iframe only mounts after the user clicks play
   // (no YouTube requests/tracking until then, far lighter with many videos).
   const [ytPlaying, setYtPlaying] = useState(false);
@@ -509,7 +510,7 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
 
   const renderAttachment = () => {
     if (!msg.attachment) return null;
-    const { url, name, type, size } = msg.attachment;
+    const { url, name, type, size, width, height, color } = msg.attachment;
     if (type.startsWith('image/') || type.startsWith('video/')) {
         if (attachmentBroken) {
             return (
@@ -518,11 +519,27 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
                 </div>
             );
         }
+        // When the image carries its natural size (newer uploads), feed width/height
+        // to the <img> so the browser reserves the aspect-ratio box before the bytes
+        // arrive (no layout shift), paint `color` behind it as an instant placeholder,
+        // and fade the image in on load. Older attachments (no dims) keep the original
+        // path — still lazy-loaded.
+        const hasDims = type.startsWith('image/') && !!width && !!height;
         return (
             <div className="mt-2 mb-1 group relative inline-block">
-                <div className={`relative overflow-hidden rounded-xl border border-white/10 ${type.startsWith('video/') ? 'bg-black' : 'bg-black/5'} cursor-pointer`} onClick={() => onPreview(url, name, type)}>
+                <div className={`relative overflow-hidden rounded-xl border border-white/10 ${type.startsWith('video/') ? 'bg-black' : 'bg-black/5'} cursor-pointer`} style={hasDims ? { backgroundColor: color } : undefined} onClick={() => onPreview(url, name, type)}>
                     {type.startsWith('image/')
-                        ? <img src={url} alt={name} onError={() => setAttachmentBroken(true)} className="max-w-full max-h-[300px] w-auto object-contain block" />
+                        ? <img
+                            src={url}
+                            alt={name}
+                            {...(hasDims ? { width, height } : {})}
+                            loading="lazy"
+                            decoding="async"
+                            ref={(el) => { if (el && el.complete) setImgLoaded(true); }}
+                            onLoad={() => setImgLoaded(true)}
+                            onError={() => setAttachmentBroken(true)}
+                            className={`max-w-full max-h-[300px] w-auto h-auto object-contain block ${hasDims ? `transition-opacity duration-300 ${imgLoaded ? 'opacity-100' : 'opacity-0'}` : ''}`}
+                          />
                         : <video src={`${url}#t=0.001`} muted playsInline preload="metadata" onError={() => setAttachmentBroken(true)} className="max-w-full max-h-[300px] w-auto object-contain block" />}
                     <div className="absolute inset-0 flex items-center justify-center transition-all duration-200 opacity-100 md:opacity-0 md:group-hover:opacity-100 bg-black/10">
                         <div className="flex items-center gap-2 p-2 bg-black/60 backdrop-blur-md rounded-full shadow-xl border border-white/20 transform scale-100 hover:scale-105 transition-transform" onClick={(e) => e.stopPropagation()}>
@@ -600,6 +617,8 @@ const MessageItem = React.memo(({ msg, isMe, currentUid, roomOwnerUid, onEdit, o
               // http:// mixed-content / tracking beacons.
               src={displayAvatar && /^https:\/\//i.test(displayAvatar) ? displayAvatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.username)}&background=64748b&color=fff&rounded=true`}
               alt={msg.username}
+              loading="lazy"
+              decoding="async"
               // A valid-but-dead avatar URL (deleted/rotated in storage, or a stale
               // baked URL on an old message) would otherwise show the browser's
               // broken-image glyph. Fall back to ui-avatars once (guard against a loop

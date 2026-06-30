@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { Message, Attachment, Poll, ReplyInfo, GroundingSource } from '../types';
 import { decryptMessage, encryptMessage } from '../utils/crypto';
+import { getImageMeta } from '../utils/helpers';
 import { makeTempId, buildTempMessage, reconcileTemp, markMessageStatus } from '../utils/optimisticSend';
 
 // Result of a send/retry. The optimistic typed-text path NEVER throws and
@@ -859,12 +860,18 @@ export const useChatMessages = (
         const { data: { publicUrl } } = supabase.storage
           .from('attachments')
           .getPublicUrl(filePath);
-    
+
+        // Image metadata for instant placeholder + no-layout-shift rendering.
+        // Best-effort: a failure resolves null and just falls back to the old
+        // (dimension-less) render path — it never blocks the upload.
+        const meta = await getImageMeta(file).catch(() => null);
+
         return {
           url: publicUrl,
           name: file.name,
           type: file.type,
           size: file.size,
+          ...(meta ? { width: meta.width, height: meta.height, color: meta.color } : {}),
         };
     } catch (e) {
         console.error("Upload error", e);

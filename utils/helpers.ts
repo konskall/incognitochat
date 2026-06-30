@@ -251,6 +251,45 @@ export function getYouTubeId(url: string): string | null {
   return id && ID.test(id) ? id : null;
 }
 
+// Read an image file's natural dimensions + an average color, for the chat
+// bubble's aspect-ratio reservation (no layout shift) and an instant colored
+// placeholder while the full image loads. Best-effort: resolves null on any
+// failure or a non-image, so it can NEVER block or break an upload. The source
+// is a blob: URL (same-origin), so the canvas isn't tainted and getImageData works.
+export async function getImageMeta(
+  file: File,
+): Promise<{ width: number; height: number; color: string } | null> {
+  if (!file.type.startsWith('image/')) return null;
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const width = img.naturalWidth;
+        const height = img.naturalHeight;
+        if (!width || !height) { resolve(null); return; }
+        // Average color via a 1x1 downscale — cheap, good enough for a tint.
+        let color = '#1e293b';
+        const canvas = document.createElement('canvas');
+        canvas.width = 1; canvas.height = 1;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, 1, 1);
+          const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+          color = `#${[r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+        }
+        resolve({ width, height, color });
+      } catch {
+        resolve(null);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
 // Helper to compress images
 export async function compressImage(file: File): Promise<File> {
     return new Promise((resolve, reject) => {
