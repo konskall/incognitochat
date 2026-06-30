@@ -542,8 +542,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   const isBotResponding = useIncoAI(config.roomKey, config.pin, messages, config, aiEnabled, aiAvatarUrl, user?.uid);
 
   const combinedTypingUsers = useMemo(
-    () => (isBotResponding ? [...typingUsers, 'inco'] : typingUsers),
-    [isBotResponding, typingUsers]
+    () => (isBotResponding ? [...typingUsers, { username: 'inco', avatar: botAvatar }] : typingUsers),
+    [isBotResponding, typingUsers, botAvatar]
   );
 
   // Dialog a11y for the blocking access-error overlay (focus move/trap, Escape →

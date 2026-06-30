@@ -26,6 +26,13 @@ export interface ReplyInfo {
   isAttachment: boolean;
 }
 
+// A peer currently typing — username for the label, avatar for the stacked
+// typing indicator (optional; older clients / the bot may omit it).
+export interface TypingUser {
+  username: string;
+  avatar?: string;
+}
+
 export interface GroundingSource {
   title?: string;
   uri?: string;

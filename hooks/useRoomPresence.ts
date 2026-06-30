@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
-import { Presence, ChatConfig, User } from '../types';
+import { Presence, ChatConfig, User, TypingUser } from '../types';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { ReadReceipt } from '../utils/readReceipts';
 
@@ -17,8 +17,8 @@ import { ReadReceipt } from '../utils/readReceipts';
 export const TYPING_TTL_MS = 5000;     // receiver: drop a typer this long after its last 'typing' broadcast
 const TYPING_HEARTBEAT_MS = 2000;      // sender: re-broadcast cadence while typing
 
-export type TypingRecord = { username: string; expiresAt: number };
-export type TypingEvent = { uid: string; username: string; typing: boolean };
+export type TypingRecord = { username: string; avatar?: string; expiresAt: number };
+export type TypingEvent = { uid: string; username: string; avatar?: string; typing: boolean };
 
 // Apply one typing broadcast to the receiver's per-uid records (immutable).
 export function applyTypingEvent(
@@ -28,14 +28,27 @@ export function applyTypingEvent(
   ttl: number = TYPING_TTL_MS,
 ): Map<string, TypingRecord> {
   const next = new Map(records);
-  if (ev.typing) next.set(ev.uid, { username: ev.username, expiresAt: now + ttl });
+  if (ev.typing) next.set(ev.uid, { username: ev.username, avatar: ev.avatar, expiresAt: now + ttl });
   else next.delete(ev.uid);
   return next;
 }
 
-// Usernames whose typing claim hasn't expired yet.
-export function liveTypers(records: Map<string, TypingRecord>, now: number): string[] {
-  return [...records.values()].filter((r) => r.expiresAt > now).map((r) => r.username);
+// The peers (username + avatar) whose typing claim hasn't expired yet, in the
+// order they started typing (Map insertion order).
+export function liveTypers(records: Map<string, TypingRecord>, now: number): TypingUser[] {
+  return [...records.values()]
+    .filter((r) => r.expiresAt > now)
+    .map((r) => ({ username: r.username, avatar: r.avatar }));
+}
+
+// Shallow equality on the typer list so the prune tick can skip a no-op
+// re-render (a new array+objects every tick would otherwise always differ).
+function sameTypers(a: TypingUser[], b: TypingUser[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].username !== b[i].username || a[i].avatar !== b[i].avatar) return false;
+  }
+  return true;
 }
 
 // "Seen" read receipts travel over broadcast for the SAME reason as typing (a
@@ -65,7 +78,7 @@ export const useRoomPresence = (
   config: ChatConfig
 ) => {
   const [participants, setParticipants] = useState<Presence[]>([]);
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   // Per-uid highest lastReadAt, fed by 'read' broadcasts (see applyReadReceipt).
   const [readReceipts, setReadReceipts] = useState<Map<string, ReadReceipt>>(new Map());
   const readReceiptsRef = useRef<Map<string, ReadReceipt>>(new Map());
@@ -154,7 +167,12 @@ export const useRoomPresence = (
         if (!ev || typeof ev.uid !== 'string' || ev.uid === user.uid) return;
         typingExpiryRef.current = applyTypingEvent(
           typingExpiryRef.current,
-          { uid: ev.uid, username: typeof ev.username === 'string' ? ev.username : '', typing: !!ev.typing },
+          {
+            uid: ev.uid,
+            username: typeof ev.username === 'string' ? ev.username : '',
+            avatar: typeof ev.avatar === 'string' ? ev.avatar : undefined,
+            typing: !!ev.typing,
+          },
           Date.now(),
         );
         setTypingUsers(liveTypers(typingExpiryRef.current, Date.now()));
@@ -173,9 +191,7 @@ export const useRoomPresence = (
         if (rec.expiresAt <= now) typingExpiryRef.current.delete(uid);
       }
       const next = liveTypers(typingExpiryRef.current, now);
-      setTypingUsers((prev) =>
-        next.length === prev.length && next.every((u, i) => u === prev[i]) ? prev : next
-      );
+      setTypingUsers((prev) => (sameTypers(next, prev) ? prev : next));
     }, 1500);
 
     // Handle visibility changes for presence
@@ -249,7 +265,7 @@ export const useRoomPresence = (
     channelRef.current.send({
       type: 'broadcast',
       event: 'typing',
-      payload: { uid: user.uid, username: configRef.current.username, typing },
+      payload: { uid: user.uid, username: configRef.current.username, avatar: configRef.current.avatarURL, typing },
     });
   };
 

@@ -6,7 +6,7 @@ import AttachmentSheet, { SheetAction } from './AttachmentSheet';
 import { compressImage } from '../utils/helpers';
 import { MAX_FILES_PER_SEND } from '../utils/entitlements';
 import { flashToast } from '../utils/toast';
-import { Message } from '../types';
+import { Message, TypingUser } from '../types';
 
 interface ChatInputProps {
   inputText: string;
@@ -40,7 +40,7 @@ interface ChatInputProps {
   isOffline: boolean;
   isRoomReady: boolean;
 
-  typingUsers: string[];
+  typingUsers: TypingUser[];
 
   onOpenPoll: () => void;
 
@@ -198,12 +198,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   // Show the Inco bot distinctly ("thinking…") instead of as a human typer, and
   // don't count it toward the "N people are typing" total.
-  const humanTypers = typingUsers.filter((u) => u !== 'inco');
-  const botTyping = humanTypers.length !== typingUsers.length;
+  const humanTypers = typingUsers.filter((u) => u.username !== 'inco');
+  const botTyping = typingUsers.some((u) => u.username === 'inco');
   let typingLabel = '';
   if (humanTypers.length >= 2) typingLabel = `${humanTypers.length} people are typing…`;
-  else if (humanTypers.length === 1) typingLabel = `${humanTypers[0]} is typing…`;
+  else if (humanTypers.length === 1) typingLabel = `${humanTypers[0].username} is typing…`;
   if (botTyping) typingLabel = typingLabel ? `${typingLabel} · Inco is thinking…` : 'Inco is thinking…';
+  // Avatars for the stacked indicator: humans first, then the bot, capped so a
+  // busy room can't overflow the pill. Falls back to an initial if no avatar.
+  const typingFaces = [...humanTypers, ...typingUsers.filter((u) => u.username === 'inco')].slice(0, 3);
 
   // Composer actions that ultimately write to the server must be disabled while
   // offline / before the room is ready, matching the Send button — otherwise an
@@ -213,7 +216,30 @@ const ChatInput: React.FC<ChatInputProps> = ({
   return (
       <footer data-chat-composer className="glass-bar glass-bar-bottom p-1.5 shadow-lg z-20 relative pb-[max(0.5rem,env(safe-area-inset-bottom))] flex flex-col items-center justify-center transition-colors">
          {typingLabel && (
-             <div className="absolute -top-6 left-6 text-xs text-slate-500 dark:text-slate-400 bg-white/80 dark:bg-slate-900/80 backdrop-blur px-2 py-0.5 rounded-t-lg animate-pulse flex items-center gap-1">
+             <div className="absolute -top-6 left-6 text-xs text-slate-500 dark:text-slate-400 bg-white/80 dark:bg-slate-900/80 backdrop-blur px-2 py-0.5 rounded-t-lg flex items-center gap-1.5">
+                 {typingFaces.length > 0 && (
+                    <span className="flex -space-x-1.5">
+                       {typingFaces.map((t, i) => (
+                          t.avatar ? (
+                             <img
+                                key={t.username + i}
+                                src={t.avatar}
+                                alt=""
+                                aria-hidden="true"
+                                className="w-4 h-4 rounded-full object-cover ring-1 ring-white dark:ring-slate-900 bg-slate-200 dark:bg-slate-700"
+                             />
+                          ) : (
+                             <span
+                                key={t.username + i}
+                                aria-hidden="true"
+                                className="w-4 h-4 rounded-full ring-1 ring-white dark:ring-slate-900 bg-slate-400 text-white text-[8px] font-semibold uppercase flex items-center justify-center"
+                             >
+                                {t.username.charAt(0) || '?'}
+                             </span>
+                          )
+                       ))}
+                    </span>
+                 )}
                  <span className="flex gap-0.5">
                     <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
                     <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
