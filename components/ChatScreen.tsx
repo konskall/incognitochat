@@ -30,7 +30,7 @@ import { getRoomBackgroundStyle, readCachedAppearance, writeCachedAppearance, is
 import { ANIMATED_WALLPAPERS } from '../lib/animatedWallpapers';
 import { expiryShortLabel } from '../utils/roomLifecycle';
 import { parseTierError } from '../utils/tierGatingErrors';
-import { canSendBatch } from '../utils/entitlements';
+import { canSendBatch, maxTier, entitlements, type Tier } from '../utils/entitlements';
 import { buildLiveAvatars } from '../utils/avatars';
 import { computeSeenBy } from '../utils/readReceipts';
 import { WifiOff, Trash2, Home, RefreshCcw, Search, X, ChevronDown, Pin, Sparkles, MicOff, MapPin, MapPinOff } from 'lucide-react';
@@ -164,6 +164,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   // Resolve this member's effective tier + entitlements (DB-authoritative mirror).
   const { tier, ent, loading: entLoading } = useEntitlements(user?.uid);
 
+  // Host-tier inheritance: the room creator's tier, resolved server-side and
+  // returned by join_or_create_room. The in-room effective tier is the higher of
+  // the member's own tier and the host's — applied ONLY to message quota + calls
+  // (uploads / room-settings / maxRooms stay on the member's own `tier`/`ent`).
+  const [roomCreatorTier, setRoomCreatorTier] = useState<Tier>('free');
+  const roomTier = maxTier(tier, roomCreatorTier);
+
   // A shared upgrade prompt: child components call promptUpgrade(...) when a
   // gated feature is tapped; this opens the UpgradeModal.
   const [upgradePrompt, setUpgradePrompt] = useState<
@@ -179,7 +186,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   // Per-room daily message-quota counter (display-only; DB is authoritative).
   // `quotaBump` is incremented after each successful send to trigger a refetch.
   const [quotaBump, setQuotaBump] = useState(0);
-  const quotaLeft = useMessageQuota(config.roomKey, tier, quotaBump);
+  const quotaLeft = useMessageQuota(config.roomKey, roomTier, quotaBump);
 
   // Soft upgrade nudge: when a free user is halfway through the daily allowance
   // (<=5 left), show a one-per-room-per-day, non-blocking toast.
@@ -189,13 +196,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
   // !entLoading (same fix as the lock-flash) so only genuinely-free users see it.
   const [showQuotaNudge, setShowQuotaNudge] = useState(false);
   useEffect(() => {
-    if (entLoading || tier !== 'free' || quotaLeft === null) return;
+    if (entLoading || roomTier !== 'free' || quotaLeft === null) return;
     if (quotaLeft > 5 || quotaLeft <= 0) return;
     const key = `quotaNudge_${config.roomKey}_${new Date().toISOString().slice(0, 10)}`;
     if (localStorage.getItem(key)) return;
     safeSetItem(key, '1');
     setShowQuotaNudge(true);
-  }, [entLoading, tier, quotaLeft, config.roomKey]);
+  }, [entLoading, roomTier, quotaLeft, config.roomKey]);
 
   // UI States
   const [isDeleting, setIsDeleting] = useState(false);
@@ -834,6 +841,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
 
       if (room) {
         setRoomCreatorId(room.created_by);
+        setRoomCreatorTier(room.creator_tier ?? 'free');
         setApprovalRequired(!!room.approval_required);
         setIsNotesRoom(!!room.is_notes);
         setAiEnabled(!!room.ai_enabled);
@@ -1970,7 +1978,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ config, account, onExit, onAuth
               showParticipants={showParticipantsList}
               onCloseParticipants={() => setShowParticipantsList(false)}
               roomCreatorId={roomCreatorId}
-              ent={ent}
+              ent={entitlements(roomTier)}
               entLoading={entLoading}
               onUpgrade={promptUpgrade}
             />
