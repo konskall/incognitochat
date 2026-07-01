@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  TIER_CONFIG, resolveTier, entitlements, messagesRemaining, canSendBatch, MAX_FILES_PER_SEND, type SubscriptionRow,
+  TIER_CONFIG, resolveTier, entitlements, messagesRemaining, canSendBatch, MAX_FILES_PER_SEND, maxTier, type SubscriptionRow,
 } from './entitlements';
 
 const T0 = Date.parse('2026-06-14T12:00:00.000Z');
@@ -98,5 +98,17 @@ describe('canSendBatch', () => {
   });
   it('allows when the batch exactly fits remaining quota', () => {
     expect(canSendBatch(3, 3)).toEqual({ ok: true });
+  });
+});
+
+describe('maxTier (host-tier inheritance)', () => {
+  it('returns the higher-ranked tier (free < basic < ultra)', () => {
+    expect(maxTier('free', 'ultra')).toBe('ultra');
+    expect(maxTier('ultra', 'free')).toBe('ultra');
+    expect(maxTier('free', 'basic')).toBe('basic');
+    expect(maxTier('basic', 'free')).toBe('basic');
+    expect(maxTier('basic', 'ultra')).toBe('ultra');
+    expect(maxTier('free', 'free')).toBe('free');
+    expect(maxTier('ultra', 'ultra')).toBe('ultra');
   });
 });

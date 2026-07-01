@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseConfig';
+import type { Tier } from '../utils/entitlements';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
@@ -17,6 +18,7 @@ export interface JoinRoomResult {
   room_key: string;
   room_name: string;
   created_by: string;
+  creator_tier: Tier; // effective_tier(created_by) — for in-room host tier inheritance
   ai_enabled: boolean;
   ai_avatar_url: string | null;
   avatar_url: string | null;

@@ -63,6 +63,13 @@ export function entitlements(tier: Tier): Readonly<TierEntitlements> {
 }
 
 // Remaining sends today in one room. null = unlimited.
+// Higher of two tiers by rank (free < basic < ultra). Used for in-room host
+// tier inheritance (message quota + calls) — see the host-tier-inheritance spec.
+export function maxTier(a: Tier, b: Tier): Tier {
+  const rank: Record<Tier, number> = { free: 0, basic: 1, ultra: 2 };
+  return rank[a] >= rank[b] ? a : b;
+}
+
 export function messagesRemaining(tier: Tier, sentToday: number): number | null {
   const lim = TIER_CONFIG[tier].msgPerRoomPerDay;
   return lim === null ? null : Math.max(0, lim - sentToday);
